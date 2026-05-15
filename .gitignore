@@ -72,3 +72,5 @@ yarn-error.log*
 *.tmp
 _runner_*.py
 _input_*.json
+.claude
+.playwright-mcp
