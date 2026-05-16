@@ -20,6 +20,7 @@ from typing import Any
 from app.config import BACKEND_ROOT
 from app.database import SessionLocal
 from app.models import Execution, ExecutionLog, Script
+from services.script_files import script_file_path
 from services.venv_manager import get_script_dir, get_venv_python, venv_exists, _clean_env
 
 _PREFIX = "__AGENTFLOW__"
@@ -150,7 +151,9 @@ async def start_execution(execution_id: str) -> None:
         # ── write script files to disk ────────────────────────────────────────
         script_dir = get_script_dir(exc_row.script_id)
         for f in script.files:
-            (script_dir / f.filename).write_text(f.content, encoding="utf-8")
+            target = script_file_path(script_dir, f.filename)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(f.content, encoding="utf-8")
 
         # ── build LLM env vars ────────────────────────────────────────────────
         from app.models import LLMConfig

@@ -18,6 +18,8 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
       DATA_DIR: /app/backend/data/scripts
       APP_ENV: ${APP_ENV:-production}
+      MCP_ENABLED: ${MCP_ENABLED:-true}
+      MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:-}
     ports:
       - "${APP_PORT:-8000}:8000"
     volumes:

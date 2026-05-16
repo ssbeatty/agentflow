@@ -10,6 +10,7 @@ from services.venv_manager import (
     venv_exists, stream_create_venv, stream_install, delete_venv,
     list_installed_packages,
 )
+from services.script_files import normalize_script_filename
 
 router = APIRouter()
 
@@ -65,12 +66,19 @@ def delete_script(script_id: str, db: Session = Depends(get_db)):
 @router.put("/{script_id}/files", response_model=ScriptFileOut, status_code=200)
 def upsert_file(script_id: str, body: ScriptFileUpsert, db: Session = Depends(get_db)):
     _get_or_404(script_id, db)
-    f = db.query(ScriptFile).filter_by(script_id=script_id, filename=body.filename).first()
+    try:
+        filename = normalize_script_filename(body.filename)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    f = db.query(ScriptFile).filter_by(script_id=script_id, filename=filename).first()
     if f:
         f.content = body.content
         f.is_main = body.is_main
     else:
-        f = ScriptFile(script_id=script_id, **body.model_dump())
+        payload = body.model_dump()
+        payload["filename"] = filename
+        f = ScriptFile(script_id=script_id, **payload)
         db.add(f)
     db.commit()
     db.refresh(f)
@@ -79,6 +87,11 @@ def upsert_file(script_id: str, body: ScriptFileUpsert, db: Session = Depends(ge
 
 @router.delete("/{script_id}/files/{filename}", status_code=204)
 def delete_file(script_id: str, filename: str, db: Session = Depends(get_db)):
+    try:
+        filename = normalize_script_filename(filename)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
     f = db.query(ScriptFile).filter_by(script_id=script_id, filename=filename).first()
     if not f:
         raise HTTPException(404, "File not found")

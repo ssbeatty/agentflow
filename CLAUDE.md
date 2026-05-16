@@ -16,6 +16,7 @@ AgentFlow — a self-hosted platform for writing/running LangGraph/LangChain Pyt
 | Frontend dev (hot reload, :3000) | `cd frontend && npm run dev` |
 | Frontend build (produces `out/` consumed by backend) | `cd frontend && npm run build` |
 | Type-check frontend | `cd frontend && npx tsc --noEmit` |
+| MCP stdio server | `cd backend && python -m app.mcp_server` |
 | Python syntax sanity check | `python -c "import ast; ast.parse(open('<path>',encoding='utf-8').read())"` |
 | Docker (app + postgres) | `docker compose up -d --build` |
 | Docker (sqlite only) | `docker compose up -d app --no-deps` |
@@ -55,6 +56,12 @@ Frontend is `output: "export"` (next.config.ts). `backend/app/main.py` has a cat
 
 When you need `script_id` in the URL, use `?id=...` query (not path segment) — that's the convention `/script` and `/chat` use because static export hates dynamic paths.
 
+### MCP server
+
+`backend/app/mcp_server.py` defines the AgentFlow MCP server. FastAPI mounts it at `/mcp` when `MCP_ENABLED=true`; the same module runs as stdio with `cd backend && python -m app.mcp_server`. It exposes high-trust tools that can create/update/delete scripts, manage venvs, execute user code, and read logs, so don't bypass `services.execution_engine`, `services.venv_manager`, or `services.script_files` when changing it.
+
+`MCP_AUTH_TOKEN` is optional. When non-empty, HTTP `/mcp` requests must send `Authorization: Bearer <token>`. stdio mode is unaffected.
+
 ### Database
 
 - `app/database.py` switches on `DATABASE_URL` (sqlite vs anything else). SQLite gets WAL pragmas + `check_same_thread=False`; everything else gets pool defaults.
@@ -85,6 +92,7 @@ Backend uses naive `datetime.utcnow()` everywhere (stored without TZ). Frontend 
 | New API endpoint | `backend/app/routers/*.py` + register in `app/main.py` |
 | Change how user scripts get env / sys.path | `services/execution_engine.py::_write_runner` |
 | Change venv tooling (uv/pip) | `services/venv_manager.py` |
+| Change MCP tools/resources | `backend/app/mcp_server.py` |
 | New page in UI | `frontend/src/app/<name>/page.tsx` (link from `app/page.tsx` navbar) |
 | Resizable panel | `useResizable` from `frontend/src/components/Splitter.tsx` |
 | Log rendering | `frontend/src/components/LogPanel.tsx` (uses `toLocalDate`) |

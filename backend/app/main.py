@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -9,14 +10,18 @@ from pathlib import Path
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from app.config import settings
 from app.database import engine, Base
 from app.routers import scripts, executions, llm_configs, cron_jobs, ws
 from services.scheduler import scheduler_service
+
+agentflow_mcp = None
+if settings.mcp_enabled:
+    from app.mcp_server import mcp as agentflow_mcp
 
 FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend" / "out"
 
@@ -25,8 +30,13 @@ FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend" / "out"
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     scheduler_service.start()
-    yield
-    scheduler_service.shutdown()
+    try:
+        async with contextlib.AsyncExitStack() as stack:
+            if agentflow_mcp is not None:
+                await stack.enter_async_context(agentflow_mcp.session_manager.run())
+            yield
+    finally:
+        scheduler_service.shutdown()
 
 
 app = FastAPI(title="OpenGraph", version="0.1.0", lifespan=lifespan)
@@ -42,13 +52,30 @@ app.add_middleware(
     allow_credentials=not _wildcard,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Mcp-Session-Id"],
 )
+
+
+@app.middleware("http")
+async def require_mcp_token(request: Request, call_next):
+    if (
+        settings.mcp_auth_token
+        and request.url.path.startswith("/mcp")
+        and request.method != "OPTIONS"
+    ):
+        expected = f"Bearer {settings.mcp_auth_token}"
+        if request.headers.get("authorization") != expected:
+            return JSONResponse({"detail": "Unauthorized MCP request"}, status_code=401)
+    return await call_next(request)
 
 app.include_router(scripts.router,     prefix="/api/scripts",     tags=["scripts"])
 app.include_router(executions.router,  prefix="/api/executions",  tags=["executions"])
 app.include_router(llm_configs.router, prefix="/api/llm-configs", tags=["llm-configs"])
 app.include_router(cron_jobs.router,   prefix="/api/cron-jobs",   tags=["cron-jobs"])
 app.include_router(ws.router,          prefix="/ws",              tags=["websocket"])
+
+if agentflow_mcp is not None:
+    app.mount("/mcp", agentflow_mcp.streamable_http_app())
 
 
 @app.get("/health")
