@@ -1,10 +1,11 @@
 "use client";
-import { useEffect, useRef, useState, useCallback } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { Suspense, useEffect, useRef, useState, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft, Play, Square, Save, Terminal, Settings2,
   Clock, ChevronRight, Loader2, Package, FileCode, CalendarClock,
+  History, CheckCircle2, XCircle, MinusCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { scripts, executions } from "@/lib/api";
@@ -20,6 +21,7 @@ import { Separator } from "@/components/ui/separator";
 import ScriptEditor from "@/components/ScriptEditor";
 import LogPanel from "@/components/LogPanel";
 import DependencyManager from "@/components/DependencyManager";
+import { useResizable } from "@/components/Splitter";
 
 type RunStatus = "idle" | "running" | "completed" | "failed" | "cancelled";
 
@@ -31,9 +33,22 @@ const STATUS_COLORS: Record<RunStatus, string> = {
   cancelled: "text-amber-400",
 };
 
-export default function ScriptPage() {
-  const { id } = useParams<{ id: string }>();
+export default function ScriptPageWrapper() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>}>
+      <ScriptPage />
+    </Suspense>
+  );
+}
+
+function ScriptPage() {
+  const searchParams = useSearchParams();
+  const id = searchParams.get("id") || "";
   const router = useRouter();
+
+  useEffect(() => {
+    if (!id) router.push("/");
+  }, [id, router]);
 
   const [script, setScript] = useState<Script | null>(null);
   const [loading, setLoading] = useState(true);
@@ -55,6 +70,15 @@ export default function ScriptPage() {
   const [output, setOutput] = useState<unknown>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
+  const [bottomHeight, bottomHandle] = useResizable({
+    direction: "horizontal", initial: 220, min: 80, max: 600,
+    storageKey: "ag.bottomHeight", side: "end",
+  });
+  const [rightWidth, rightHandle] = useResizable({
+    direction: "vertical", initial: 384, min: 280, max: 800,
+    storageKey: "ag.rightWidth", side: "end",
+  });
+
   useEffect(() => {
     scripts.get(id)
       .then((s) => {
@@ -72,7 +96,7 @@ export default function ScriptPage() {
   // WebSocket for live logs
   const connectWs = useCallback((execId: string) => {
     const proto = window.location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(`${proto}://localhost:8000/ws/executions/${execId}`);
+    const ws = new WebSocket(`${proto}://${window.location.host}/ws/executions/${execId}`);
     wsRef.current = ws;
 
     ws.onmessage = (e) => {
@@ -130,9 +154,16 @@ export default function ScriptPage() {
 
   async function handleStop() {
     if (!currentExecId) return;
-    await executions.stop(currentExecId);
-    wsRef.current?.close();
-    setRunStatus("cancelled");
+    try {
+      const r = await executions.stop(currentExecId);
+      setRunStatus((r as { status?: RunStatus }).status ?? "cancelled");
+    } catch (e) {
+      // even if the backend rejects, unstick the UI
+      toast.error(`Stop failed: ${e}`);
+      setRunStatus("cancelled");
+    } finally {
+      wsRef.current?.close();
+    }
   }
 
   async function handleSave() {
@@ -223,8 +254,9 @@ export default function ScriptPage() {
             />
           </div>
 
+          {bottomHandle}
           {/* Bottom tabs */}
-          <div className="shrink-0 border-t border-border" style={{ height: "200px" }}>
+          <div className="shrink-0 border-t border-border" style={{ height: `${bottomHeight}px` }}>
             <Tabs defaultValue="deps" className="h-full flex flex-col">
               <TabsList className="rounded-none border-b border-border bg-transparent px-4 h-9 justify-start gap-1">
                 <TabsTrigger value="deps" className="text-xs gap-1.5">
@@ -235,6 +267,9 @@ export default function ScriptPage() {
                 </TabsTrigger>
                 <TabsTrigger value="schedule" className="text-xs gap-1.5">
                   <CalendarClock className="h-3 w-3" />Schedule
+                </TabsTrigger>
+                <TabsTrigger value="runs" className="text-xs gap-1.5">
+                  <History className="h-3 w-3" />Runs
                 </TabsTrigger>
               </TabsList>
               <div className="flex-1 overflow-hidden">
@@ -259,13 +294,27 @@ export default function ScriptPage() {
                 <TabsContent value="schedule" className="h-full m-0">
                   <ScheduleTab scriptId={id} />
                 </TabsContent>
+                <TabsContent value="runs" className="h-full m-0">
+                  <RunsTab
+                    scriptId={id}
+                    currentExecId={currentExecId}
+                    runStatus={runStatus}
+                    onSelect={(exec) => {
+                      setCurrentExecId(exec.id);
+                      setLogs(exec.logs.map((l) => ({ ...l })));
+                      setOutput(exec.output_data ?? null);
+                      setRunStatus(exec.status as RunStatus);
+                    }}
+                  />
+                </TabsContent>
               </div>
             </Tabs>
           </div>
         </div>
 
+        {rightHandle}
         {/* Right: Config + Logs */}
-        <div className="w-96 shrink-0 flex flex-col overflow-hidden">
+        <div className="shrink-0 flex flex-col overflow-hidden border-l border-border" style={{ width: `${rightWidth}px` }}>
           {/* Entry fn + Input */}
           <div className="p-4 space-y-3 border-b border-border shrink-0">
             <div className="flex items-center gap-3">
@@ -335,8 +384,90 @@ export default function ScriptPage() {
 // ── Schedule tab ────────────────────────────────────────────────────────────
 
 import { cronJobs } from "@/lib/api";
-import type { CronJob } from "@/lib/types";
+import type { CronJob, ExecutionSummary } from "@/lib/types";
 import { Trash2 } from "lucide-react";
+import { formatDate } from "@/lib/utils";
+
+function RunsTab({
+  scriptId,
+  currentExecId,
+  runStatus,
+  onSelect,
+}: {
+  scriptId: string;
+  currentExecId: string | null;
+  runStatus: RunStatus;
+  onSelect: (exec: { id: string; status: string; logs: ExecutionLog[]; output_data: unknown }) => void;
+}) {
+  const [items, setItems] = useState<ExecutionSummary[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const reload = useCallback(() => {
+    setLoading(true);
+    executions.list(scriptId)
+      .then(setItems)
+      .catch(() => null)
+      .finally(() => setLoading(false));
+  }, [scriptId]);
+
+  useEffect(() => { reload(); }, [reload]);
+
+  // refresh when a new run starts or the current run finishes
+  useEffect(() => {
+    if (runStatus === "running" || runStatus === "completed" || runStatus === "failed" || runStatus === "cancelled") {
+      reload();
+    }
+  }, [runStatus, currentExecId, reload]);
+
+  const statusIcon = (s: string) => {
+    if (s === "completed") return <CheckCircle2 className="h-3 w-3 text-emerald-400" />;
+    if (s === "failed") return <XCircle className="h-3 w-3 text-destructive" />;
+    if (s === "cancelled") return <MinusCircle className="h-3 w-3 text-amber-400" />;
+    if (s === "running") return <Loader2 className="h-3 w-3 animate-spin text-blue-400" />;
+    return <Clock className="h-3 w-3 text-muted-foreground" />;
+  };
+
+  async function openRun(id: string) {
+    try {
+      const full = await executions.get(id);
+      onSelect({
+        id: full.id,
+        status: full.status,
+        logs: full.logs,
+        output_data: full.output_data,
+      });
+    } catch (e) {
+      toast.error(String(e));
+    }
+  }
+
+  return (
+    <ScrollArea className="h-full">
+      <div className="p-3 space-y-1">
+        {loading && items.length === 0 && (
+          <div className="text-xs text-muted-foreground">Loading…</div>
+        )}
+        {!loading && items.length === 0 && (
+          <div className="text-xs text-muted-foreground">No runs yet. Click Run to start one.</div>
+        )}
+        {items.map((e) => (
+          <button
+            key={e.id}
+            onClick={() => openRun(e.id)}
+            className={`w-full flex items-center gap-2 text-xs px-2 py-1.5 rounded hover:bg-secondary/40 transition-colors ${
+              currentExecId === e.id ? "bg-secondary/40" : ""
+            }`}
+          >
+            {statusIcon(e.status)}
+            <span className="font-mono text-muted-foreground">{e.id.slice(0, 8)}</span>
+            <span className="text-muted-foreground">{e.status}</span>
+            <span className="ml-auto text-muted-foreground">{formatDate(e.created_at)}</span>
+          </button>
+        ))}
+      </div>
+    </ScrollArea>
+  );
+}
 
 function ScheduleTab({ scriptId }: { scriptId: string }) {
   const [jobs, setJobs] = useState<CronJob[]>([]);

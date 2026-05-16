@@ -1,11 +1,10 @@
-import asyncio
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Execution, Script
 from app.schemas import ExecutionCreate, ExecutionDetail, ExecutionSummary
-from services.execution_engine import start_execution, stop_execution
+from services.execution_engine import spawn_execution, stop_execution
 
 router = APIRouter()
 
@@ -29,7 +28,7 @@ async def create_execution(body: ExecutionCreate, db: Session = Depends(get_db))
     db.commit()
     db.refresh(exc)
 
-    asyncio.create_task(start_execution(exc.id))
+    spawn_execution(exc.id)
     return exc
 
 
@@ -43,10 +42,18 @@ def get_execution(execution_id: str, db: Session = Depends(get_db)):
 
 @router.post("/{execution_id}/stop", status_code=200)
 async def stop(execution_id: str, db: Session = Depends(get_db)):
+    from datetime import datetime
     exc = db.query(Execution).filter_by(id=execution_id).first()
     if not exc:
         raise HTTPException(404, "Execution not found")
-    if exc.status not in ("running", "pending"):
-        raise HTTPException(400, "Execution is not running")
+
     stopped = await stop_execution(execution_id)
-    return {"stopped": stopped}
+
+    # if the row was left dangling (e.g. backend restart killed the process
+    # before it could finalize), correct it here so the UI unsticks.
+    if exc.status in ("running", "pending"):
+        exc.status = "cancelled"
+        exc.finished_at = datetime.utcnow()
+        db.commit()
+
+    return {"stopped": stopped, "status": exc.status}

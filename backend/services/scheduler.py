@@ -3,7 +3,6 @@ APScheduler wrapper.
 Each enabled CronJob gets a job registered here.
 On trigger → creates Execution row + kicks off start_execution().
 """
-import asyncio
 import logging
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -64,7 +63,7 @@ class SchedulerService:
         from datetime import datetime
         from app.database import SessionLocal
         from app.models import Execution, CronJob
-        from services.execution_engine import start_execution
+        from services.execution_engine import spawn_execution
 
         db = SessionLocal()
         try:
@@ -78,7 +77,7 @@ class SchedulerService:
         finally:
             db.close()
 
-        asyncio.create_task(start_execution(execution_id))
+        spawn_execution(execution_id)
 
 
 scheduler_service = SchedulerService()

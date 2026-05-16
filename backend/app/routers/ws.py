@@ -3,7 +3,6 @@ WebSocket endpoints:
   /ws/executions/{execution_id}  — real-time execution logs
   /ws/install/{script_id}        — real-time install output
 """
-import asyncio
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from services.execution_engine import ws_manager
@@ -19,9 +18,9 @@ async def execution_ws(execution_id: str, ws: WebSocket):
     await ws.accept()
     await ws_manager.connect(execution_id, ws)
     try:
+        # block until the client disconnects; logs are pushed from the engine
         while True:
-            await asyncio.sleep(30)
-            await ws.send_json({"type": "ping"})
+            await ws.receive_text()
     except WebSocketDisconnect:
         pass
     finally:

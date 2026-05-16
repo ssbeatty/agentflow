@@ -55,19 +55,24 @@ function LogEntry({ log }: { log: ExecutionLog }) {
   const time = new Date(log.timestamp).toLocaleTimeString("en-US", {
     hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit",
   });
+  const hasData = log.data !== undefined && log.data !== null;
 
   return (
-    <div className="flex items-start gap-2 py-0.5 hover:bg-accent/20 px-1 rounded">
-      <span className="text-muted-foreground/50 shrink-0 select-none">{time}</span>
-      <span className={cn("shrink-0 select-none font-semibold", color)}>[{tag}]</span>
-      {log.step && (
-        <span className="shrink-0 text-muted-foreground/60 select-none">{log.step} →</span>
-      )}
-      <span className={cn("break-words min-w-0", color)}>{log.message}</span>
-      {log.data !== undefined && log.data !== null && (
-        <details className="mt-0.5 w-full">
-          <summary className="cursor-pointer text-muted-foreground/60 text-xs">data</summary>
-          <pre className="mt-1 text-muted-foreground text-xs whitespace-pre-wrap overflow-auto">
+    <div className="py-0.5 px-1 rounded hover:bg-accent/20">
+      {/* meta row */}
+      <div className="flex items-center gap-2 text-[10px] leading-none">
+        <span className="text-muted-foreground/50 select-none tabular-nums">{time}</span>
+        <span className={cn("select-none font-semibold", color)}>[{tag}]</span>
+        {log.step && (
+          <span className="text-muted-foreground/60 select-none">{log.step}</span>
+        )}
+      </div>
+      {/* message row */}
+      <div className={cn("text-xs break-words pl-[2px]", color)}>{log.message}</div>
+      {hasData && (
+        <details className="mt-0.5 pl-[2px]">
+          <summary className="cursor-pointer text-muted-foreground/60 text-[10px]">data</summary>
+          <pre className="mt-1 text-muted-foreground text-xs whitespace-pre-wrap break-words overflow-auto bg-secondary/30 rounded px-2 py-1">
             {JSON.stringify(log.data, null, 2)}
           </pre>
         </details>

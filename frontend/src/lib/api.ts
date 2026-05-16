@@ -41,9 +41,18 @@ export const scripts = {
   deleteFile: (id: string, filename: string) =>
     req<void>(`/scripts/${id}/files/${filename}`, { method: "DELETE" }),
 
-  /** Returns a ReadableStream of install output lines */
-  createVenv: (id: string) =>
-    fetch(`${BASE}/scripts/${id}/venv`, { method: "POST" }),
+  /** Returns a streaming Response of venv-creation output lines */
+  createVenv: (id: string, force = false) =>
+    fetch(`${BASE}/scripts/${id}/venv${force ? "?force=true" : ""}`, { method: "POST" }),
+
+  deleteVenv: (id: string) =>
+    req<{ removed: boolean }>(`/scripts/${id}/venv`, { method: "DELETE" }),
+
+  venvStatus: (id: string) =>
+    req<{ exists: boolean }>(`/scripts/${id}/venv`),
+
+  packages: (id: string) =>
+    req<{ packages: { name: string; version: string }[]; error: string | null }>(`/scripts/${id}/packages`),
 
   install: (id: string) =>
     fetch(`${BASE}/scripts/${id}/install`, { method: "POST" }),
@@ -63,7 +72,7 @@ export const executions = {
       body: JSON.stringify({ script_id: scriptId, input_data: inputData }),
     }),
 
-  stop: (id: string) => req<{ stopped: boolean }>(`/executions/${id}/stop`, { method: "POST" }),
+  stop: (id: string) => req<{ stopped: boolean; status: string }>(`/executions/${id}/stop`, { method: "POST" }),
 };
 
 // ── LLM Configs ────────────────────────────────────────────────────────────────

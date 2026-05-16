@@ -92,7 +92,7 @@ export default function Dashboard() {
 
 function ScriptCard({ script }: { script: ScriptSummary }) {
   return (
-    <Link href={`/scripts/${script.id}`}>
+    <Link href={`/script/?id=${script.id}`}>
       <div className="group rounded-xl border border-border bg-secondary/20 p-5 hover:border-primary/50 hover:bg-secondary/40 transition-all cursor-pointer h-full flex flex-col">
         <div className="flex items-start justify-between gap-2 mb-3">
           <h3 className="font-medium text-sm leading-tight line-clamp-2 group-hover:text-primary transition-colors">

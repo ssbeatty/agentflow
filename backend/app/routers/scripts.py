@@ -5,7 +5,10 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Script, ScriptFile
 from app.schemas import ScriptCreate, ScriptUpdate, ScriptDetail, ScriptSummary, ScriptFileUpsert, ScriptFileOut
-from services.venv_manager import venv_exists, stream_create_venv, stream_install
+from services.venv_manager import (
+    venv_exists, stream_create_venv, stream_install, delete_venv,
+    list_installed_packages,
+)
 
 router = APIRouter()
 
@@ -87,14 +90,34 @@ def delete_file(script_id: str, filename: str, db: Session = Depends(get_db)):
 # ── Venv & install (streamed) ──────────────────────────────────────────────────
 
 @router.post("/{script_id}/venv")
-async def create_venv(script_id: str, db: Session = Depends(get_db)):
+async def create_venv(script_id: str, force: bool = False, db: Session = Depends(get_db)):
     _get_or_404(script_id, db)
 
     async def gen():
-        async for line in stream_create_venv(script_id):
+        async for line in stream_create_venv(script_id, force=force):
             yield line + "\n"
 
     return StreamingResponse(gen(), media_type="text/plain")
+
+
+@router.delete("/{script_id}/venv", status_code=200)
+def remove_venv(script_id: str, db: Session = Depends(get_db)):
+    _get_or_404(script_id, db)
+    removed = delete_venv(script_id)
+    return {"removed": removed}
+
+
+@router.get("/{script_id}/venv", status_code=200)
+def venv_status(script_id: str, db: Session = Depends(get_db)):
+    _get_or_404(script_id, db)
+    return {"exists": venv_exists(script_id)}
+
+
+@router.get("/{script_id}/packages", status_code=200)
+def list_packages(script_id: str, db: Session = Depends(get_db)):
+    _get_or_404(script_id, db)
+    pkgs, error = list_installed_packages(script_id)
+    return {"packages": pkgs, "error": error}
 
 
 @router.post("/{script_id}/install")

@@ -1,11 +1,24 @@
+import asyncio
+import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
+
+# Windows: asyncio subprocess support requires ProactorEventLoop.
+# Some debuggers / tooling install a SelectorEventLoop which breaks
+# create_subprocess_exec → NotImplementedError. Force Proactor here.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 from app.config import settings
 from app.database import engine, Base
 from app.routers import scripts, executions, llm_configs, cron_jobs, ws
 from services.scheduler import scheduler_service
+
+FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend" / "out"
 
 
 @asynccontextmanager
@@ -36,3 +49,18 @@ app.include_router(ws.router,          prefix="/ws",              tags=["websock
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/{full_path:path}", include_in_schema=False)
+def serve_frontend(full_path: str):
+    if not FRONTEND_DIR.is_dir():
+        return {"detail": "Frontend not built. Run `npm run build` in /frontend."}
+    candidate = (FRONTEND_DIR / full_path).resolve()
+    # Prevent path traversal outside FRONTEND_DIR
+    if FRONTEND_DIR.resolve() in candidate.parents or candidate == FRONTEND_DIR.resolve():
+        if candidate.is_file():
+            return FileResponse(candidate)
+        index_candidate = candidate / "index.html"
+        if index_candidate.is_file():
+            return FileResponse(index_candidate)
+    return FileResponse(FRONTEND_DIR / "index.html")

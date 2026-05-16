@@ -19,18 +19,16 @@ interface Props {
 export default function CreateScriptDialog({ open, onOpenChange, onCreated }: Props) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [entryFn, setEntryFn] = useState("run");
   const [loading, setLoading] = useState(false);
 
   async function handleCreate() {
     if (!name.trim()) return toast.error("Name is required");
     setLoading(true);
     try {
-      const s = await scripts.create({ name: name.trim(), description, entry_function: entryFn });
+      const s = await scripts.create({ name: name.trim(), description });
       onCreated(s);
       setName("");
       setDescription("");
-      setEntryFn("run");
       toast.success("Script created");
     } catch (e: unknown) {
       toast.error(String(e));
@@ -64,15 +62,9 @@ export default function CreateScriptDialog({ open, onOpenChange, onCreated }: Pr
               placeholder="What does this agent do?"
             />
           </div>
-          <div className="space-y-1.5">
-            <Label>Entry function</Label>
-            <Input
-              value={entryFn}
-              onChange={(e) => setEntryFn(e.target.value)}
-              placeholder="run"
-              className="font-mono"
-            />
-          </div>
+          <p className="text-xs text-muted-foreground">
+            A starter <code className="font-mono">main.py</code> with a <code className="font-mono">run(input)</code> function will be generated. You can rename the entry function later in the script editor.
+          </p>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>

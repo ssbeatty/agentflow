@@ -8,7 +8,11 @@ Execution engine:
 """
 import asyncio
 import json
+import os
+import subprocess
 import sys
+import threading
+from collections import deque
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -16,25 +20,36 @@ from typing import Any
 from app.config import BACKEND_ROOT
 from app.database import SessionLocal
 from app.models import Execution, ExecutionLog, Script
-from services.venv_manager import get_script_dir, get_venv_python, venv_exists
+from services.venv_manager import get_script_dir, get_venv_python, venv_exists, _clean_env
 
 _PREFIX = "__AGENTFLOW__"
 
 # ── WebSocket connection manager ───────────────────────────────────────────────
 
 class _WsManager:
-    def __init__(self):
+    def __init__(self, buffer_size: int = 2000):
         # execution_id -> set of websockets
         self._conns: dict[str, set] = {}
+        # execution_id -> deque of past messages (so late-joiners can replay)
+        self._buffers: dict[str, deque] = {}
+        self._buffer_size = buffer_size
 
     async def connect(self, eid: str, ws) -> None:
         self._conns.setdefault(eid, set()).add(ws)
+        # replay buffered messages on (re)connect
+        for msg in list(self._buffers.get(eid, ())):
+            try:
+                await ws.send_json(msg)
+            except Exception:
+                return
 
     def disconnect(self, eid: str, ws) -> None:
         bucket = self._conns.get(eid, set())
         bucket.discard(ws)
 
     async def send(self, eid: str, msg: dict) -> None:
+        buf = self._buffers.setdefault(eid, deque(maxlen=self._buffer_size))
+        buf.append(msg)
         dead = set()
         for ws in list(self._conns.get(eid, set())):
             try:
@@ -44,14 +59,30 @@ class _WsManager:
         for ws in dead:
             self._conns.get(eid, set()).discard(ws)
 
+    def cleanup(self, eid: str) -> None:
+        """Drop buffer once nobody needs replay (call after a delay)."""
+        self._buffers.pop(eid, None)
+        self._conns.pop(eid, None)
+
 
 ws_manager = _WsManager()
 
 # install job connections: job_key -> set of websockets
 install_manager = _WsManager()
 
-# active subprocess handles: execution_id -> Process
-_procs: dict[str, asyncio.subprocess.Process] = {}
+# active subprocess handles: execution_id -> Popen
+_procs: dict[str, subprocess.Popen] = {}
+
+# hold strong refs so background tasks aren't garbage-collected mid-run
+_tasks: set[asyncio.Task] = set()
+
+
+def spawn_execution(execution_id: str) -> asyncio.Task:
+    """Schedule start_execution while keeping a strong reference."""
+    task = asyncio.create_task(start_execution(execution_id))
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
+    return task
 
 # ── Wrapper generation ─────────────────────────────────────────────────────────
 
@@ -123,19 +154,28 @@ async def start_execution(execution_id: str) -> None:
 
         # ── build LLM env vars ────────────────────────────────────────────────
         from app.models import LLMConfig
+        import re
+        def _norm(name: str) -> str:
+            # POSIX-safe env var key: uppercase, non-alphanumeric -> _
+            return re.sub(r"[^A-Z0-9]+", "_", (name or "").upper()).strip("_") or "UNNAMED"
+
         llm_envs: dict[str, str] = {}
+        llm_names: list[str] = []   # original names, for discovery
         llms = db.query(LLMConfig).all()
         for llm in llms:
-            key = f"AGENTFLOW_LLM_{llm.name.upper()}"
-            llm_envs[key] = json.dumps({
+            payload = json.dumps({
+                "name": llm.name,
                 "provider": llm.provider,
                 "model": llm.model,
                 "api_key": llm.api_key,
                 "base_url": llm.base_url,
                 "extra_config": llm.extra_config or {},
             })
+            llm_envs[f"AGENTFLOW_LLM_{_norm(llm.name)}"] = payload
+            llm_names.append(llm.name)
             if llm.is_default:
-                llm_envs["AGENTFLOW_LLM_DEFAULT"] = llm_envs[key]
+                llm_envs["AGENTFLOW_LLM_DEFAULT"] = payload
+        llm_envs["AGENTFLOW_LLM_NAMES"] = json.dumps(llm_names)
 
         # ── write runner + input ──────────────────────────────────────────────
         runner, input_file = _write_runner(script_dir, script.entry_function, execution_id, llm_envs)
@@ -151,55 +191,102 @@ async def start_execution(execution_id: str) -> None:
 
         await ws_manager.send(execution_id, {"type": "status", "status": "running"})
 
-        proc = await asyncio.create_subprocess_exec(
-            str(py), str(runner),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+        # diagnostic log so users can see which LLM configs are wired up
+        diag_msg = (
+            f"LLM configs available: {[llm.name for llm in llms]}; "
+            f"default={'yes' if any(l.is_default for l in llms) else 'no'}"
+        )
+        _persist_log(db, execution_id, {"level": "debug", "message": diag_msg, "step": "_engine"})
+        await ws_manager.send(execution_id, {
+            "type": "log", "level": "debug", "message": diag_msg,
+            "step": "_engine", "timestamp": datetime.utcnow().isoformat(),
+        })
+
+        sub_env = _clean_env()
+        sub_env["PYTHONUNBUFFERED"] = "1"
+        sub_env["PYTHONIOENCODING"] = "utf-8"
+        # langsmith / langchain telemetry off by default (faster cold imports,
+        # no surprise network calls). User can override in their own script.
+        sub_env.setdefault("LANGCHAIN_TRACING_V2", "false")
+        sub_env.setdefault("LANGSMITH_TRACING", "false")
+        sub_env.update(llm_envs)
+
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue = asyncio.Queue()
+
+        popen_kwargs = {}
+        if sys.platform == "win32":
+            # detach from parent console so CTRL_C (e.g. uvicorn --reload)
+            # doesn't kill the user script.
+            popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+
+        proc = subprocess.Popen(
+            [str(py), str(runner)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             cwd=str(script_dir),
+            env=sub_env,
+            bufsize=1,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            **popen_kwargs,
         )
         _procs[execution_id] = proc
 
+        def _pump(stream, is_stderr: bool):
+            try:
+                for line in iter(stream.readline, ""):
+                    line = line.rstrip("\r\n")
+                    if not line:
+                        continue
+                    loop.call_soon_threadsafe(queue.put_nowait, (is_stderr, line))
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, (is_stderr, None))
+
+        threading.Thread(target=_pump, args=(proc.stdout, False), daemon=True).start()
+        threading.Thread(target=_pump, args=(proc.stderr, True), daemon=True).start()
+
         result_data: Any = None
         error_data: dict | None = None
+        eof_count = 0
 
-        async def _read(stream, is_stderr: bool):
-            nonlocal result_data, error_data
-            async for raw in stream:
-                line = raw.decode("utf-8", errors="replace").rstrip()
-                if not line:
+        while eof_count < 2:
+            is_stderr, line = await queue.get()
+            if line is None:
+                eof_count += 1
+                continue
+            if line.startswith(_PREFIX):
+                try:
+                    payload = json.loads(line[len(_PREFIX):])
+                except json.JSONDecodeError:
                     continue
-                if line.startswith(_PREFIX):
-                    try:
-                        payload = json.loads(line[len(_PREFIX):])
-                    except json.JSONDecodeError:
-                        continue
-                    t = payload.get("type")
-                    if t == "log":
-                        _persist_log(db, execution_id, payload)
-                        await ws_manager.send(execution_id, {
-                            "type": "log",
-                            "level": payload.get("level", "info"),
-                            "message": payload.get("message", ""),
-                            "data": payload.get("data"),
-                            "step": payload.get("step"),
-                            "timestamp": datetime.utcnow().isoformat(),
-                        })
-                    elif t == "result":
-                        result_data = payload.get("data")
-                    elif t == "error":
-                        error_data = payload
-                else:
-                    level = "error" if is_stderr else "raw"
-                    _persist_log(db, execution_id, {"level": level, "message": line})
+                t = payload.get("type")
+                if t == "log":
+                    _persist_log(db, execution_id, payload)
                     await ws_manager.send(execution_id, {
                         "type": "log",
-                        "level": level,
-                        "message": line,
+                        "level": payload.get("level", "info"),
+                        "message": payload.get("message", ""),
+                        "data": payload.get("data"),
+                        "step": payload.get("step"),
                         "timestamp": datetime.utcnow().isoformat(),
                     })
+                elif t == "result":
+                    result_data = payload.get("data")
+                elif t == "error":
+                    error_data = payload
+            else:
+                level = "error" if is_stderr else "raw"
+                _persist_log(db, execution_id, {"level": level, "message": line})
+                await ws_manager.send(execution_id, {
+                    "type": "log",
+                    "level": level,
+                    "message": line,
+                    "timestamp": datetime.utcnow().isoformat(),
+                })
 
-        await asyncio.gather(_read(proc.stdout, False), _read(proc.stderr, True))
-        await proc.wait()
+        await asyncio.to_thread(proc.wait)
 
         exc_row = db.query(Execution).filter_by(id=execution_id).first()
         exc_row.finished_at = datetime.utcnow()
@@ -235,6 +322,11 @@ async def start_execution(execution_id: str) -> None:
     finally:
         _procs.pop(execution_id, None)
         db.close()
+        # keep replay buffer around briefly so a reconnect after status=completed
+        # still sees the final logs, then drop it
+        asyncio.get_event_loop().call_later(
+            300, ws_manager.cleanup, execution_id
+        )
 
 
 async def stop_execution(execution_id: str) -> bool:
@@ -243,7 +335,7 @@ async def stop_execution(execution_id: str) -> bool:
         return False
     proc.terminate()
     try:
-        await asyncio.wait_for(proc.wait(), timeout=5.0)
+        await asyncio.wait_for(asyncio.to_thread(proc.wait), timeout=5.0)
     except asyncio.TimeoutError:
         proc.kill()
     return True
