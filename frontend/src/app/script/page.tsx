@@ -5,7 +5,7 @@ import Link from "next/link";
 import {
   ArrowLeft, Play, Square, Save, Terminal, Settings2,
   Clock, ChevronRight, Loader2, Package, FileCode, CalendarClock,
-  History, CheckCircle2, XCircle, MinusCircle,
+  History, CheckCircle2, XCircle, MinusCircle, Copy,
 } from "lucide-react";
 import { toast } from "sonner";
 import { scripts, executions } from "@/lib/api";
@@ -18,7 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import ScriptEditor from "@/components/ScriptEditor";
+import ScriptEditor, { type LintIssue } from "@/components/ScriptEditor";
 import LogPanel from "@/components/LogPanel";
 import DependencyManager from "@/components/DependencyManager";
 import { useResizable } from "@/components/Splitter";
@@ -69,6 +69,19 @@ function ScriptPage() {
   const [logs, setLogs] = useState<ExecutionLog[]>([]);
   const [output, setOutput] = useState<unknown>(null);
   const wsRef = useRef<WebSocket | null>(null);
+
+  const [lintIssues, setLintIssues] = useState<LintIssue[]>([]);
+
+  // debounced lint
+  useEffect(() => {
+    if (!id || !mainContent) return;
+    const t = setTimeout(() => {
+      scripts.lint(id, mainContent)
+        .then((r) => setLintIssues(r.issues))
+        .catch(() => setLintIssues([]));
+    }, 500);
+    return () => clearTimeout(t);
+  }, [id, mainContent]);
 
   const [bottomHeight, bottomHandle] = useResizable({
     direction: "horizontal", initial: 220, min: 80, max: 600,
@@ -212,7 +225,26 @@ function ScriptPage() {
           onChange={(e) => { setName(e.target.value); markDirty(); }}
           className="bg-transparent text-sm font-medium focus:outline-none border-b border-transparent focus:border-border w-48"
         />
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+          title="Copy script ID (for API calls)"
+          onClick={() => {
+            navigator.clipboard.writeText(id);
+            toast.success("Script ID copied");
+          }}
+        >
+          <Copy className="h-3 w-3" />
+        </Button>
         {dirty && <span className="text-xs text-muted-foreground">unsaved</span>}
+        {lintIssues.length > 0 && (
+          <span className={`text-xs flex items-center gap-1 ${
+            lintIssues.some((i) => i.severity === "error") ? "text-destructive" : "text-amber-400"
+          }`}>
+            ● {lintIssues.length} issue{lintIssues.length > 1 ? "s" : ""}
+          </span>
+        )}
 
         <div className="ml-auto flex items-center gap-2">
           {/* Status indicator */}
@@ -251,6 +283,7 @@ function ScriptPage() {
             <ScriptEditor
               value={mainContent}
               onChange={(v) => { setMainContent(v ?? ""); markDirty(); }}
+              issues={lintIssues}
             />
           </div>
 

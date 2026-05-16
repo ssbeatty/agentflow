@@ -1,20 +1,32 @@
 "use client";
 import Editor, { type OnMount } from "@monaco-editor/react";
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
+import type * as Monaco from "monaco-editor";
+
+export interface LintIssue {
+  line: number;
+  col: number;
+  end_line: number;
+  end_col: number;
+  message: string;
+  severity: "error" | "warning";
+}
 
 interface Props {
   value: string;
   onChange: (value: string | undefined) => void;
   readOnly?: boolean;
+  issues?: LintIssue[];
 }
 
-export default function ScriptEditor({ value, onChange, readOnly = false }: Props) {
+export default function ScriptEditor({ value, onChange, readOnly = false, issues = [] }: Props) {
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
+  const monacoRef = useRef<typeof Monaco | null>(null);
 
   const handleMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;
+    monacoRef.current = monaco;
 
-    // Python-friendly editor defaults
     monaco.editor.setTheme("vs-dark");
 
     editor.updateOptions({
@@ -35,9 +47,29 @@ export default function ScriptEditor({ value, onChange, readOnly = false }: Prop
       padding: { top: 12, bottom: 12 },
     });
 
-    // Python: use spaces not tabs
     editor.getModel()?.updateOptions({ tabSize: 4, insertSpaces: true });
   };
+
+  // push lint issues into Monaco as markers (red squiggles)
+  useEffect(() => {
+    const monaco = monacoRef.current;
+    const editor = editorRef.current;
+    if (!monaco || !editor) return;
+    const model = editor.getModel();
+    if (!model) return;
+
+    const markers = issues.map((iss) => ({
+      severity: iss.severity === "error"
+        ? monaco.MarkerSeverity.Error
+        : monaco.MarkerSeverity.Warning,
+      message: iss.message,
+      startLineNumber: iss.line,
+      startColumn: iss.col,
+      endLineNumber: iss.end_line,
+      endColumn: iss.end_col,
+    }));
+    monaco.editor.setModelMarkers(model, "agentflow-lint", markers);
+  }, [issues]);
 
   return (
     <div className="h-full w-full">
@@ -48,10 +80,7 @@ export default function ScriptEditor({ value, onChange, readOnly = false }: Prop
         onChange={onChange}
         onMount={handleMount}
         theme="vs-dark"
-        options={{
-          readOnly,
-          automaticLayout: true,
-        }}
+        options={{ readOnly, automaticLayout: true }}
         loading={
           <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
             Loading editor…

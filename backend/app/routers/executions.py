@@ -1,7 +1,8 @@
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from app.database import get_db, SessionLocal
 from app.models import Execution, Script
 from app.schemas import ExecutionCreate, ExecutionDetail, ExecutionSummary
 from services.execution_engine import spawn_execution, stop_execution
@@ -30,6 +31,51 @@ async def create_execution(body: ExecutionCreate, db: Session = Depends(get_db))
 
     spawn_execution(exc.id)
     return exc
+
+
+@router.post("/run", status_code=200)
+async def run_sync(body: ExecutionCreate, timeout: float = 300.0):
+    """
+    Synchronous execution endpoint for external callers. Blocks until the
+    script finishes (or `timeout` seconds elapse). Returns the same shape as
+    GET /executions/{id}, so a single round-trip yields the final result.
+
+    Example:
+      curl -X POST http://host/api/executions/run?timeout=60 \
+           -d '{"script_id":"...","input_data":{...}}'
+    """
+    db = SessionLocal()
+    try:
+        if not db.query(Script).filter_by(id=body.script_id).first():
+            raise HTTPException(404, "Script not found")
+        exc = Execution(script_id=body.script_id, input_data=body.input_data or {})
+        db.add(exc)
+        db.commit()
+        db.refresh(exc)
+        execution_id = exc.id
+    finally:
+        db.close()
+
+    task = spawn_execution(execution_id)
+    try:
+        await asyncio.wait_for(task, timeout=timeout)
+    except asyncio.TimeoutError:
+        await stop_execution(execution_id)
+        raise HTTPException(504, f"Execution exceeded {timeout}s timeout")
+
+    db = SessionLocal()
+    try:
+        final = db.query(Execution).filter_by(id=execution_id).first()
+        return {
+            "id": final.id,
+            "status": final.status,
+            "output_data": final.output_data,
+            "error": final.error,
+            "started_at": final.started_at,
+            "finished_at": final.finished_at,
+        }
+    finally:
+        db.close()
 
 
 @router.get("/{execution_id}", response_model=ExecutionDetail)

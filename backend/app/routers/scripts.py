@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -118,6 +119,48 @@ def list_packages(script_id: str, db: Session = Depends(get_db)):
     _get_or_404(script_id, db)
     pkgs, error = list_installed_packages(script_id)
     return {"packages": pkgs, "error": error}
+
+
+# ── Static Python validation ───────────────────────────────────────────────────
+
+class _LintRequest(BaseModel):
+    source: str
+    filename: str = "main.py"
+
+
+@router.post("/{script_id}/lint", status_code=200)
+def lint(script_id: str, body: _LintRequest, db: Session = Depends(get_db)):
+    """Static syntax check via ast.parse. Cheap, no venv required."""
+    import ast
+    script = _get_or_404(script_id, db)
+    issues: list[dict] = []
+    try:
+        ast.parse(body.source, filename=body.filename)
+    except SyntaxError as e:
+        issues.append({
+            "line": e.lineno or 1,
+            "col": e.offset or 1,
+            "end_line": e.end_lineno or e.lineno or 1,
+            "end_col": e.end_offset or (e.offset or 1) + 1,
+            "message": e.msg or "syntax error",
+            "severity": "error",
+        })
+
+    # also check that the entry function exists
+    if not issues:
+        try:
+            tree = ast.parse(body.source)
+            names = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+            if script.entry_function not in names:
+                issues.append({
+                    "line": 1, "col": 1, "end_line": 1, "end_col": 1,
+                    "message": f"entry function `{script.entry_function}` not defined in this file",
+                    "severity": "warning",
+                })
+        except Exception:
+            pass
+
+    return {"issues": issues}
 
 
 @router.post("/{script_id}/install")

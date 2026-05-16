@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Plus, Play, Clock, Settings, Zap } from "lucide-react";
+import { Plus, Play, Clock, Settings, Zap, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 import { scripts } from "@/lib/api";
 import type { ScriptSummary } from "@/lib/types";
@@ -36,6 +36,12 @@ export default function Dashboard() {
           <span className="font-semibold text-base">OpenGraph</span>
         </div>
         <div className="flex items-center gap-2">
+          <Link href="/chat">
+            <Button variant="ghost" size="sm" className="gap-1.5">
+              <MessageSquare className="h-4 w-4" />
+              Chat
+            </Button>
+          </Link>
           <Link href="/settings">
             <Button variant="ghost" size="icon">
               <Settings className="h-4 w-4" />
@@ -92,32 +98,40 @@ export default function Dashboard() {
 
 function ScriptCard({ script }: { script: ScriptSummary }) {
   return (
-    <Link href={`/script/?id=${script.id}`}>
-      <div className="group rounded-xl border border-border bg-secondary/20 p-5 hover:border-primary/50 hover:bg-secondary/40 transition-all cursor-pointer h-full flex flex-col">
-        <div className="flex items-start justify-between gap-2 mb-3">
-          <h3 className="font-medium text-sm leading-tight line-clamp-2 group-hover:text-primary transition-colors">
-            {script.name}
-          </h3>
-          <Badge variant="outline" className="text-xs shrink-0 font-mono">
-            {script.entry_function}
-          </Badge>
-        </div>
+    <div className="group rounded-xl border border-border bg-secondary/20 p-5 hover:border-primary/50 hover:bg-secondary/40 transition-all h-full flex flex-col">
+      <Link href={`/script/?id=${script.id}`} className="block flex-1">
+        <h3 className="font-medium text-sm leading-tight line-clamp-2 group-hover:text-primary transition-colors mb-3">
+          {script.name}
+        </h3>
         {script.description && (
-          <p className="text-xs text-muted-foreground line-clamp-2 mb-3 flex-1">
+          <p className="text-xs text-muted-foreground line-clamp-2 mb-3">
             {script.description}
           </p>
         )}
-        <div className="flex items-center gap-3 mt-auto pt-2 border-t border-border/50 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1">
-            <Clock className="h-3 w-3" />
-            {formatDate(script.updated_at)}
-          </span>
-          <span className="flex items-center gap-1 ml-auto">
+      </Link>
+      <div className="flex items-center gap-3 mt-auto pt-2 border-t border-border/50 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1">
+          <Clock className="h-3 w-3" />
+          {formatDate(script.updated_at)}
+        </span>
+        <div className="ml-auto flex items-center gap-1">
+          <Link
+            href={`/chat?id=${script.id}`}
+            className="flex items-center gap-1 hover:text-primary px-1.5 py-0.5 rounded transition-colors"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <MessageSquare className="h-3 w-3" />
+            Chat
+          </Link>
+          <Link
+            href={`/script/?id=${script.id}`}
+            className="flex items-center gap-1 hover:text-primary px-1.5 py-0.5 rounded transition-colors"
+          >
             <Play className="h-3 w-3" />
             Open
-          </span>
+          </Link>
         </div>
       </div>
-    </Link>
+    </div>
   );
 }

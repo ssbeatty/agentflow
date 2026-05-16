@@ -54,6 +54,12 @@ export const scripts = {
   packages: (id: string) =>
     req<{ packages: { name: string; version: string }[]; error: string | null }>(`/scripts/${id}/packages`),
 
+  lint: (id: string, source: string) =>
+    req<{ issues: { line: number; col: number; end_line: number; end_col: number; message: string; severity: "error" | "warning" }[] }>(
+      `/scripts/${id}/lint`,
+      { method: "POST", body: JSON.stringify({ source, filename: "main.py" }) },
+    ),
+
   install: (id: string) =>
     fetch(`${BASE}/scripts/${id}/install`, { method: "POST" }),
 };

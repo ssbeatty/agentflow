@@ -2,7 +2,7 @@
 import { useEffect, useRef } from "react";
 import type { ExecutionLog } from "@/lib/types";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { cn } from "@/lib/utils";
+import { cn, toLocalDate } from "@/lib/utils";
 
 const LEVEL_STYLES: Record<string, string> = {
   info:    "text-blue-400",
@@ -52,7 +52,7 @@ export default function LogPanel({ logs }: Props) {
 function LogEntry({ log }: { log: ExecutionLog }) {
   const color = LEVEL_STYLES[log.level] ?? "text-foreground";
   const tag = LEVEL_TAG[log.level] ?? log.level.toUpperCase().slice(0, 4).padEnd(4);
-  const time = new Date(log.timestamp).toLocaleTimeString("en-US", {
+  const time = toLocalDate(log.timestamp).toLocaleTimeString(undefined, {
     hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit",
   });
   const hasData = log.data !== undefined && log.data !== null;
