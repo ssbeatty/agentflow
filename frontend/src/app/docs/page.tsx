@@ -263,7 +263,7 @@ while True:
               JSON-serialisable value.
             </li>
             <li>
-              <b className="text-foreground">Conventions for the built-in /chat page</b>: input has
+              <b className="text-foreground">Conventions for the /converse chat page</b>: input has
               <code className="text-foreground"> {"{message, history}"}</code>; return
               <code className="text-foreground"> {"{reply}"}</code>. Other return shapes
               still work — the chat UI falls back to <code className="text-foreground">message</code> /

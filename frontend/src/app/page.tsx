@@ -36,16 +36,10 @@ export default function Dashboard() {
           <span className="font-semibold text-base">OpenGraph</span>
         </div>
         <div className="flex items-center gap-2">
-          <Link href="/chat">
-            <Button variant="ghost" size="sm" className="gap-1.5">
-              <MessageSquare className="h-4 w-4" />
-              Chat
-            </Button>
-          </Link>
           <Link href="/converse">
             <Button variant="ghost" size="sm" className="gap-1.5">
               <MessageSquare className="h-4 w-4" />
-              Converse
+              聊天
             </Button>
           </Link>
           <Link href="/docs">
@@ -134,20 +128,12 @@ function ScriptCard({ script }: { script: ScriptSummary }) {
         </span>
         <div className="ml-auto flex items-center gap-1">
           <Link
-            href={`/chat?id=${script.id}`}
-            className="flex items-center gap-1 hover:text-primary px-1.5 py-0.5 rounded transition-colors"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <MessageSquare className="h-3 w-3" />
-            Chat
-          </Link>
-          <Link
             href={`/converse?id=${script.id}`}
             className="flex items-center gap-1 hover:text-primary px-1.5 py-0.5 rounded transition-colors"
             onClick={(e) => e.stopPropagation()}
           >
             <MessageSquare className="h-3 w-3" />
-            Converse
+            聊天
           </Link>
           <Link
             href={`/script/?id=${script.id}`}
