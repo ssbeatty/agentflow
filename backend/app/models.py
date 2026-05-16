@@ -18,6 +18,7 @@ class Script(Base):
     description = Column(Text, default="")
     entry_function = Column(String(255), default="run")
     requirements = Column(Text, default="")
+    mcp_server_ids = Column(JSON, default=list)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

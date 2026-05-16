@@ -29,6 +29,7 @@ class ScriptCreate(BaseModel):
     description: str = ""
     entry_function: str = "run"
     requirements: str = ""
+    mcp_server_ids: list[str] = []
 
 
 class ScriptUpdate(BaseModel):
@@ -36,6 +37,7 @@ class ScriptUpdate(BaseModel):
     description: Optional[str] = None
     entry_function: Optional[str] = None
     requirements: Optional[str] = None
+    mcp_server_ids: Optional[list[str]] = None
 
 
 class ScriptSummary(BaseModel):
@@ -43,6 +45,7 @@ class ScriptSummary(BaseModel):
     name: str
     description: str
     entry_function: str
+    mcp_server_ids: list[str] = []
     created_at: datetime
     updated_at: datetime
 

@@ -186,6 +186,38 @@ def _get_builtin_tools() -> list:
 
 # ── Public tool API ────────────────────────────────────────────────────────────
 
+def _ensure_sync(tool):
+    """
+    Add sync support to async-only MCP tools so they work with agent.invoke().
+
+    langchain-mcp-adapters creates StructuredTool instances with only `coroutine`
+    set (no `func`).  LangGraph's ToolNode calls tool._run() in sync context,
+    which raises NotImplementedError.  We add a sync wrapper that delegates to
+    the async implementation via the event loop; nest_asyncio (applied in the
+    runner) allows this nested call even inside an already-running loop.
+    """
+    import asyncio
+    from langchain_core.tools import StructuredTool
+
+    if not isinstance(tool, StructuredTool) or getattr(tool, "func", None) is not None:
+        return tool
+    coro_fn = getattr(tool, "coroutine", None)
+    if coro_fn is None:
+        return tool
+
+    def _sync_run(**kw):
+        return asyncio.get_event_loop().run_until_complete(coro_fn(**kw))
+
+    return StructuredTool(
+        name=tool.name,
+        description=tool.description or "",
+        func=_sync_run,
+        coroutine=coro_fn,
+        args_schema=getattr(tool, "args_schema", None),
+        return_direct=getattr(tool, "return_direct", False),
+    )
+
+
 def get_tools(
     servers: list[str] | None = None,
     include_builtins: bool = True,
@@ -205,14 +237,15 @@ def get_tools(
     """
     result = list(_get_builtin_tools()) if include_builtins else []
     if servers is None:
-        result.extend(_injected_tools)
+        to_inject = _injected_tools
     else:
         server_set = set(servers)
-        for t in _injected_tools:
+        to_inject = [
+            t for t in _injected_tools
             # langchain-mcp-adapters prefixes tool names with "<server>__<tool>"
-            prefix = (getattr(t, "name", "") or "").split("__")[0]
-            if prefix in server_set:
-                result.append(t)
+            if (getattr(t, "name", "") or "").split("__")[0] in server_set
+        ]
+    result.extend(_ensure_sync(t) for t in to_inject)
     return result
 
 

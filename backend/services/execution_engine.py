@@ -117,6 +117,11 @@ try:
 except ImportError:
     pass
 
+# Silence noisy third-party loggers that write INFO to stderr (captured as [ERR] by the platform).
+import logging as _logging
+for _noisy in ("mcp", "httpx", "httpcore", "openai", "anthropic"):
+    _logging.getLogger(_noisy).setLevel(_logging.WARNING)
+
 async def _main():
     import agentflow as _af
 
@@ -138,9 +143,9 @@ async def _main():
     if _mcp:
         try:
             from langchain_mcp_adapters.client import MultiServerMCPClient
-            async with MultiServerMCPClient(_mcp) as _client:
-                _af._injected_tools = await _client.get_tools()
-                await _run()
+            _client = MultiServerMCPClient(_mcp)
+            _af._injected_tools = await _client.get_tools()
+            await _run()
         except ImportError:
             print("[agentflow] langchain-mcp-adapters not installed; MCP tools unavailable", file=sys.stderr)
             await _run()
@@ -204,21 +209,26 @@ async def start_execution(execution_id: str) -> None:
                 llm_envs["AGENTFLOW_LLM_DEFAULT"] = payload
         llm_envs["AGENTFLOW_LLM_NAMES"] = json.dumps(llm_names)
 
-        # ── build MCP server configs ──────────────────────────────────────────
+        # ── build MCP server configs (only servers the script opted into) ──────
+        selected_ids: list[str] = script.mcp_server_ids or []
         mcp_configs: dict[str, dict] = {}
-        for srv in db.query(MCPServerConfig).filter_by(enabled=True).all():
-            cfg: dict = {"transport": srv.transport}
-            if srv.url:
-                cfg["url"] = srv.url
-            if srv.command:
-                cfg["command"] = srv.command
-            if srv.args:
-                cfg["args"] = srv.args
-            if srv.env_vars:
-                cfg["env"] = srv.env_vars
-            if srv.headers:
-                cfg["headers"] = srv.headers
-            mcp_configs[srv.name] = cfg
+        if selected_ids:
+            for srv in db.query(MCPServerConfig).filter(
+                MCPServerConfig.id.in_(selected_ids),
+                MCPServerConfig.enabled == True,  # noqa: E712
+            ).all():
+                cfg: dict = {"transport": srv.transport}
+                if srv.url:
+                    cfg["url"] = srv.url
+                if srv.command:
+                    cfg["command"] = srv.command
+                if srv.args:
+                    cfg["args"] = srv.args
+                if srv.env_vars:
+                    cfg["env"] = srv.env_vars
+                if srv.headers:
+                    cfg["headers"] = srv.headers
+                mcp_configs[srv.name] = cfg
         llm_envs["AGENTFLOW_MCP_CONFIGS"] = json.dumps(mcp_configs)
 
         # ── write runner + input ──────────────────────────────────────────────

@@ -13,6 +13,7 @@ export interface Script {
   description: string;
   entry_function: string;
   requirements: string;
+  mcp_server_ids: string[];
   created_at: string;
   updated_at: string;
   files: ScriptFile[];
@@ -23,6 +24,7 @@ export interface ScriptSummary {
   name: string;
   description: string;
   entry_function: string;
+  mcp_server_ids: string[];
   created_at: string;
   updated_at: string;
 }

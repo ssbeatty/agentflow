@@ -5,11 +5,11 @@ import Link from "next/link";
 import {
   ArrowLeft, Play, Square, Save, Terminal, Settings2,
   Clock, ChevronRight, Loader2, Package, FileCode, CalendarClock,
-  History, CheckCircle2, XCircle, MinusCircle, Copy, Trash2,
+  History, CheckCircle2, XCircle, MinusCircle, Copy, Trash2, Wrench,
 } from "lucide-react";
 import { toast } from "sonner";
-import { scripts, executions } from "@/lib/api";
-import type { Script, ExecutionLog, WsEvent } from "@/lib/types";
+import { scripts, executions, mcpServers } from "@/lib/api";
+import type { Script, ExecutionLog, WsEvent, MCPServerConfig } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -63,6 +63,8 @@ function ScriptPage() {
   const [entryFn, setEntryFn] = useState("run");
   const [mainContent, setMainContent] = useState("");
   const [requirements, setRequirements] = useState("");
+  const [selectedMcpIds, setSelectedMcpIds] = useState<string[]>([]);
+  const [availableMcpServers, setAvailableMcpServers] = useState<MCPServerConfig[]>([]);
   const [inputJson, setInputJson] = useState("{}");
   const [inputError, setInputError] = useState("");
 
@@ -98,12 +100,14 @@ function ScriptPage() {
   });
 
   useEffect(() => {
-    scripts.get(id)
-      .then((s) => {
+    Promise.all([scripts.get(id), mcpServers.list()])
+      .then(([s, servers]) => {
         setScript(s);
         setName(s.name);
         setEntryFn(s.entry_function);
         setRequirements(s.requirements || "");
+        setSelectedMcpIds(s.mcp_server_ids || []);
+        setAvailableMcpServers(servers.filter((srv) => srv.enabled));
         const main = s.files.find((f) => f.is_main) ?? s.files[0];
         if (main) setMainContent(main.content);
       })
@@ -189,7 +193,7 @@ function ScriptPage() {
     setSaving(true);
     try {
       await Promise.all([
-        scripts.update(id, { name, entry_function: entryFn, requirements }),
+        scripts.update(id, { name, entry_function: entryFn, requirements, mcp_server_ids: selectedMcpIds }),
         scripts.upsertFile(id, {
           filename: "main.py",
           content: mainContent,
@@ -197,7 +201,7 @@ function ScriptPage() {
         }),
       ]);
       setDirty(false);
-      setScript((prev) => prev ? { ...prev, name, entry_function: entryFn, requirements } : prev);
+      setScript((prev) => prev ? { ...prev, name, entry_function: entryFn, requirements, mcp_server_ids: selectedMcpIds } : prev);
       toast.success("Saved");
     } catch (e: unknown) {
       toast.error(String(e));
@@ -391,6 +395,37 @@ function ScriptPage() {
                 </div>
               </div>
             </div>
+            {availableMcpServers.length > 0 && (
+              <div className="space-y-1.5">
+                <Label className="text-xs flex items-center gap-1.5">
+                  <Wrench className="h-3 w-3" />MCP Servers
+                </Label>
+                <div className="space-y-1">
+                  {availableMcpServers.map((srv) => {
+                    const checked = selectedMcpIds.includes(srv.id);
+                    return (
+                      <label key={srv.id} className="flex items-center gap-2 cursor-pointer group">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            setSelectedMcpIds((prev) =>
+                              checked ? prev.filter((x) => x !== srv.id) : [...prev, srv.id]
+                            );
+                            markDirty();
+                          }}
+                          className="rounded"
+                        />
+                        <span className="text-xs text-muted-foreground group-hover:text-foreground transition-colors">
+                          {srv.name}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground/60">{srv.transport}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <div className="space-y-1">
               <Label className="text-xs flex items-center justify-between">
                 Input JSON
