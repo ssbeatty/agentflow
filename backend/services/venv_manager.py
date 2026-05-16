@@ -60,7 +60,15 @@ def _uv() -> str | None:
 BASELINE_PACKAGES = [
     "langchain-core",
     "langchain-openai",
+    "langchain-deepseek",
     "langgraph",
+    # agentflow built-in tool support
+    "httpx",
+    "ddgs",
+    # MCP client (optional at runtime, gracefully skipped if unused)
+    "langchain-mcp-adapters",
+    # allows nested asyncio.run() when sync LangGraph calls tools inside our async runner
+    "nest-asyncio",
 ]
 
 

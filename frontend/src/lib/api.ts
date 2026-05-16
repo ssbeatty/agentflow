@@ -3,6 +3,7 @@ import type {
   Execution, ExecutionSummary,
   LLMConfig,
   CronJob,
+  MCPServerConfig,
 } from "./types";
 
 const BASE = "/api";
@@ -95,6 +96,20 @@ export const llmConfigs = {
   delete: (id: string) => req<void>(`/llm-configs/${id}`, { method: "DELETE" }),
 
   setDefault: (id: string) => req<LLMConfig>(`/llm-configs/${id}/set-default`, { method: "POST" }),
+};
+
+// ── MCP Servers ────────────────────────────────────────────────────────────────
+
+export const mcpServers = {
+  list: () => req<MCPServerConfig[]>("/mcp-servers"),
+
+  create: (data: Omit<MCPServerConfig, "id" | "created_at" | "updated_at">) =>
+    req<MCPServerConfig>("/mcp-servers", { method: "POST", body: JSON.stringify(data) }),
+
+  update: (id: string, data: Partial<Omit<MCPServerConfig, "id" | "created_at" | "updated_at">>) =>
+    req<MCPServerConfig>(`/mcp-servers/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+
+  delete: (id: string) => req<void>(`/mcp-servers/${id}`, { method: "DELETE" }),
 };
 
 // ── Cron Jobs ──────────────────────────────────────────────────────────────────

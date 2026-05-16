@@ -82,6 +82,20 @@ export interface CronJob {
   created_at: string;
 }
 
+export interface MCPServerConfig {
+  id: string;
+  name: string;
+  transport: "http" | "sse" | "stdio" | "websocket";
+  url?: string;
+  command?: string;
+  args?: string[];
+  env_vars?: Record<string, string>;
+  headers?: Record<string, string>;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 // WebSocket events
 export type WsEvent =
   | { type: "log"; level: string; message: string; data?: unknown; step?: string; timestamp: string }

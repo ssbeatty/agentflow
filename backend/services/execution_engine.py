@@ -91,10 +91,12 @@ def _write_runner(script_dir: Path, entry_fn: str, execution_id: str, llm_envs: 
     backend_root = str(BACKEND_ROOT).replace("\\", "/")
     script_dir_s = str(script_dir).replace("\\", "/")
     input_file = script_dir / f"_input_{execution_id}.json"
+    input_path = str(input_file).replace("\\", "/")
 
     runner = script_dir / f"_runner_{execution_id}.py"
     runner.write_text(
-        f'''import sys, os, json, traceback
+        f'''import sys, os, json, traceback, asyncio, inspect
+import importlib.util
 from pathlib import Path
 
 sys.path.insert(0, r"{backend_root}")
@@ -108,23 +110,45 @@ _P = "{_PREFIX}"
 def _emit(d):
     print(_P + json.dumps(d, ensure_ascii=False), flush=True)
 
+# Allow nested asyncio.run() so sync LangGraph .invoke() can call tools inside our async runner.
 try:
-    import importlib.util
-    spec = importlib.util.spec_from_file_location(
-        "user_script", r"{script_dir_s}/main.py"
-    )
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules["user_script"] = mod
-    spec.loader.exec_module(mod)
+    import nest_asyncio
+    nest_asyncio.apply()
+except ImportError:
+    pass
 
-    fn = getattr(mod, "{entry_fn}")
-    inp = json.loads(Path(r"{str(input_file).replace(chr(92), '/')}").read_text(encoding="utf-8"))
-    result = fn(inp)
+async def _main():
+    import agentflow as _af
 
-    _emit({{"type": "result", "data": result
-        if isinstance(result, (dict, list, str, int, float, bool, type(None)))
-        else str(result)}})
+    _mcp = json.loads(os.environ.get("AGENTFLOW_MCP_CONFIGS", "{{}}"))
 
+    async def _run():
+        spec = importlib.util.spec_from_file_location("user_script", r"{script_dir_s}/main.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["user_script"] = mod
+        spec.loader.exec_module(mod)
+
+        fn = getattr(mod, "{entry_fn}")
+        inp = json.loads(Path(r"{input_path}").read_text(encoding="utf-8"))
+        result = await fn(inp) if inspect.iscoroutinefunction(fn) else fn(inp)
+        _emit({{"type": "result", "data": result
+            if isinstance(result, (dict, list, str, int, float, bool, type(None)))
+            else str(result)}})
+
+    if _mcp:
+        try:
+            from langchain_mcp_adapters.client import MultiServerMCPClient
+            async with MultiServerMCPClient(_mcp) as _client:
+                _af._injected_tools = await _client.get_tools()
+                await _run()
+        except ImportError:
+            print("[agentflow] langchain-mcp-adapters not installed; MCP tools unavailable", file=sys.stderr)
+            await _run()
+    else:
+        await _run()
+
+try:
+    asyncio.run(_main())
 except SystemExit as e:
     sys.exit(e.code or 0)
 except Exception as exc:
@@ -156,7 +180,7 @@ async def start_execution(execution_id: str) -> None:
             target.write_text(f.content, encoding="utf-8")
 
         # ── build LLM env vars ────────────────────────────────────────────────
-        from app.models import LLMConfig
+        from app.models import LLMConfig, MCPServerConfig
         import re
         def _norm(name: str) -> str:
             # POSIX-safe env var key: uppercase, non-alphanumeric -> _
@@ -180,6 +204,23 @@ async def start_execution(execution_id: str) -> None:
                 llm_envs["AGENTFLOW_LLM_DEFAULT"] = payload
         llm_envs["AGENTFLOW_LLM_NAMES"] = json.dumps(llm_names)
 
+        # ── build MCP server configs ──────────────────────────────────────────
+        mcp_configs: dict[str, dict] = {}
+        for srv in db.query(MCPServerConfig).filter_by(enabled=True).all():
+            cfg: dict = {"transport": srv.transport}
+            if srv.url:
+                cfg["url"] = srv.url
+            if srv.command:
+                cfg["command"] = srv.command
+            if srv.args:
+                cfg["args"] = srv.args
+            if srv.env_vars:
+                cfg["env"] = srv.env_vars
+            if srv.headers:
+                cfg["headers"] = srv.headers
+            mcp_configs[srv.name] = cfg
+        llm_envs["AGENTFLOW_MCP_CONFIGS"] = json.dumps(mcp_configs)
+
         # ── write runner + input ──────────────────────────────────────────────
         runner, input_file = _write_runner(script_dir, script.entry_function, execution_id, llm_envs)
         input_file.write_text(json.dumps(exc_row.input_data or {}), encoding="utf-8")
@@ -194,10 +235,11 @@ async def start_execution(execution_id: str) -> None:
 
         await ws_manager.send(execution_id, {"type": "status", "status": "running"})
 
-        # diagnostic log so users can see which LLM configs are wired up
+        # diagnostic log so users can see which LLM/MCP configs are wired up
         diag_msg = (
-            f"LLM configs available: {[llm.name for llm in llms]}; "
-            f"default={'yes' if any(l.is_default for l in llms) else 'no'}"
+            f"LLM configs: {[llm.name for llm in llms]}; "
+            f"default={'yes' if any(l.is_default for l in llms) else 'no'}; "
+            f"MCP servers: {list(mcp_configs.keys()) or 'none'}"
         )
         _persist_log(db, execution_id, {"level": "debug", "message": diag_msg, "step": "_engine"})
         await ws_manager.send(execution_id, {

@@ -9,6 +9,158 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
+import { FileCode, Search, Wrench, Globe, Zap } from "lucide-react";
+import { cn } from "@/lib/utils";
+
+// ── Templates ──────────────────────────────────────────────────────────────────
+
+interface Template {
+  id: string;
+  label: string;
+  description: string;
+  icon: React.ReactNode;
+  entryFunction: string;
+  mainPy: string | null;   // null → use backend default
+}
+
+const TEMPLATES: Template[] = [
+  {
+    id: "blank",
+    label: "Blank",
+    description: "Basic run() starter",
+    icon: <FileCode className="h-4 w-4" />,
+    entryFunction: "run",
+    mainPy: null,
+  },
+  {
+    id: "search-agent",
+    label: "Chat Agent",
+    description: "Multi-turn chat with web search support",
+    icon: <Search className="h-4 w-4" />,
+    entryFunction: "run",
+    mainPy:
+`from agentflow import log, get_agent
+
+
+def run(input: dict) -> dict:
+    message = input.get("message", "")
+    history = input.get("history", [])
+
+    agent = get_agent(
+        system_prompt=(
+            "You are a helpful assistant. "
+            "Use web_search to find current information and web_fetch to read specific pages."
+        )
+    )
+
+    messages = [
+        ("human" if m["role"] == "user" else "ai", m["content"])
+        for m in history
+    ]
+    messages.append(("human", message))
+
+    result = agent.invoke({"messages": messages})
+    reply = result["messages"][-1].content
+
+    log(f"Steps taken: {len(result['messages'])}", step="done")
+    return {"reply": reply}
+`,
+  },
+  {
+    id: "tool-diagnostics",
+    label: "Tool Diagnostics",
+    description: "Verify built-in & MCP tools (no LLM needed)",
+    icon: <Wrench className="h-4 w-4" />,
+    entryFunction: "run",
+    mainPy:
+`from agentflow import log, get_tools
+
+
+def run(input: dict) -> dict:
+    """List available tools and run a quick smoke-test for each built-in."""
+    tools = get_tools()
+    names = [t.name for t in tools]
+    log(f"Available tools: {names}", step="init")
+
+    query = input.get("query", "LangGraph tutorial")
+    search = next((t for t in tools if t.name == "web_search"), None)
+    fetch  = next((t for t in tools if t.name == "web_fetch"),  None)
+
+    results: dict = {"tools": names}
+
+    if search:
+        results["search_preview"] = search.invoke({"query": query, "max_results": 3})[:600]
+        log("web_search OK", step="search")
+
+    if fetch:
+        results["fetch_preview"] = fetch.invoke({"url": "https://example.com"})[:300]
+        log("web_fetch OK", step="fetch")
+
+    return results
+`,
+  },
+  {
+    id: "webpage-summary",
+    label: "Webpage Summary",
+    description: "Fetch a URL and summarise with LLM",
+    icon: <Globe className="h-4 w-4" />,
+    entryFunction: "run",
+    mainPy:
+`from agentflow import log, get_agent
+
+
+def run(input: dict) -> dict:
+    url      = input.get("url", "https://example.com")
+    question = input.get("question", "What is this page about?")
+
+    log(f"Fetching: {url}", step="start")
+
+    agent = get_agent(
+        system_prompt="You are a concise summariser. Use web_fetch to read the given page."
+    )
+    result = agent.invoke({
+        "messages": [("human", f"Fetch {url} and answer: {question}")]
+    })
+
+    answer = result["messages"][-1].content
+    log("Done", step="done")
+    return {"url": url, "question": question, "answer": answer}
+`,
+  },
+  {
+    id: "async-agent",
+    label: "Async Agent",
+    description: "Async entry function with ainvoke",
+    icon: <Zap className="h-4 w-4" />,
+    entryFunction: "run",
+    mainPy:
+`from agentflow import log, get_agent
+
+
+async def run(input: dict) -> dict:
+    message = input.get("message", "")
+    history = input.get("history", [])
+
+    log("Starting async run", step="init")
+
+    agent = get_agent()
+
+    messages = [
+        ("human" if m["role"] == "user" else "ai", m["content"])
+        for m in history
+    ]
+    messages.append(("human", message))
+
+    result = await agent.ainvoke({"messages": messages})
+    reply = result["messages"][-1].content
+
+    log(f"Steps: {len(result['messages'])}", step="done")
+    return {"reply": reply}
+`,
+  },
+];
+
+// ── Component ──────────────────────────────────────────────────────────────────
 
 interface Props {
   open: boolean;
@@ -17,18 +169,48 @@ interface Props {
 }
 
 export default function CreateScriptDialog({ open, onOpenChange, onCreated }: Props) {
-  const [name, setName] = useState("");
+  const [name, setName]               = useState("");
   const [description, setDescription] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [templateId, setTemplateId]   = useState("blank");
+  const [loading, setLoading]         = useState(false);
+
+  function selectTemplate(t: Template) {
+    setTemplateId(t.id);
+    if (!name.trim() && t.id !== "blank") {
+      setName(t.label);
+    }
+  }
+
+  function reset() {
+    setName("");
+    setDescription("");
+    setTemplateId("blank");
+  }
 
   async function handleCreate() {
     if (!name.trim()) return toast.error("Name is required");
     setLoading(true);
     try {
-      const s = await scripts.create({ name: name.trim(), description });
+      const tpl = TEMPLATES.find(t => t.id === templateId) ?? TEMPLATES[0];
+
+      // 1. create the script (backend generates default main.py)
+      const s = await scripts.create({
+        name: name.trim(),
+        description,
+        entry_function: tpl.entryFunction,
+      });
+
+      // 2. overwrite main.py with template content if not blank
+      if (tpl.mainPy) {
+        await scripts.upsertFile(s.id, {
+          filename: "main.py",
+          content: tpl.mainPy,
+          is_main: true,
+        });
+      }
+
       onCreated(s);
-      setName("");
-      setDescription("");
+      reset();
       toast.success("Script created");
     } catch (e: unknown) {
       toast.error(String(e));
@@ -38,36 +220,64 @@ export default function CreateScriptDialog({ open, onOpenChange, onCreated }: Pr
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+    <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) reset(); }}>
+      <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>New Script</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4 py-2">
-          <div className="space-y-1.5">
-            <Label>Name</Label>
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="My LangGraph Agent"
-              onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-              autoFocus
-            />
+
+        <div className="space-y-5 py-1">
+          {/* Template picker */}
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground uppercase tracking-wide">Template</Label>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {TEMPLATES.map(t => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => selectTemplate(t)}
+                  className={cn(
+                    "flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors hover:bg-secondary/60",
+                    templateId === t.id
+                      ? "border-primary bg-primary/5"
+                      : "border-border bg-secondary/20",
+                  )}
+                >
+                  <span className={cn("text-muted-foreground", templateId === t.id && "text-primary")}>
+                    {t.icon}
+                  </span>
+                  <span className="text-xs font-medium leading-tight">{t.label}</span>
+                  <span className="text-[10px] text-muted-foreground leading-tight">{t.description}</span>
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="space-y-1.5">
-            <Label>Description <span className="text-muted-foreground">(optional)</span></Label>
-            <Input
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="What does this agent do?"
-            />
+
+          {/* Name + description */}
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label>Name</Label>
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="My LangGraph Agent"
+                onKeyDown={(e) => e.key === "Enter" && handleCreate()}
+                autoFocus
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Description <span className="text-muted-foreground">(optional)</span></Label>
+              <Input
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="What does this agent do?"
+              />
+            </div>
           </div>
-          <p className="text-xs text-muted-foreground">
-            A starter <code className="font-mono">main.py</code> with a <code className="font-mono">run(input)</code> function will be generated. You can rename the entry function later in the script editor.
-          </p>
         </div>
+
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="outline" onClick={() => { onOpenChange(false); reset(); }}>Cancel</Button>
           <Button onClick={handleCreate} disabled={loading}>
             {loading ? "Creating…" : "Create"}
           </Button>

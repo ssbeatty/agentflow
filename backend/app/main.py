@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 
 from app.config import settings
 from app.database import engine, Base
-from app.routers import scripts, executions, llm_configs, cron_jobs, ws
+from app.routers import scripts, executions, llm_configs, cron_jobs, ws, mcp_servers
 from services.scheduler import scheduler_service
 
 agentflow_mcp = None
@@ -73,6 +73,7 @@ app.include_router(executions.router,  prefix="/api/executions",  tags=["executi
 app.include_router(llm_configs.router, prefix="/api/llm-configs", tags=["llm-configs"])
 app.include_router(cron_jobs.router,   prefix="/api/cron-jobs",   tags=["cron-jobs"])
 app.include_router(ws.router,          prefix="/ws",              tags=["websocket"])
+app.include_router(mcp_servers.router, prefix="/api/mcp-servers", tags=["mcp-servers"])
 
 if agentflow_mcp is not None:
     @app.api_route("/mcp", methods=["GET", "HEAD", "POST", "DELETE", "OPTIONS"], include_in_schema=False)

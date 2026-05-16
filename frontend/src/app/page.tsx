@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Plus, Play, Clock, Settings, Zap, MessageSquare, BookOpen } from "lucide-react";
+import { Plus, Play, Clock, Settings, Zap, MessageSquare, BookOpen, Wrench } from "lucide-react";
 import { toast } from "sonner";
 import { scripts } from "@/lib/api";
 import type { ScriptSummary } from "@/lib/types";
@@ -46,6 +46,12 @@ export default function Dashboard() {
             <Button variant="ghost" size="sm" className="gap-1.5">
               <BookOpen className="h-4 w-4" />
               Docs
+            </Button>
+          </Link>
+          <Link href="/tools">
+            <Button variant="ghost" size="sm" className="gap-1.5">
+              <Wrench className="h-4 w-4" />
+              Tools
             </Button>
           </Link>
           <Link href="/settings">

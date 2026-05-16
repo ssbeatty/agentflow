@@ -86,6 +86,22 @@ class LLMConfig(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class MCPServerConfig(Base):
+    __tablename__ = "mcp_server_configs"
+
+    id = Column(String, primary_key=True, default=_id)
+    name = Column(String(255), nullable=False, unique=True)
+    transport = Column(String(50), nullable=False, default="http")  # http/sse/stdio/websocket
+    url = Column(String(500), nullable=True)
+    command = Column(String(500), nullable=True)
+    args = Column(JSON, nullable=True)       # list[str] for stdio
+    env_vars = Column(JSON, nullable=True)   # dict for stdio extra env
+    headers = Column(JSON, nullable=True)    # dict for http/sse auth headers
+    enabled = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class CronJob(Base):
     __tablename__ = "cron_jobs"
 

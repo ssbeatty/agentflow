@@ -126,6 +126,46 @@ class LLMConfigOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# ── MCPServerConfig ───────────────────────────────────────────────────────────
+
+class MCPServerCreate(BaseModel):
+    name: str
+    transport: str = "http"
+    url: Optional[str] = None
+    command: Optional[str] = None
+    args: Optional[list[str]] = None
+    env_vars: Optional[dict] = None
+    headers: Optional[dict] = None
+    enabled: bool = True
+
+
+class MCPServerUpdate(BaseModel):
+    name: Optional[str] = None
+    transport: Optional[str] = None
+    url: Optional[str] = None
+    command: Optional[str] = None
+    args: Optional[list[str]] = None
+    env_vars: Optional[dict] = None
+    headers: Optional[dict] = None
+    enabled: Optional[bool] = None
+
+
+class MCPServerOut(BaseModel):
+    id: str
+    name: str
+    transport: str
+    url: Optional[str] = None
+    command: Optional[str] = None
+    args: Optional[list[str]] = None
+    env_vars: Optional[dict] = None
+    headers: Optional[dict] = None
+    enabled: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 # ── CronJob ───────────────────────────────────────────────────────────────────
 
 class CronJobCreate(BaseModel):

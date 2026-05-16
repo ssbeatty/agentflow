@@ -5,7 +5,7 @@ import Link from "next/link";
 import {
   ArrowLeft, Play, Square, Save, Terminal, Settings2,
   Clock, ChevronRight, Loader2, Package, FileCode, CalendarClock,
-  History, CheckCircle2, XCircle, MinusCircle, Copy,
+  History, CheckCircle2, XCircle, MinusCircle, Copy, Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { scripts, executions } from "@/lib/api";
@@ -18,6 +18,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
+} from "@/components/ui/dialog";
 import ScriptEditor, { type LintIssue } from "@/components/ScriptEditor";
 import LogPanel from "@/components/LogPanel";
 import DependencyManager from "@/components/DependencyManager";
@@ -71,6 +74,8 @@ function ScriptPage() {
   const wsRef = useRef<WebSocket | null>(null);
 
   const [lintIssues, setLintIssues] = useState<LintIssue[]>([]);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // debounced lint
   useEffect(() => {
@@ -201,6 +206,19 @@ function ScriptPage() {
     }
   }
 
+  async function handleDelete() {
+    setDeleting(true);
+    try {
+      await scripts.delete(id);
+      toast.success("Script deleted");
+      router.push("/");
+    } catch (e: unknown) {
+      toast.error(String(e));
+      setDeleting(false);
+      setDeleteOpen(false);
+    }
+  }
+
   function markDirty() { setDirty(true); }
 
   if (loading) {
@@ -236,6 +254,15 @@ function ScriptPage() {
           }}
         >
           <Copy className="h-3 w-3" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-muted-foreground hover:text-destructive"
+          title="Delete script"
+          onClick={() => setDeleteOpen(true)}
+        >
+          <Trash2 className="h-3 w-3" />
         </Button>
         {dirty && <span className="text-xs text-muted-foreground">unsaved</span>}
         {lintIssues.length > 0 && (
@@ -410,6 +437,26 @@ function ScriptPage() {
           </div>
         </div>
       </div>
+
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete script?</DialogTitle>
+            <DialogDescription>
+              <span className="font-medium text-foreground">{name}</span> and all its runs will be permanently deleted. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
+              {deleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -418,7 +465,6 @@ function ScriptPage() {
 
 import { cronJobs } from "@/lib/api";
 import type { CronJob, ExecutionSummary } from "@/lib/types";
-import { Trash2 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
 function RunsTab({
