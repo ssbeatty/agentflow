@@ -241,13 +241,16 @@ def _lint_source(source: str, filename: str, entry_function: str) -> list[dict[s
     return issues
 
 
-def _project_rules_text() -> str:
+def _read_claude_md() -> str:
     claude_path = BACKEND_ROOT.parent / "CLAUDE.md"
     try:
-        claude = claude_path.read_text(encoding="utf-8")
+        return claude_path.read_text(encoding="utf-8")
     except Exception as e:
-        claude = f"CLAUDE.md could not be read: {e}"
-    return f"{AGENTFLOW_MCP_INSTRUCTIONS}\n\n# CLAUDE.md\n\n{claude}"
+        return f"CLAUDE.md could not be read: {e}"
+
+
+def _project_rules_text() -> str:
+    return f"{AGENTFLOW_MCP_INSTRUCTIONS}\n\n# CLAUDE.md\n\n{_read_claude_md()}"
 
 
 async def _collect_lines(stream, max_lines: int) -> list[str]:
@@ -297,7 +300,7 @@ def get_agentflow_rules(include_claude: bool = True) -> dict[str, Any]:
     """Return the rules an AI should follow when authoring AgentFlow scripts."""
     return {
         "instructions": AGENTFLOW_MCP_INSTRUCTIONS,
-        "claude_md": _project_rules_text() if include_claude else None,
+        "claude_md": _read_claude_md() if include_claude else None,
     }
 
 
@@ -404,7 +407,10 @@ def upsert_script_file(
     is_main: bool = False,
 ) -> dict[str, Any]:
     """Create or replace a script file. main.py is the file the runner imports."""
-    filename = normalize_script_filename(filename)
+    try:
+        filename = normalize_script_filename(filename)
+    except ValueError as e:
+        raise ToolError(str(e))
     if is_main and filename != "main.py":
         raise ToolError("AgentFlow executes main.py; only main.py can be marked as main")
 
@@ -442,7 +448,10 @@ def upsert_script_file(
 @mcp.tool()
 def delete_script_file(script_id: str, filename: str) -> dict[str, Any]:
     """Delete a non-main file from a script."""
-    filename = normalize_script_filename(filename)
+    try:
+        filename = normalize_script_filename(filename)
+    except ValueError as e:
+        raise ToolError(str(e))
     db = _db()
     try:
         _require_script(db, script_id)
@@ -480,7 +489,10 @@ def lint_script_file(
     source: str | None = None,
 ) -> dict[str, Any]:
     """Run static Python syntax checks and entry-function checks for a script file."""
-    filename = normalize_script_filename(filename)
+    try:
+        filename = normalize_script_filename(filename)
+    except ValueError as e:
+        raise ToolError(str(e))
     db = _db()
     try:
         script = _require_script(db, script_id)

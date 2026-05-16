@@ -75,7 +75,7 @@ app.include_router(cron_jobs.router,   prefix="/api/cron-jobs",   tags=["cron-jo
 app.include_router(ws.router,          prefix="/ws",              tags=["websocket"])
 
 if agentflow_mcp is not None:
-    @app.api_route("/mcp", methods=["GET", "POST", "DELETE"], include_in_schema=False)
+    @app.api_route("/mcp", methods=["GET", "HEAD", "POST", "DELETE", "OPTIONS"], include_in_schema=False)
     async def mcp_redirect(request: Request):
         return RedirectResponse(str(request.url.replace(path="/mcp/")), status_code=307)
 
