@@ -16,7 +16,8 @@
       "envFile": "${workspaceFolder}/backend/.env",
       "justMyCode": false,
       "subProcess": false,
-      "console": "integratedTerminal"
+      "console": "integratedTerminal",
+      "preLaunchTask": "Build Frontend"
     }
   ]
 }
