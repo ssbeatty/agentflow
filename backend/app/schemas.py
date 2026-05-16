@@ -198,3 +198,51 @@ class CronJobOut(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+# ── Conversation ──────────────────────────────────────────────────────────────
+
+class ConversationMessageOut(BaseModel):
+    id: str
+    conversation_id: str
+    role: str
+    content: str
+    error: Optional[str] = None
+    execution_id: Optional[str] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ConversationCreate(BaseModel):
+    script_id: str
+    title: str = "New conversation"
+    context_turns: int = 10
+
+
+class ConversationUpdate(BaseModel):
+    title: Optional[str] = None
+    context_turns: Optional[int] = None
+
+
+class ConversationSummary(BaseModel):
+    id: str
+    script_id: str
+    title: str
+    context_turns: int
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ConversationDetail(ConversationSummary):
+    messages: list[ConversationMessageOut] = []
+
+
+class ConverseChatStartRequest(BaseModel):
+    message: str
+
+
+class ConverseConfirmRequest(BaseModel):
+    execution_id: str

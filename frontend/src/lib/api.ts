@@ -4,6 +4,7 @@ import type {
   LLMConfig,
   CronJob,
   MCPServerConfig,
+  Conversation, ConversationSummary, ConversationMessage,
 } from "./types";
 
 const BASE = "/api";
@@ -110,6 +111,38 @@ export const mcpServers = {
     req<MCPServerConfig>(`/mcp-servers/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
 
   delete: (id: string) => req<void>(`/mcp-servers/${id}`, { method: "DELETE" }),
+};
+
+// ── Conversations ──────────────────────────────────────────────────────────────
+
+export const conversations = {
+  list: (scriptId?: string) =>
+    req<ConversationSummary[]>(`/conversations${scriptId ? `?script_id=${scriptId}` : ""}`),
+
+  create: (data: { script_id: string; title?: string; context_turns?: number }) =>
+    req<Conversation>("/conversations", { method: "POST", body: JSON.stringify(data) }),
+
+  get: (id: string) => req<Conversation>(`/conversations/${id}`),
+
+  update: (id: string, data: { title?: string; context_turns?: number }) =>
+    req<ConversationSummary>(`/conversations/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+
+  delete: (id: string) => req<void>(`/conversations/${id}`, { method: "DELETE" }),
+
+  chatStart: (id: string, message: string) =>
+    req<{ execution_id: string; user_msg_id: string }>(`/conversations/${id}/chat`, {
+      method: "POST",
+      body: JSON.stringify({ message }),
+    }),
+
+  confirm: (id: string, execution_id: string) =>
+    req<ConversationMessage>(`/conversations/${id}/confirm`, {
+      method: "POST",
+      body: JSON.stringify({ execution_id }),
+    }),
+
+  deleteMessage: (convId: string, msgId: string) =>
+    req<void>(`/conversations/${convId}/messages/${msgId}`, { method: "DELETE" }),
 };
 
 // ── Cron Jobs ──────────────────────────────────────────────────────────────────

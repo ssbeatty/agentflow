@@ -42,6 +42,12 @@ export default function Dashboard() {
               Chat
             </Button>
           </Link>
+          <Link href="/converse">
+            <Button variant="ghost" size="sm" className="gap-1.5">
+              <MessageSquare className="h-4 w-4" />
+              Converse
+            </Button>
+          </Link>
           <Link href="/docs">
             <Button variant="ghost" size="sm" className="gap-1.5">
               <BookOpen className="h-4 w-4" />
@@ -134,6 +140,14 @@ function ScriptCard({ script }: { script: ScriptSummary }) {
           >
             <MessageSquare className="h-3 w-3" />
             Chat
+          </Link>
+          <Link
+            href={`/converse?id=${script.id}`}
+            className="flex items-center gap-1 hover:text-primary px-1.5 py-0.5 rounded transition-colors"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <MessageSquare className="h-3 w-3" />
+            Converse
           </Link>
           <Link
             href={`/script/?id=${script.id}`}

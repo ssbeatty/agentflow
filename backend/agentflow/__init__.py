@@ -53,6 +53,26 @@ def log(
         print(f"{tag} {message}", file=sys.stderr)
 
 
+def token(content: str) -> None:
+    """Stream a text token to the frontend in real time (for typewriter effect).
+
+    Call this inside your run() function as you receive chunks from the LLM.
+    Tokens are broadcast via WebSocket and are NOT stored in the database.
+    The final return value of run() is still used as the persisted reply.
+
+    Example:
+        async for chunk in llm.astream(messages):
+            if chunk.content:
+                token(chunk.content)
+                full_reply += chunk.content
+        return {"reply": full_reply}
+    """
+    _emit({"type": "token", "content": content})
+    if not _IN_PLATFORM:
+        sys.stdout.write(content)
+        sys.stdout.flush()
+
+
 def get_llm(name: str = "default"):
     """
     Return a LangChain chat model.

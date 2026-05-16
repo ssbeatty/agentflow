@@ -102,4 +102,30 @@ export interface MCPServerConfig {
 export type WsEvent =
   | { type: "log"; level: string; message: string; data?: unknown; step?: string; timestamp: string }
   | { type: "status"; status: Execution["status"]; output?: unknown; error?: string }
+  | { type: "token"; content: string }
   | { type: "ping" };
+
+// ── Conversation ──────────────────────────────────────────────────────────────
+
+export interface ConversationMessage {
+  id: string;
+  conversation_id: string;
+  role: "user" | "assistant";
+  content: string;
+  error?: string;
+  execution_id?: string;
+  created_at: string;
+}
+
+export interface ConversationSummary {
+  id: string;
+  script_id: string;
+  title: string;
+  context_turns: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Conversation extends ConversationSummary {
+  messages: ConversationMessage[];
+}

@@ -327,6 +327,12 @@ async def start_execution(execution_id: str) -> None:
                         "step": payload.get("step"),
                         "timestamp": datetime.utcnow().isoformat(),
                     })
+                elif t == "token":
+                    # Streaming token — broadcast via WS only, not persisted to DB
+                    await ws_manager.send(execution_id, {
+                        "type": "token",
+                        "content": payload.get("content", ""),
+                    })
                 elif t == "result":
                     result_data = payload.get("data")
                 elif t == "error":
