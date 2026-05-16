@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, BookOpen, Bot, Check, Copy, Globe2, ShieldCheck, Wrench } from "lucide-react";
+import { ArrowLeft, BookOpen, Check, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { scripts as scriptsApi } from "@/lib/api";
 import type { ScriptSummary } from "@/lib/types";
@@ -32,7 +32,7 @@ export default function DocsPage() {
           </Button>
         </Link>
         <BookOpen className="h-4 w-4 text-primary" />
-        <span className="text-sm font-medium">API & MCP Reference</span>
+        <span className="text-sm font-medium">API Reference</span>
 
         <div className="ml-auto flex items-center gap-2">
           <span className="text-xs text-muted-foreground">Examples for:</span>
@@ -56,99 +56,6 @@ export default function DocsPage() {
 
       <main className="flex-1 max-w-4xl mx-auto w-full px-6 py-8 space-y-10">
         <Intro origin={origin} />
-
-        <Section
-          title="MCP for AI clients"
-          desc="Connect your AI client to this URL when you want it to create scripts, edit files, run them, and inspect logs through AgentFlow."
-        >
-          <div className="grid gap-3 md:grid-cols-2">
-            <InfoBlock
-              icon={<Globe2 className="h-4 w-4" />}
-              title="MCP URL"
-              value={`${origin}/mcp/`}
-              desc="Use this in clients that support URL-based MCP / Streamable HTTP."
-            />
-            <InfoBlock
-              icon={<Bot className="h-4 w-4" />}
-              title="Transport"
-              value="Streamable HTTP"
-              desc="AgentFlow serves MCP over the same FastAPI process as the web UI."
-            />
-          </div>
-
-          <Code
-            label="url mcp config shape"
-            code={`{
-  "mcpServers": {
-    "agentflow": {
-      "type": "streamable-http",
-      "url": "${origin}/mcp/"
-    }
-  }
-}`}
-          />
-
-          <Code
-            label="with mcp auth token"
-            code={`{
-  "mcpServers": {
-    "agentflow": {
-      "type": "streamable-http",
-      "url": "${origin}/mcp/",
-      "headers": {
-        "Authorization": "Bearer <MCP_AUTH_TOKEN>"
-      }
-    }
-  }
-}`}
-          />
-
-          <Code
-            label="mcp inspector"
-            code={`# Start AgentFlow first
-cd backend
-uvicorn app.main:app --port 8000
-
-# In another terminal, open MCP Inspector and connect to:
-# ${origin}/mcp/
-npx -y @modelcontextprotocol/inspector`}
-          />
-
-          <div className="grid gap-3 md:grid-cols-2">
-            <Checklist
-              icon={<Wrench className="h-4 w-4" />}
-              title="AI workflow"
-              items={[
-                "Read get_agentflow_rules or agentflow://rules.",
-                "Call get_debug_context for the script or execution.",
-                "Edit with upsert_script_file.",
-                "Run lint_script_file on main.py.",
-                "Run run_script and inspect output, error, and logs.",
-              ]}
-            />
-            <Checklist
-              icon={<ShieldCheck className="h-4 w-4" />}
-              title="Safety switches"
-              items={[
-                "MCP_ENABLED=false disables the HTTP mount.",
-                "MCP_AUTH_TOKEN requires Authorization: Bearer <token> on /mcp/.",
-                "URL mode needs AgentFlow running before the client connects.",
-                "MCP can execute Python, so only connect trusted clients.",
-              ]}
-            />
-          </div>
-
-          <SectionNote
-            title="Core MCP tools"
-            items={[
-              "create_script / update_script_metadata / delete_script",
-              "get_script / list_scripts / upsert_script_file / delete_script_file",
-              "prepare_script_venv / install_script_requirements / list_script_packages",
-              "start_script_execution / run_script / stop_script_execution",
-              "get_execution / list_executions / get_debug_context / list_llm_configs",
-            ]}
-          />
-        </Section>
 
         <Section
           title="Run synchronously"
@@ -293,11 +200,11 @@ while True:
 function Intro({ origin }: { origin: string }) {
   return (
     <section>
-      <h1 className="text-2xl font-semibold mb-2">API & MCP Reference</h1>
+      <h1 className="text-2xl font-semibold mb-2">API Reference</h1>
       <p className="text-sm text-muted-foreground">
-        HTTP endpoints and MCP are served from
+        HTTP endpoints are served from
         <code className="font-mono text-foreground mx-1 px-1 py-0.5 rounded bg-secondary/40">{origin}</code>.
-        Pick a script in the top-right to substitute its real id into the HTTP examples below.
+        Pick a script in the top-right to substitute its real id into the examples below.
       </p>
     </section>
   );
@@ -314,55 +221,6 @@ function Section({
       </div>
       {children}
     </section>
-  );
-}
-
-function InfoBlock({
-  icon, title, value, desc,
-}: { icon: React.ReactNode; title: string; value: string; desc: string }) {
-  return (
-    <div className="rounded-lg border border-border bg-secondary/20 p-4">
-      <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-        <span className="text-primary">{icon}</span>
-        {title}
-      </div>
-      <div className="mt-2 font-mono text-sm text-foreground break-all">{value}</div>
-      <p className="mt-2 text-xs text-muted-foreground leading-relaxed">{desc}</p>
-    </div>
-  );
-}
-
-function Checklist({
-  icon, title, items,
-}: { icon: React.ReactNode; title: string; items: string[] }) {
-  return (
-    <div className="rounded-lg border border-border bg-secondary/20 p-4">
-      <div className="flex items-center gap-2 text-sm font-medium">
-        <span className="text-primary">{icon}</span>
-        {title}
-      </div>
-      <ol className="mt-3 space-y-2 text-xs text-muted-foreground">
-        {items.map((item, index) => (
-          <li key={item} className="flex gap-2 leading-relaxed">
-            <span className="font-mono text-[10px] text-primary/80">{index + 1}</span>
-            <span>{item}</span>
-          </li>
-        ))}
-      </ol>
-    </div>
-  );
-}
-
-function SectionNote({ title, items }: { title: string; items: string[] }) {
-  return (
-    <div className="rounded-lg border border-border/80 bg-background p-4">
-      <h3 className="text-sm font-medium">{title}</h3>
-      <ul className="mt-3 grid gap-2 text-xs text-muted-foreground md:grid-cols-2">
-        {items.map((item) => (
-          <li key={item} className="font-mono leading-relaxed">{item}</li>
-        ))}
-      </ul>
-    </div>
   );
 }
 

@@ -1,5 +1,4 @@
 import asyncio
-import contextlib
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -10,18 +9,14 @@ from pathlib import Path
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse
 
 from app.config import settings
 from app.database import engine, Base
 from app.routers import scripts, executions, llm_configs, cron_jobs, ws, mcp_servers, conversations
 from services.scheduler import scheduler_service
-
-agentflow_mcp = None
-if settings.mcp_enabled:
-    from app.mcp_server import mcp as agentflow_mcp
 
 FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend" / "out"
 
@@ -31,10 +26,7 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     scheduler_service.start()
     try:
-        async with contextlib.AsyncExitStack() as stack:
-            if agentflow_mcp is not None:
-                await stack.enter_async_context(agentflow_mcp.session_manager.run())
-            yield
+        yield
     finally:
         scheduler_service.shutdown()
 
@@ -52,21 +44,7 @@ app.add_middleware(
     allow_credentials=not _wildcard,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["Mcp-Session-Id"],
 )
-
-
-@app.middleware("http")
-async def require_mcp_token(request: Request, call_next):
-    if (
-        settings.mcp_auth_token
-        and request.url.path.startswith("/mcp")
-        and request.method != "OPTIONS"
-    ):
-        expected = f"Bearer {settings.mcp_auth_token}"
-        if request.headers.get("authorization") != expected:
-            return JSONResponse({"detail": "Unauthorized MCP request"}, status_code=401)
-    return await call_next(request)
 
 app.include_router(scripts.router,     prefix="/api/scripts",     tags=["scripts"])
 app.include_router(executions.router,  prefix="/api/executions",  tags=["executions"])
@@ -75,14 +53,6 @@ app.include_router(cron_jobs.router,   prefix="/api/cron-jobs",   tags=["cron-jo
 app.include_router(ws.router,          prefix="/ws",              tags=["websocket"])
 app.include_router(mcp_servers.router,    prefix="/api/mcp-servers",    tags=["mcp-servers"])
 app.include_router(conversations.router,  prefix="/api/conversations",  tags=["conversations"])
-
-if agentflow_mcp is not None:
-    @app.api_route("/mcp", methods=["GET", "HEAD", "POST", "DELETE", "OPTIONS"], include_in_schema=False)
-    async def mcp_redirect(request: Request):
-        return RedirectResponse(str(request.url.replace(path="/mcp/")), status_code=307)
-
-    app.mount("/mcp", agentflow_mcp.streamable_http_app())
-
 
 @app.get("/health")
 def health():

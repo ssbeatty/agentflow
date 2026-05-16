@@ -156,7 +156,7 @@ function MessageRow({
           ) : msg.streaming && !msg.content ? (
             <span className="flex items-center gap-1.5 text-muted-foreground">
               <Loader2 className="h-3 w-3 animate-spin" />
-              <span className="text-xs">思考中…</span>
+              <span className="text-xs">Thinking…</span>
             </span>
           ) : isUser ? (
             msg.content
@@ -171,7 +171,7 @@ function MessageRow({
             className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground/50 hover:text-destructive text-[10px] flex items-center gap-1 px-1"
           >
             <Trash2 className="h-2.5 w-2.5" />
-            删除
+            Delete
           </button>
         )}
       </div>
@@ -277,10 +277,10 @@ function CopyLinkButton({ scriptId }: { scriptId: string }) {
     <button
       onClick={copy}
       className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded border border-transparent hover:border-border transition-colors"
-      title="复制独立聊天页面链接（不含系统导航）"
+      title="Copy standalone chat link (no navigation)"
     >
       {copied ? <Check className="h-3 w-3 text-green-500" /> : <Link2 className="h-3 w-3" />}
-      {copied ? "已复制" : "复制链接"}
+      {copied ? "Copied" : "Copy link"}
     </button>
   );
 }
@@ -308,7 +308,7 @@ function EmbedHistoryDropdown({
         className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded border border-transparent hover:border-border transition-colors max-w-[140px]"
       >
         <MessageSquare className="h-3 w-3 shrink-0" />
-        <span className="truncate">{active?.title ?? "历史对话"}</span>
+        <span className="truncate">{active?.title ?? "History"}</span>
         <ChevronDown className="h-3 w-3 shrink-0" />
       </button>
       {open && (
@@ -616,11 +616,11 @@ function ConverseInner() {
       await convsApi.deleteMessage(activeConvId, msgId);
       setMessages((prev) => prev.filter((m) => m.id !== msgId));
     } catch {
-      toast.error("删除消息失败");
+      toast.error("Failed to delete message");
     }
   }
 
-  // ── 共用消息区 + 输入区 ───────────────────────────────────────────────────────
+  // ── Shared message area + input ──────────────────────────────────────────────
 
   const messageArea = (
     <div ref={scrollRef} className="flex-1 overflow-y-auto">
@@ -654,10 +654,10 @@ function ConverseInner() {
           }}
           placeholder={
             !scriptId
-              ? "请先选择脚本"
+              ? "Select a script first"
               : !activeConvId
-              ? "发送消息以开始对话…"
-              : "输入消息…（Enter 发送，Shift+Enter 换行）"
+              ? "Send a message to start…"
+              : "Message… (Enter to send, Shift+Enter for newline)"
           }
           className="min-h-[44px] max-h-40 text-sm resize-none"
           disabled={!scriptId || (sending && animatingId !== null)}
@@ -674,7 +674,7 @@ function ConverseInner() {
     </div>
   );
 
-  // ── Embed 独立布局（干净，无系统导航） ────────────────────────────────────────
+  // ── Embed layout (standalone, no navigation) ─────────────────────────────────
 
   if (embed) {
     return (
@@ -695,7 +695,7 @@ function ConverseInner() {
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded hover:bg-muted/60 transition-colors disabled:opacity-40"
           >
             <Plus className="h-3.5 w-3.5" />
-            新建
+            New
           </button>
           <ContextTurnsControl value={contextTurns} onChange={updateContextTurns} />
         </header>
@@ -705,7 +705,7 @@ function ConverseInner() {
     );
   }
 
-  // ── 完整布局（含侧边栏） ──────────────────────────────────────────────────────
+  // ── Full layout (with sidebar) ────────────────────────────────────────────────
 
   return (
     <div className="h-screen flex overflow-hidden">
@@ -714,14 +714,14 @@ function ConverseInner() {
           <Link href="/">
             <Button variant="ghost" size="sm" className="w-full justify-start gap-2 h-8 text-xs">
               <ArrowLeft className="h-3.5 w-3.5" />
-              返回首页
+              Home
             </Button>
           </Link>
           <div>
-            <Label className="text-xs text-muted-foreground mb-1 block">脚本</Label>
+            <Label className="text-xs text-muted-foreground mb-1 block">Script</Label>
             <Select value={scriptId} onValueChange={(v) => { setScriptId(v); }}>
               <SelectTrigger className="h-8 text-xs">
-                <SelectValue placeholder="选择脚本" />
+                <SelectValue placeholder="Select script" />
               </SelectTrigger>
               <SelectContent>
                 {allScripts.map((s) => (
@@ -737,13 +737,13 @@ function ConverseInner() {
             disabled={!scriptId}
           >
             <Plus className="h-3.5 w-3.5" />
-            新建对话
+            New conversation
           </Button>
         </div>
 
         <ScrollArea className="flex-1 p-2">
           {convList.length === 0 && (
-            <p className="text-xs text-muted-foreground text-center py-6">暂无对话</p>
+            <p className="text-xs text-muted-foreground text-center py-6">No conversations yet</p>
           )}
           {convList.map((conv) => (
             <ConvItem
@@ -772,7 +772,7 @@ function ConverseInner() {
                 className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
               >
                 <ExternalLink className="h-3 w-3" />
-                编辑脚本
+                Edit script
               </Link>
             )}
             {activeConvId && (
@@ -783,7 +783,7 @@ function ConverseInner() {
                 onClick={() => deleteConversation(activeConvId)}
               >
                 <Trash2 className="h-3 w-3" />
-                删除对话
+                Delete
               </Button>
             )}
           </div>

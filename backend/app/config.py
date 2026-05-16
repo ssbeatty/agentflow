@@ -20,11 +20,6 @@ class Settings(BaseSettings):
     # Where per-script .venv directories live. Override in docker via env.
     data_dir: str = str(DEFAULT_DATA_DIR / "scripts")
 
-    # MCP exposes script CRUD and code execution tools. Keep enabled for local
-    # AI clients; set MCP_AUTH_TOKEN to require Authorization: Bearer <token>.
-    mcp_enabled: bool = True
-    mcp_auth_token: str = ""
-
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
     @property

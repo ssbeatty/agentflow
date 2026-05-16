@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Plus, Trash2, Star, StarOff, Eye, EyeOff, Wrench, ChevronRight } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Star, StarOff, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { llmConfigs } from "@/lib/api";
 import type { LLMConfig } from "@/lib/types";
@@ -142,18 +142,6 @@ export default function SettingsPage() {
       </header>
 
       <main className="max-w-2xl mx-auto px-6 py-8">
-        {/* Tools link */}
-        <Link href="/tools" className="flex items-center justify-between rounded-lg border border-border p-4 mb-6 hover:bg-secondary/40 transition-colors">
-          <div className="flex items-center gap-3">
-            <Wrench className="h-4 w-4 text-muted-foreground" />
-            <div>
-              <p className="font-medium text-sm">Tools &amp; MCP Servers</p>
-              <p className="text-xs text-muted-foreground">Configure built-in tools and MCP server connections</p>
-            </div>
-          </div>
-          <ChevronRight className="h-4 w-4 text-muted-foreground" />
-        </Link>
-
         <div className="flex items-center justify-between mb-6">
           <div>
             <h2 className="font-medium">LLM Configurations</h2>

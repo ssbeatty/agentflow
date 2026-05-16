@@ -17,9 +17,10 @@ interface Props {
   onChange: (value: string | undefined) => void;
   readOnly?: boolean;
   issues?: LintIssue[];
+  language?: string;
 }
 
-export default function ScriptEditor({ value, onChange, readOnly = false, issues = [] }: Props) {
+export default function ScriptEditor({ value, onChange, readOnly = false, issues = [], language = "python" }: Props) {
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const monacoRef = useRef<typeof Monaco | null>(null);
 
@@ -75,7 +76,7 @@ export default function ScriptEditor({ value, onChange, readOnly = false, issues
     <div className="h-full w-full">
       <Editor
         height="100%"
-        defaultLanguage="python"
+        language={language}
         value={value}
         onChange={onChange}
         onMount={handleMount}

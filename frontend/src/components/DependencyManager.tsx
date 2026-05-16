@@ -3,7 +3,7 @@ import { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import {
   Download, RefreshCw, CheckCircle2, XCircle, Trash2, Package,
-  AlertTriangle, PackagePlus, Loader2,
+  AlertTriangle, PackagePlus, Loader2, Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -15,22 +15,22 @@ import { scripts as scriptsApi } from "@/lib/api";
 interface Props {
   scriptId: string;
   requirements: string;
-  onRequirementsChange: (v: string) => void;
+  onRequirementsSaved?: () => void;
 }
 
 type InstallState = "idle" | "working" | "done" | "error";
 type ConfirmKind = null | "recreate" | "delete";
 
-export default function DependencyManager({ scriptId, requirements, onRequirementsChange }: Props) {
+export default function DependencyManager({ scriptId, requirements, onRequirementsSaved }: Props) {
   const [state, setState] = useState<InstallState>("idle");
   const [lines, setLines] = useState<string[]>([]);
   const [venvExists, setVenvExists] = useState(false);
   const [packages, setPackages] = useState<{ name: string; version: string }[]>([]);
   const [pkgError, setPkgError] = useState<string | null>(null);
   const [showPackages, setShowPackages] = useState(false);
+  const [search, setSearch] = useState("");
   const [confirmKind, setConfirmKind] = useState<ConfirmKind>(null);
   const logsRef = useRef<HTMLDivElement>(null);
-  const lastSavedRef = useRef<string>(requirements);
 
   const refreshPackages = async () => {
     try {
@@ -42,31 +42,21 @@ export default function DependencyManager({ scriptId, requirements, onRequiremen
   };
 
   useEffect(() => {
-    scriptsApi.venvStatus(scriptId).then((s) => {
+    scriptsApi.venvStatus(scriptId).then(s => {
       setVenvExists(s.exists);
       if (s.exists) refreshPackages();
     }).catch(() => null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scriptId]);
 
-  // autosave requirements on blur if changed since last persist
-  async function persistRequirementsIfDirty() {
-    if (requirements === lastSavedRef.current) return;
-    try {
-      await scriptsApi.update(scriptId, { requirements });
-      lastSavedRef.current = requirements;
-    } catch (e) {
-      toast.error(`Failed to save requirements: ${e}`);
-    }
-  }
-
   async function stream(endpoint: "venv" | "install", force = false) {
     setState("working");
     setLines([]);
+    setShowPackages(false); // show logs while working
     try {
       if (endpoint === "install") {
         await scriptsApi.update(scriptId, { requirements });
-        lastSavedRef.current = requirements;
+        onRequirementsSaved?.();
       }
       const url = endpoint === "venv" && force
         ? `/api/scripts/${scriptId}/venv?force=true`
@@ -76,7 +66,6 @@ export default function DependencyManager({ scriptId, requirements, onRequiremen
       const reader = res.body!.getReader();
       const decoder = new TextDecoder();
       let buf = "";
-
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -85,13 +74,9 @@ export default function DependencyManager({ scriptId, requirements, onRequiremen
         buf = parts.pop() ?? "";
         for (const line of parts) {
           if (!line) continue;
-          setLines((p) => [...p, line]);
+          setLines(p => [...p, line]);
           if (logsRef.current) logsRef.current.scrollTop = logsRef.current.scrollHeight;
-          if (line.startsWith("ERROR:")) {
-            setState("error");
-            toast.error(line);
-            return;
-          }
+          if (line.startsWith("ERROR:")) { setState("error"); toast.error(line); return; }
           if (line === "DONE") {
             setState("done");
             if (endpoint === "venv") setVenvExists(true);
@@ -120,124 +105,101 @@ export default function DependencyManager({ scriptId, requirements, onRequiremen
     } catch (e) { toast.error(String(e)); }
   }
 
+  function toggleList() {
+    if (showPackages) {
+      setShowPackages(false);
+    } else {
+      setShowPackages(true);
+      setSearch("");
+      refreshPackages();
+    }
+  }
+
   const busy = state === "working";
+  const filteredPackages = search
+    ? packages.filter(p => p.name.toLowerCase().includes(search.toLowerCase()))
+    : packages;
 
   return (
     <div className="h-full flex flex-col">
-      {/* ── Toolbar ────────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
-        {/* status chip */}
-        <div className="flex items-center gap-1.5 px-2 py-1 rounded-md border border-border bg-secondary/30 text-xs">
-          <span
-            className={`h-1.5 w-1.5 rounded-full ${
-              venvExists ? "bg-emerald-400" : "bg-muted-foreground/40"
-            }`}
-          />
-          <span className="text-muted-foreground">
+      {/* Toolbar — 2 compact rows */}
+      <div className="border-b border-border shrink-0">
+        {/* Row 1: status + icon actions */}
+        <div className="flex items-center gap-1.5 px-2 py-1">
+          <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${venvExists ? "bg-emerald-400" : "bg-muted-foreground/40"}`} />
+          <span className="text-xs text-muted-foreground flex-1 truncate">
             {venvExists ? `venv · ${packages.length} pkgs` : "no venv"}
           </span>
+          {state === "done" && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />}
+          {state === "error" && <XCircle className="h-3.5 w-3.5 text-destructive shrink-0" />}
+          {busy && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground shrink-0" />}
+          {venvExists && (
+            <>
+              <button onClick={() => !busy && setConfirmKind("recreate")} disabled={busy}
+                title="Recreate venv"
+                className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/10 disabled:opacity-40 transition-colors shrink-0">
+                <RefreshCw className="h-3 w-3" />
+              </button>
+              <button onClick={() => !busy && setConfirmKind("delete")} disabled={busy}
+                title="Delete venv"
+                className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-white/10 disabled:opacity-40 transition-colors shrink-0">
+                <Trash2 className="h-3 w-3" />
+              </button>
+            </>
+          )}
         </div>
-
-        {state === "done" && <CheckCircle2 className="h-4 w-4 text-emerald-400" />}
-        {state === "error" && <XCircle className="h-4 w-4 text-destructive" />}
-        {busy && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-
-        {/* primary action — Create or Install */}
-        <div className="ml-2">
+        {/* Row 2: primary actions */}
+        <div className="flex items-center gap-1 px-2 pb-1.5">
           {!venvExists ? (
-            <Button
-              size="sm"
-              className="h-7 text-xs gap-1.5"
-              onClick={() => stream("venv")}
-              disabled={busy}
-            >
-              <PackagePlus className="h-3 w-3" />
-              Create venv
+            <Button size="sm" className="h-6 text-xs gap-1 flex-1" onClick={() => stream("venv")} disabled={busy}>
+              <PackagePlus className="h-3 w-3" />Create venv
             </Button>
           ) : (
-            <Button
-              size="sm"
-              className="h-7 text-xs gap-1.5"
-              onClick={() => stream("install")}
-              disabled={busy}
-              title="Install requirements into the venv"
-            >
-              <Download className="h-3 w-3" />
-              Install
+            <Button size="sm" className="h-6 text-xs gap-1 flex-1" onClick={() => stream("install")} disabled={busy}>
+              <Download className="h-3 w-3" />Install
+            </Button>
+          )}
+          {venvExists && (
+            <Button variant="outline" size="sm" className="h-6 text-xs gap-1 flex-1" onClick={toggleList}>
+              <Package className="h-3 w-3" />{showPackages ? "Hide" : "List"}
             </Button>
           )}
         </div>
-
-        {/* installed toggle */}
-        {venvExists && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 text-xs gap-1.5"
-            onClick={() => { setShowPackages((v) => !v); if (!showPackages) refreshPackages(); }}
-          >
-            <Package className="h-3 w-3" />
-            {showPackages ? "Hide list" : "Installed"}
-          </Button>
-        )}
-
-        {/* danger group — right aligned */}
-        {venvExists && (
-          <div className="ml-auto flex items-center gap-1 pl-2 border-l border-border">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 text-xs gap-1.5 text-muted-foreground hover:text-foreground"
-              disabled={busy}
-              onClick={() => setConfirmKind("recreate")}
-              title="Delete the venv and create a fresh one"
-            >
-              <RefreshCw className="h-3 w-3" />
-              Recreate
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 text-xs gap-1.5 text-muted-foreground hover:text-destructive"
-              disabled={busy}
-              onClick={() => setConfirmKind("delete")}
-              title="Delete the venv"
-            >
-              <Trash2 className="h-3 w-3" />
-              Delete
-            </Button>
-          </div>
-        )}
       </div>
 
-      {/* ── Body ───────────────────────────────────────────────────────── */}
-      <div className="flex flex-1 min-h-0 overflow-hidden">
-        {/* requirements.txt editor */}
-        <div className="flex-1 min-w-0 flex flex-col">
-          <textarea
-            value={requirements}
-            onChange={(e) => onRequirementsChange(e.target.value)}
-            onBlur={persistRequirementsIfDirty}
-            className="flex-1 w-full bg-transparent px-3 py-2 text-xs font-mono text-foreground resize-none focus:outline-none placeholder:text-muted-foreground"
-            placeholder={"langgraph\nlangchain-openai\nrequests\n# one package per line"}
-            spellCheck={false}
-          />
-          <div className="text-[10px] text-muted-foreground px-3 py-1 border-t border-border/50">
-            requirements.txt · autosaved on blur
-          </div>
+      {/* Hint */}
+      {!venvExists && lines.length === 0 && (
+        <div className="px-3 py-2 text-xs text-muted-foreground/70">
+          Edit <code className="text-foreground/80">requirements.txt</code> in the file tree, then create a venv and install.
         </div>
+      )}
 
-        {/* installed packages list */}
-        {showPackages && (
-          <div className="w-56 border-l border-border shrink-0">
-            <ScrollArea className="h-full">
+      {/* Body: packages OR logs — never side by side */}
+      <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+        {showPackages ? (
+          <>
+            {/* Search bar */}
+            <div className="px-2 py-1 border-b border-border shrink-0">
+              <div className="relative">
+                <Search className="absolute left-1.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground/60 pointer-events-none" />
+                <input
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="Search…"
+                  className="w-full pl-5 pr-2 py-0.5 text-xs font-mono bg-transparent focus:outline-none placeholder:text-muted-foreground/40"
+                />
+              </div>
+            </div>
+            {/* Package list */}
+            <ScrollArea className="flex-1">
               <div className="p-2 font-mono text-xs space-y-0.5">
-                {pkgError && (
-                  <div className="text-red-400 whitespace-pre-wrap break-all">{pkgError}</div>
+                {pkgError && <div className="text-red-400 whitespace-pre-wrap break-all">{pkgError}</div>}
+                {!pkgError && filteredPackages.length === 0 && (
+                  <div className="text-muted-foreground">
+                    {packages.length === 0 ? "no packages" : "no match"}
+                  </div>
                 )}
-                {!pkgError && packages.length === 0 ? (
-                  <div className="text-muted-foreground">no packages</div>
-                ) : packages.map((p) => (
+                {filteredPackages.map(p => (
                   <div key={p.name} className="flex justify-between gap-2">
                     <span className="truncate">{p.name}</span>
                     <span className="text-muted-foreground shrink-0">{p.version}</span>
@@ -245,34 +207,25 @@ export default function DependencyManager({ scriptId, requirements, onRequiremen
                 ))}
               </div>
             </ScrollArea>
-          </div>
-        )}
-
-        {/* install / venv stream output */}
-        {lines.length > 0 && (
-          <div className="w-56 border-l border-border shrink-0">
-            <ScrollArea className="h-full">
-              <div ref={logsRef} className="p-2 font-mono text-xs space-y-0.5">
-                {lines.map((l, i) => (
-                  <div
-                    key={i}
-                    className={
-                      l.startsWith("ERROR") ? "text-red-400" :
-                      l === "DONE" ? "text-emerald-400" :
-                      "text-muted-foreground"
-                    }
-                  >
-                    {l}
-                  </div>
-                ))}
-              </div>
-            </ScrollArea>
-          </div>
-        )}
+          </>
+        ) : lines.length > 0 ? (
+          /* Stream output */
+          <ScrollArea className="flex-1">
+            <div ref={logsRef} className="p-2 font-mono text-xs space-y-0.5">
+              {lines.map((l, i) => (
+                <div key={i} className={
+                  l.startsWith("ERROR") ? "text-red-400" :
+                  l === "DONE" ? "text-emerald-400" :
+                  "text-muted-foreground"
+                }>{l}</div>
+              ))}
+            </div>
+          </ScrollArea>
+        ) : null}
       </div>
 
-      {/* ── Confirm dialog ─────────────────────────────────────────────── */}
-      <Dialog open={confirmKind !== null} onOpenChange={(o) => !o && setConfirmKind(null)}>
+      {/* Confirm dialog */}
+      <Dialog open={confirmKind !== null} onOpenChange={o => !o && setConfirmKind(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -281,21 +234,18 @@ export default function DependencyManager({ scriptId, requirements, onRequiremen
             </DialogTitle>
             <DialogDescription>
               {confirmKind === "delete"
-                ? "This permanently deletes the script's .venv directory. You'll need to recreate it before running the script."
-                : "This deletes the existing .venv directory and creates a fresh one. Installed packages will be gone — re-run Install to restore them."}
+                ? "This permanently deletes the script's .venv directory."
+                : "Deletes the existing .venv and creates a fresh one. Re-run Install to restore packages."}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmKind(null)}>Cancel</Button>
-            <Button
-              variant="destructive"
-              onClick={async () => {
-                const kind = confirmKind;
-                setConfirmKind(null);
-                if (kind === "delete") await doDelete();
-                else if (kind === "recreate") await stream("venv", true);
-              }}
-            >
+            <Button variant="destructive" onClick={async () => {
+              const kind = confirmKind;
+              setConfirmKind(null);
+              if (kind === "delete") await doDelete();
+              else if (kind === "recreate") await stream("venv", true);
+            }}>
               {confirmKind === "delete" ? "Delete" : "Recreate"}
             </Button>
           </DialogFooter>

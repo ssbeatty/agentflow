@@ -39,7 +39,7 @@ export default function Dashboard() {
           <Link href="/converse">
             <Button variant="ghost" size="sm" className="gap-1.5">
               <MessageSquare className="h-4 w-4" />
-              聊天
+              Chat
             </Button>
           </Link>
           <Link href="/docs">
@@ -133,7 +133,7 @@ function ScriptCard({ script }: { script: ScriptSummary }) {
             onClick={(e) => e.stopPropagation()}
           >
             <MessageSquare className="h-3 w-3" />
-            聊天
+            Chat
           </Link>
           <Link
             href={`/script/?id=${script.id}`}
