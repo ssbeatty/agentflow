@@ -46,6 +46,10 @@ There is **no test suite**. Verify changes by running the backend and exercising
 
 `_write_runner()` in `execution_engine.py` generates a tiny `_runner_<execution_id>.py` that wraps the user's entry function. User code communicates with the platform via lines prefixed with `__AGENTFLOW__<json>` on stdout. Anything else is captured as `raw` / `error` log level.
 
+The runner is **fully async** (`asyncio.run(_main())`). `nest_asyncio` is applied at startup so sync `agent.invoke()` can call `asyncio.get_event_loop().run_until_complete()` internally (needed for async MCP tools wrapped by `_ensure_sync()` in `agentflow.get_tools`). Third-party loggers (`mcp`, `httpx`, `openai`, etc.) are silenced to `WARNING` to prevent INFO lines appearing as `[ERR]` in the log panel.
+
+MCP servers are connected via `MultiServerMCPClient` (no async context manager — removed in `langchain-mcp-adapters` 0.1.0; use `client = MultiServerMCPClient(...); tools = await client.get_tools()` instead). Injected tools are stored in `agentflow._injected_tools` before user code runs. Async-only MCP tools (`StructuredTool` with `coroutine` but no `func`) are wrapped by `_ensure_sync()` in `agentflow.get_tools()` so sync `agent.invoke()` works.
+
 ### WebSocket with replay buffer
 
 `_WsManager` in `execution_engine.py` buffers every event per `execution_id`. WS clients connecting **after** a run started still get the full history via replay (`connect()` sends buffered then subscribes). Buffers are dropped 5 minutes after the run ends.
@@ -65,7 +69,7 @@ When you need `script_id` in the URL, use `?id=...` query (not path segment) —
 ### Database
 
 - `app/database.py` switches on `DATABASE_URL` (sqlite vs anything else). SQLite gets WAL pragmas + `check_same_thread=False`; everything else gets pool defaults.
-- Tables are created via `Base.metadata.create_all` in `lifespan`. **No Alembic / migrations.** When you add a column, drop the dev DB or write SQL by hand.
+- Tables are created via `Base.metadata.create_all` in `lifespan`. **No Alembic / migrations.** When you add a column, run `ALTER TABLE <table> ADD COLUMN <col> <type> DEFAULT <val>` by hand (prefer this over dropping the DB to avoid losing data). `create_all` will not add columns to existing tables.
 
 ### Time/timezone
 
@@ -75,9 +79,10 @@ Backend uses naive `datetime.utcnow()` everywhere (stored without TZ). Frontend 
 
 - **User script entry point**: configurable per-script (`script.entry_function`, default `"run"`). Signature: `def run(input: dict) -> Any`. Return value goes into `execution.output_data`.
 - **`get_llm()` resolution**: reads `AGENTFLOW_LLM_DEFAULT` env (set when `is_default=True`). `get_llm("name")` normalises name to `AGENTFLOW_LLM_<UPPER_ALNUM_>` — see `_norm()` in both `agentflow/__init__.py` and `execution_engine.py`; **keep them in sync**.
-- **Provider mapping** in `agentflow.get_llm`: only `anthropic` and `ollama` get dedicated branches; everything else (including `custom`, `deepseek`, `openai`) falls through to `ChatOpenAI` with `base_url`. Default `timeout=60`, `max_retries=1` injected via `extra.setdefault`.
+- **Provider mapping** in `agentflow.get_llm`: `anthropic` → `ChatAnthropic`, `ollama` → `ChatOllama`, `deepseek` → `_ChatDeepSeekFixed` (subclass of `ChatDeepSeek` that patches `_get_request_payload` to echo `reasoning_content` back — required for DeepSeek-R1 multi-turn), everything else falls through to `ChatOpenAI` with `base_url`. Default `timeout=60`, `max_retries=1` injected via `extra.setdefault`.
 - **Chat page convention**: input is `{message, history: [{role, content}]}`, output is `{reply}` (with fallbacks: `message` / `response` / `result` / stringified). Maintained client-side in `frontend/src/app/chat/page.tsx`.
-- **Baseline packages** auto-installed on venv create: see `BASELINE_PACKAGES` in `venv_manager.py`. Currently `langchain-core`, `langchain-openai`, `langgraph`. Users add more via `requirements.txt`.
+- **Baseline packages** auto-installed on venv create: see `BASELINE_PACKAGES` in `venv_manager.py`. Currently: `langchain-core`, `langchain-openai`, `langchain-deepseek`, `langgraph`, `httpx`, `ddgs`, `langchain-mcp-adapters`, `nest-asyncio`. Users add more via `requirements.txt`.
+- **MCP tool injection is per-script opt-in**: `script.mcp_server_ids` (JSON array of `MCPServerConfig.id`) controls which servers are connected at runtime. Empty = no MCP tools. The `enabled` flag on `MCPServerConfig` is a global availability switch (AND-ed with the per-script selection). Configure in the script's right panel.
 
 ## Dev gotchas
 
@@ -92,8 +97,12 @@ Backend uses naive `datetime.utcnow()` everywhere (stored without TZ). Frontend 
 | New API endpoint | `backend/app/routers/*.py` + register in `app/main.py` |
 | Change how user scripts get env / sys.path | `services/execution_engine.py::_write_runner` |
 | Change venv tooling (uv/pip) | `services/venv_manager.py` |
-| Change MCP tools/resources | `backend/app/mcp_server.py` |
+| Change MCP tools/resources (AgentFlow's own MCP server) | `backend/app/mcp_server.py` |
+| Change user-facing tool API (`get_tools`, `get_agent`, etc.) | `backend/agentflow/__init__.py` |
+| Add LLM provider branch | `backend/agentflow/__init__.py::get_llm` |
+| Add/remove baseline venv packages | `services/venv_manager.py::BASELINE_PACKAGES` |
 | New page in UI | `frontend/src/app/<name>/page.tsx` (link from `app/page.tsx` navbar) |
 | Resizable panel | `useResizable` from `frontend/src/components/Splitter.tsx` |
 | Log rendering | `frontend/src/components/LogPanel.tsx` (uses `toLocalDate`) |
-| Add LLM provider branch | `backend/agentflow/__init__.py::get_llm` |
+| Script creation templates | `frontend/src/components/CreateScriptDialog.tsx::TEMPLATES` |
+| MCP server CRUD UI | `frontend/src/app/tools/page.tsx` |
