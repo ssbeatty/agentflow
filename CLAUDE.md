@@ -16,7 +16,7 @@ AgentFlow — a self-hosted platform for writing/running LangGraph/LangChain Pyt
 | Frontend dev (hot reload, :3000) | `cd frontend && npm run dev` |
 | Frontend build (produces `out/` consumed by backend) | `cd frontend && npm run build` |
 | Type-check frontend | `cd frontend && npx tsc --noEmit` |
-| MCP stdio server | `cd backend && python -m app.mcp_server` |
+| MCP URL endpoint | `cd backend && uvicorn app.main:app --port 8000` then connect to `http://localhost:8000/mcp/` |
 | Python syntax sanity check | `python -c "import ast; ast.parse(open('<path>',encoding='utf-8').read())"` |
 | Docker (app + postgres) | `docker compose up -d --build` |
 | Docker (sqlite only) | `docker compose up -d app --no-deps` |
@@ -58,9 +58,9 @@ When you need `script_id` in the URL, use `?id=...` query (not path segment) —
 
 ### MCP server
 
-`backend/app/mcp_server.py` defines the AgentFlow MCP server. FastAPI mounts it at `/mcp` when `MCP_ENABLED=true`; the same module runs as stdio with `cd backend && python -m app.mcp_server`. It exposes high-trust tools that can create/update/delete scripts, manage venvs, execute user code, and read logs, so don't bypass `services.execution_engine`, `services.venv_manager`, or `services.script_files` when changing it.
+`backend/app/mcp_server.py` defines the AgentFlow MCP server. FastAPI mounts it at `/mcp/` when `MCP_ENABLED=true` (`/mcp` redirects there). The intended client entry is URL-based Streamable HTTP: `http://localhost:8000/mcp/`. It exposes high-trust tools that can create/update/delete scripts, manage venvs, execute user code, and read logs, so don't bypass `services.execution_engine`, `services.venv_manager`, or `services.script_files` when changing it.
 
-`MCP_AUTH_TOKEN` is optional. When non-empty, HTTP `/mcp` requests must send `Authorization: Bearer <token>`. stdio mode is unaffected.
+`MCP_AUTH_TOKEN` is optional. When non-empty, HTTP `/mcp/` requests must send `Authorization: Bearer <token>`.
 
 ### Database
 

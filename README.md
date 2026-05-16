@@ -158,39 +158,44 @@ ws://localhost:8000/ws/executions/<EXECUTION_ID>
 
 AgentFlow 内置 MCP server，暴露脚本 CRUD、venv / requirements、同步运行、异步运行、停止执行、日志读取、LLM 配置只读列表，以及 `agentflow://rules` / `agentflow://scripts/{id}` / `agentflow://executions/{id}` 等资源。
 
-HTTP 模式随 FastAPI 启动：
+URL 模式随 FastAPI 启动，这是推荐接法：
 
 ```bash
 cd backend
 uvicorn app.main:app --port 8000
-# MCP endpoint: http://localhost:8000/mcp
+# MCP endpoint: http://localhost:8000/mcp/
 ```
 
-stdio 模式适合本地 AI 客户端：
-
-```bash
-cd backend
-python -m app.mcp_server
-```
-
-Claude Desktop / Cursor 一类客户端可按这个形状配置（路径按你的机器调整）：
+MCP 客户端配置通常长这样（不同客户端字段名可能略有差异，核心是 `url` 指向 `/mcp/`）：
 
 ```json
 {
   "mcpServers": {
     "agentflow": {
-      "command": "python",
-      "args": ["-m", "app.mcp_server"],
-      "cwd": "D:/Project/PY/ai-conpose-v/backend",
-      "env": {
-        "DATABASE_URL": "sqlite:///./data/opengraph.db"
+      "type": "streamable-http",
+      "url": "http://localhost:8000/mcp/"
+    }
+  }
+}
+```
+
+如果设置了 `MCP_AUTH_TOKEN`：
+
+```json
+{
+  "mcpServers": {
+    "agentflow": {
+      "type": "streamable-http",
+      "url": "http://localhost:8000/mcp/",
+      "headers": {
+        "Authorization": "Bearer <MCP_AUTH_TOKEN>"
       }
     }
   }
 }
 ```
 
-安全提示：MCP 工具能写入并执行 Python 脚本，本质上是高权限本地开发入口。默认开启；如要关闭设 `MCP_ENABLED=false`。如要保护 HTTP `/mcp`，设 `MCP_AUTH_TOKEN=...`，客户端请求需带 `Authorization: Bearer <token>`。
+安全提示：MCP 工具能写入并执行 Python 脚本，本质上是高权限开发入口。默认开启；如要关闭设 `MCP_ENABLED=false`。如要保护 HTTP `/mcp/`，设 `MCP_AUTH_TOKEN=...`，客户端请求需带 `Authorization: Bearer <token>`。
 
 ---
 
@@ -314,7 +319,7 @@ DATABASE_URL=mysql+pymysql://user:pass@host/dbname
 | `DATABASE_URL` | sqlite 本地文件 | SQLAlchemy URL |
 | `DATA_DIR` | `./data/scripts` | 每脚本 venv 存放目录 |
 | `CORS_ORIGINS` | `http://localhost:3000` | 逗号分隔 |
-| `MCP_ENABLED` | `true` | 是否挂载 `/mcp` 并启用 stdio MCP server |
+| `MCP_ENABLED` | `true` | 是否挂载 URL MCP endpoint `/mcp/` |
 | `MCP_AUTH_TOKEN` | 空 | 非空时 `/mcp` 要求 Bearer token |
 | `APP_ENV` | `development` | 标识用 |
 | `APP_PORT` | `8000` | 仅 docker-compose 用 |

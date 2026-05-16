@@ -45,7 +45,7 @@ export default function Dashboard() {
           <Link href="/docs">
             <Button variant="ghost" size="sm" className="gap-1.5">
               <BookOpen className="h-4 w-4" />
-              API
+              Docs
             </Button>
           </Link>
           <Link href="/settings">

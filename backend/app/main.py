@@ -12,7 +12,7 @@ if sys.platform == "win32":
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 
 from app.config import settings
 from app.database import engine, Base
@@ -75,6 +75,10 @@ app.include_router(cron_jobs.router,   prefix="/api/cron-jobs",   tags=["cron-jo
 app.include_router(ws.router,          prefix="/ws",              tags=["websocket"])
 
 if agentflow_mcp is not None:
+    @app.api_route("/mcp", methods=["GET", "POST", "DELETE"], include_in_schema=False)
+    async def mcp_redirect(request: Request):
+        return RedirectResponse(str(request.url.replace(path="/mcp/")), status_code=307)
+
     app.mount("/mcp", agentflow_mcp.streamable_http_app())
 
 
