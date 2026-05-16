@@ -18,6 +18,28 @@
       "subProcess": false,
       "console": "integratedTerminal",
       "preLaunchTask": "Build Frontend"
+    },
+    {
+      "name": "Frontend Dev",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "${workspaceFolder}/frontend",
+      "console": "integratedTerminal",
+      "serverReadyAction": {
+        "pattern": "started server on .+, url: (https?://.+)",
+        "uriFormat": "%s",
+        "action": "openExternally"
+      }
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Full Stack (Dev)",
+      "configurations": ["Frontend Dev", "Backend"],
+      "stopAll": true,
+      "preLaunchTask": ""
     }
   ]
 }
