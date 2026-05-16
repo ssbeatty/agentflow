@@ -1,0 +1,35 @@
+# vcs
+.git
+.gitignore
+
+# python
+**/__pycache__
+**/*.pyc
+**/.venv
+**/venv
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+
+# node / next
+**/node_modules
+frontend/.next
+frontend/out
+frontend/.turbo
+
+# runtime data — never bake into the image
+backend/data
+
+# editors / OS
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# env files (use compose env_file / -e instead)
+**/.env
+**/.env.*
+
+# docs / misc
+*.md
+*.log

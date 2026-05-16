@@ -1,0 +1,57 @@
+# docker-compose.yml — production-ish stack
+#
+#   docker compose up -d            (uses default postgres profile)
+#   docker compose --profile sqlite up -d   (single-container, no postgres)
+#
+# Override env via .env or `docker compose --env-file ...`.
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: agentflow:latest
+    container_name: agentflow-app
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://agentflow:agentflow@postgres:5432/agentflow}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      DATA_DIR: /app/backend/data/scripts
+      APP_ENV: ${APP_ENV:-production}
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    volumes:
+      # persists per-script venvs + sqlite db (if used)
+      - app-data:/app/backend/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false   # ignored when postgres profile isn't active
+    networks: [agentflow]
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: agentflow-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-agentflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agentflow}
+      POSTGRES_DB: ${POSTGRES_DB:-agentflow}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agentflow}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [agentflow]
+
+volumes:
+  app-data:
+  postgres-data:
+
+networks:
+  agentflow:
+    driver: bridge

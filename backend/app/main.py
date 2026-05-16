@@ -31,10 +31,15 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="OpenGraph", version="0.1.0", lifespan=lifespan)
 
+_origins = settings.cors_origins_list
+_wildcard = "*" in _origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
-    allow_credentials=True,
+    # CORS spec forbids allow_credentials=True together with "*"; fall back to
+    # a regex that echoes any origin so the headers are still well-formed.
+    allow_origins=["*"] if _wildcard else _origins,
+    allow_origin_regex=".*" if _wildcard else None,
+    allow_credentials=not _wildcard,
     allow_methods=["*"],
     allow_headers=["*"],
 )
