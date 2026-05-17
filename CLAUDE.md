@@ -16,7 +16,6 @@ AgentFlow — a self-hosted platform for writing/running LangGraph/LangChain Pyt
 | Frontend dev (hot reload, :3000) | `cd frontend && npm run dev` |
 | Frontend build (produces `out/` consumed by backend) | `cd frontend && npm run build` |
 | Type-check frontend | `cd frontend && npx tsc --noEmit` |
-| MCP URL endpoint | `cd backend && uvicorn app.main:app --port 8000` then connect to `http://localhost:8000/mcp/` |
 | Python syntax sanity check | `python -c "import ast; ast.parse(open('<path>',encoding='utf-8').read())"` |
 | Docker (app + postgres) | `docker compose up -d --build` |
 | Docker (sqlite only) | `docker compose up -d app --no-deps` |
@@ -60,11 +59,9 @@ Frontend is `output: "export"` (next.config.ts). `backend/app/main.py` has a cat
 
 When you need `script_id` in the URL, use `?id=...` query (not path segment) — that's the convention `/script` and `/chat` use because static export hates dynamic paths.
 
-### MCP server
+### External MCP tool injection
 
-`backend/app/mcp_server.py` defines the AgentFlow MCP server. FastAPI mounts it at `/mcp/` when `MCP_ENABLED=true` (`/mcp` redirects there). The intended client entry is URL-based Streamable HTTP: `http://localhost:8000/mcp/`. It exposes high-trust tools that can create/update/delete scripts, manage venvs, execute user code, and read logs, so don't bypass `services.execution_engine`, `services.venv_manager`, or `services.script_files` when changing it.
-
-`MCP_AUTH_TOKEN` is optional. When non-empty, HTTP `/mcp/` requests must send `Authorization: Bearer <token>`.
+AgentFlow can connect to external MCP servers configured in the Tools UI. `script.mcp_server_ids` selects which enabled `MCPServerConfig` records are connected for a run. The runner builds `AGENTFLOW_MCP_CONFIGS`, creates a `MultiServerMCPClient`, injects tools into `agentflow._injected_tools`, and scripts access them through `get_tools()` / `get_agent()`.
 
 ### Database
 
@@ -97,7 +94,6 @@ Backend uses naive `datetime.utcnow()` everywhere (stored without TZ). Frontend 
 | New API endpoint | `backend/app/routers/*.py` + register in `app/main.py` |
 | Change how user scripts get env / sys.path | `services/execution_engine.py::_write_runner` |
 | Change venv tooling (uv/pip) | `services/venv_manager.py` |
-| Change MCP tools/resources (AgentFlow's own MCP server) | `backend/app/mcp_server.py` |
 | Change user-facing tool API (`get_tools`, `get_agent`, etc.) | `backend/agentflow/__init__.py` |
 | Add LLM provider branch | `backend/agentflow/__init__.py::get_llm` |
 | Add/remove baseline venv packages | `services/venv_manager.py::BASELINE_PACKAGES` |
@@ -105,4 +101,4 @@ Backend uses naive `datetime.utcnow()` everywhere (stored without TZ). Frontend 
 | Resizable panel | `useResizable` from `frontend/src/components/Splitter.tsx` |
 | Log rendering | `frontend/src/components/LogPanel.tsx` (uses `toLocalDate`) |
 | Script creation templates | `frontend/src/components/CreateScriptDialog.tsx::TEMPLATES` |
-| MCP server CRUD UI | `frontend/src/app/tools/page.tsx` |
+| External MCP server CRUD UI | `frontend/src/app/tools/page.tsx` |

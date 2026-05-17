@@ -7,7 +7,6 @@ python-multipart>=0.0.20
 apscheduler>=3.10.4
 python-dotenv>=1.0.0
 websockets>=14.0
-mcp>=1.23.0
 
 # Optional DB drivers — installed in the docker image so DATABASE_URL can
 # switch between sqlite / postgres / mysql without changing the image.

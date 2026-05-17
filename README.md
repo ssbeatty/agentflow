@@ -15,7 +15,7 @@
 - **⏰ 定时触发** — cron 表达式（APScheduler）
 - **💬 内置聊天页** — 选脚本直接聊，自动维护对话历史
 - **🌐 HTTP API** — 同步 / 异步 / WebSocket 三种调用方式，外部服务直接 invoke
-- **🧠 MCP Server** — AI 客户端可直接创建 / 修改 / 运行脚本，并读取规则、日志和调试上下文
+- **🔧 MCP 工具接入** — 配置外部 MCP server，按脚本选择后注入到 `get_tools()` / `get_agent()`
 - **🗄️ 多数据库** — SQLite（本地）/ Postgres / MySQL，切 `DATABASE_URL` 即可
 - **🐳 Docker 化** — 单镜像（前端 baked-in） + docker-compose 一键起
 
@@ -154,51 +154,6 @@ ws://localhost:8000/ws/executions/<EXECUTION_ID>
 
 ---
 
-## MCP 给 AI 用
-
-AgentFlow 内置 MCP server，暴露脚本 CRUD、venv / requirements、同步运行、异步运行、停止执行、日志读取、LLM 配置只读列表，以及 `agentflow://rules` / `agentflow://scripts/{id}` / `agentflow://executions/{id}` 等资源。
-
-URL 模式随 FastAPI 启动，这是推荐接法：
-
-```bash
-cd backend
-uvicorn app.main:app --port 8000
-# MCP endpoint: http://localhost:8000/mcp/
-```
-
-MCP 客户端配置通常长这样（不同客户端字段名可能略有差异，核心是 `url` 指向 `/mcp/`）：
-
-```json
-{
-  "mcpServers": {
-    "agentflow": {
-      "type": "streamable-http",
-      "url": "http://localhost:8000/mcp/"
-    }
-  }
-}
-```
-
-如果设置了 `MCP_AUTH_TOKEN`：
-
-```json
-{
-  "mcpServers": {
-    "agentflow": {
-      "type": "streamable-http",
-      "url": "http://localhost:8000/mcp/",
-      "headers": {
-        "Authorization": "Bearer <MCP_AUTH_TOKEN>"
-      }
-    }
-  }
-}
-```
-
-安全提示：MCP 工具能写入并执行 Python 脚本，本质上是高权限开发入口。默认开启；如要关闭设 `MCP_ENABLED=false`。如要保护 HTTP `/mcp/`，设 `MCP_AUTH_TOKEN=...`，客户端请求需带 `Authorization: Bearer <token>`。
-
----
-
 ## 配置 LLM
 
 侧栏 **Settings** → 添加 LLM 配置：
@@ -255,7 +210,6 @@ DATABASE_URL=mysql+pymysql://user:pass@host/dbname
 │  ├ /api/executions     run / stop / list    │
 │  ├ /api/llm-configs    LLM CRUD             │
 │  ├ /api/cron-jobs      schedule             │
-│  ├ /mcp                MCP tools/resources   │
 │  └ /ws/executions/*    log streaming        │
 └───────┬──────────────────┬──────────────────┘
         │                  │
@@ -282,7 +236,6 @@ DATABASE_URL=mysql+pymysql://user:pass@host/dbname
 │   │   ├── main.py              # FastAPI app + catch-all serving frontend/out
 │   │   ├── config.py            # pydantic-settings
 │   │   ├── database.py          # SQLAlchemy engine, multi-DB aware
-│   │   ├── mcp_server.py        # MCP tools/resources for AI clients
 │   │   ├── models.py            # ORM: Script / Execution / LLMConfig / CronJob
 │   │   ├── schemas.py           # Pydantic IO models
 │   │   └── routers/             # scripts / executions / llm_configs / cron_jobs / ws
@@ -319,8 +272,6 @@ DATABASE_URL=mysql+pymysql://user:pass@host/dbname
 | `DATABASE_URL` | sqlite 本地文件 | SQLAlchemy URL |
 | `DATA_DIR` | `./data/scripts` | 每脚本 venv 存放目录 |
 | `CORS_ORIGINS` | `http://localhost:3000` | 逗号分隔 |
-| `MCP_ENABLED` | `true` | 是否挂载 URL MCP endpoint `/mcp/` |
-| `MCP_AUTH_TOKEN` | 空 | 非空时 `/mcp` 要求 Bearer token |
 | `APP_ENV` | `development` | 标识用 |
 | `APP_PORT` | `8000` | 仅 docker-compose 用 |
 
