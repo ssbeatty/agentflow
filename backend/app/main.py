@@ -31,7 +31,7 @@ async def lifespan(app: FastAPI):
         scheduler_service.shutdown()
 
 
-app = FastAPI(title="OpenGraph", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="AgentFlow", version="0.1.0", lifespan=lifespan)
 
 _origins = settings.cors_origins_list
 _wildcard = "*" in _origins

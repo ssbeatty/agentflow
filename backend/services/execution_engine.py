@@ -5,6 +5,9 @@ Execution engine:
   - runs it in the script's venv (subprocess, non-blocking)
   - streams structured __AGENTFLOW__ events + raw stdout/stderr via WebSocket
   - persists logs & final status to DB
+  - concurrency-limited via asyncio.Semaphore (AGENTFLOW_MAX_CONCURRENT, default 5)
+  - per-execution timeout via AGENTFLOW_EXECUTION_TIMEOUT (default 600s)
+  - queued/retry status tracking
 """
 import asyncio
 import json
@@ -25,19 +28,30 @@ from services.venv_manager import get_script_dir, get_venv_python, venv_exists, 
 
 _PREFIX = "__AGENTFLOW__"
 
+MAX_CONCURRENT: int = int(os.getenv("AGENTFLOW_MAX_CONCURRENT", "5"))
+EXECUTION_TIMEOUT: float = float(os.getenv("AGENTFLOW_EXECUTION_TIMEOUT", "600"))
+
+# lazy-init so it's created inside the running event loop
+_semaphore: asyncio.Semaphore | None = None
+
+
+def _get_semaphore() -> asyncio.Semaphore:
+    global _semaphore
+    if _semaphore is None:
+        _semaphore = asyncio.Semaphore(MAX_CONCURRENT)
+    return _semaphore
+
+
 # ── WebSocket connection manager ───────────────────────────────────────────────
 
 class _WsManager:
     def __init__(self, buffer_size: int = 2000):
-        # execution_id -> set of websockets
         self._conns: dict[str, set] = {}
-        # execution_id -> deque of past messages (so late-joiners can replay)
         self._buffers: dict[str, deque] = {}
         self._buffer_size = buffer_size
 
     async def connect(self, eid: str, ws) -> None:
         self._conns.setdefault(eid, set()).add(ws)
-        # replay buffered messages on (re)connect
         for msg in list(self._buffers.get(eid, ())):
             try:
                 await ws.send_json(msg)
@@ -61,20 +75,17 @@ class _WsManager:
             self._conns.get(eid, set()).discard(ws)
 
     def cleanup(self, eid: str) -> None:
-        """Drop buffer once nobody needs replay (call after a delay)."""
         self._buffers.pop(eid, None)
         self._conns.pop(eid, None)
 
 
 ws_manager = _WsManager()
-
-# install job connections: job_key -> set of websockets
 install_manager = _WsManager()
 
 # active subprocess handles: execution_id -> Popen
 _procs: dict[str, subprocess.Popen] = {}
 
-# hold strong refs so background tasks aren't garbage-collected mid-run
+# strong refs so background tasks aren't garbage-collected mid-run
 _tasks: set[asyncio.Task] = set()
 
 
@@ -84,6 +95,16 @@ def spawn_execution(execution_id: str) -> asyncio.Task:
     _tasks.add(task)
     task.add_done_callback(_tasks.discard)
     return task
+
+
+def queue_stats() -> dict:
+    """Return current concurrency usage (best-effort, in-process view)."""
+    sem = _semaphore
+    running = MAX_CONCURRENT - (sem._value if sem else MAX_CONCURRENT)
+    running = max(0, running)
+    # DB query for accurate queued count is done in the router; return what we know locally
+    return {"max_concurrent": MAX_CONCURRENT, "running_slots_used": running}
+
 
 # ── Wrapper generation ─────────────────────────────────────────────────────────
 
@@ -123,6 +144,7 @@ for _noisy in ("mcp", "httpx", "httpcore", "openai", "anthropic"):
     _logging.getLogger(_noisy).setLevel(_logging.WARNING)
 
 async def _main():
+
     import agentflow as _af
 
     _mcp = json.loads(os.environ.get("AGENTFLOW_MCP_CONFIGS", "{{}}"))
@@ -169,11 +191,31 @@ except Exception as exc:
 
 async def start_execution(execution_id: str) -> None:
     db = SessionLocal()
+    slot_acquired = False
     try:
         exc_row: Execution = db.query(Execution).filter_by(id=execution_id).first()
         if not exc_row:
             return
         script: Script = db.query(Script).filter_by(id=exc_row.script_id).first()
+        if not script:
+            return
+
+        # ── mark queued, then wait for a concurrency slot ─────────────────────
+        exc_row.status = "queued"
+        exc_row.queued_at = datetime.utcnow()
+        db.commit()
+        await ws_manager.send(execution_id, {"type": "status", "status": "queued"})
+
+        await _get_semaphore().acquire()
+        slot_acquired = True
+
+        # re-read: may have been cancelled while waiting in queue
+        db.refresh(exc_row)
+        if exc_row.status == "cancelled":
+            return
+
+        # ── re-load script inside same session ────────────────────────────────
+        script = db.query(Script).filter_by(id=exc_row.script_id).first()
         if not script:
             return
 
@@ -188,11 +230,10 @@ async def start_execution(execution_id: str) -> None:
         from app.models import LLMConfig, MCPServerConfig
         import re
         def _norm(name: str) -> str:
-            # POSIX-safe env var key: uppercase, non-alphanumeric -> _
             return re.sub(r"[^A-Z0-9]+", "_", (name or "").upper()).strip("_") or "UNNAMED"
 
         llm_envs: dict[str, str] = {}
-        llm_names: list[str] = []   # original names, for discovery
+        llm_names: list[str] = []
         llms = db.query(LLMConfig).all()
         for llm in llms:
             payload = json.dumps({
@@ -209,7 +250,7 @@ async def start_execution(execution_id: str) -> None:
                 llm_envs["AGENTFLOW_LLM_DEFAULT"] = payload
         llm_envs["AGENTFLOW_LLM_NAMES"] = json.dumps(llm_names)
 
-        # ── build MCP server configs (only servers the script opted into) ──────
+        # ── build MCP server configs ──────────────────────────────────────────
         selected_ids: list[str] = script.mcp_server_ids or []
         mcp_configs: dict[str, dict] = {}
         if selected_ids:
@@ -235,17 +276,14 @@ async def start_execution(execution_id: str) -> None:
         runner, input_file = _write_runner(script_dir, script.entry_function, execution_id, llm_envs)
         input_file.write_text(json.dumps(exc_row.input_data or {}), encoding="utf-8")
 
-        # ── pick python ───────────────────────────────────────────────────────
         py = get_venv_python(exc_row.script_id) if venv_exists(exc_row.script_id) else Path(sys.executable)
 
-        # ── update DB status ──────────────────────────────────────────────────
         exc_row.status = "running"
         exc_row.started_at = datetime.utcnow()
         db.commit()
 
         await ws_manager.send(execution_id, {"type": "status", "status": "running"})
 
-        # diagnostic log so users can see which LLM/MCP configs are wired up
         diag_msg = (
             f"LLM configs: {[llm.name for llm in llms]}; "
             f"default={'yes' if any(l.is_default for l in llms) else 'no'}; "
@@ -260,8 +298,6 @@ async def start_execution(execution_id: str) -> None:
         sub_env = _clean_env()
         sub_env["PYTHONUNBUFFERED"] = "1"
         sub_env["PYTHONIOENCODING"] = "utf-8"
-        # langsmith / langchain telemetry off by default (faster cold imports,
-        # no surprise network calls). User can override in their own script.
         sub_env.setdefault("LANGCHAIN_TRACING_V2", "false")
         sub_env.setdefault("LANGSMITH_TRACING", "false")
         sub_env.update(llm_envs)
@@ -271,8 +307,6 @@ async def start_execution(execution_id: str) -> None:
 
         popen_kwargs = {}
         if sys.platform == "win32":
-            # detach from parent console so CTRL_C (e.g. uvicorn --reload)
-            # doesn't kill the user script.
             popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
 
         proc = subprocess.Popen(
@@ -306,46 +340,74 @@ async def start_execution(execution_id: str) -> None:
         error_data: dict | None = None
         eof_count = 0
 
-        while eof_count < 2:
-            is_stderr, line = await queue.get()
-            if line is None:
-                eof_count += 1
-                continue
-            if line.startswith(_PREFIX):
-                try:
-                    payload = json.loads(line[len(_PREFIX):])
-                except json.JSONDecodeError:
+        async def _drain():
+            nonlocal result_data, error_data, eof_count
+            while eof_count < 2:
+                is_stderr, line = await queue.get()
+                if line is None:
+                    eof_count += 1
                     continue
-                t = payload.get("type")
-                if t == "log":
-                    _persist_log(db, execution_id, payload)
+                if line.startswith(_PREFIX):
+                    try:
+                        payload = json.loads(line[len(_PREFIX):])
+                    except json.JSONDecodeError:
+                        continue
+                    t = payload.get("type")
+                    if t == "log":
+                        _persist_log(db, execution_id, payload)
+                        await ws_manager.send(execution_id, {
+                            "type": "log",
+                            "level": payload.get("level", "info"),
+                            "message": payload.get("message", ""),
+                            "data": payload.get("data"),
+                            "step": payload.get("step"),
+                            "timestamp": datetime.utcnow().isoformat(),
+                        })
+                    elif t == "token":
+                        await ws_manager.send(execution_id, {
+                            "type": "token",
+                            "content": payload.get("content", ""),
+                        })
+                    elif t == "result":
+                        result_data = payload.get("data")
+                    elif t == "error":
+                        error_data = payload
+                else:
+                    level = "error" if is_stderr else "raw"
+                    _persist_log(db, execution_id, {"level": level, "message": line})
                     await ws_manager.send(execution_id, {
                         "type": "log",
-                        "level": payload.get("level", "info"),
-                        "message": payload.get("message", ""),
-                        "data": payload.get("data"),
-                        "step": payload.get("step"),
+                        "level": level,
+                        "message": line,
                         "timestamp": datetime.utcnow().isoformat(),
                     })
-                elif t == "token":
-                    # Streaming token — broadcast via WS only, not persisted to DB
-                    await ws_manager.send(execution_id, {
-                        "type": "token",
-                        "content": payload.get("content", ""),
-                    })
-                elif t == "result":
-                    result_data = payload.get("data")
-                elif t == "error":
-                    error_data = payload
-            else:
-                level = "error" if is_stderr else "raw"
-                _persist_log(db, execution_id, {"level": level, "message": line})
-                await ws_manager.send(execution_id, {
-                    "type": "log",
-                    "level": level,
-                    "message": line,
-                    "timestamp": datetime.utcnow().isoformat(),
-                })
+
+        try:
+            await asyncio.wait_for(_drain(), timeout=EXECUTION_TIMEOUT)
+        except asyncio.TimeoutError:
+            proc.terminate()
+            try:
+                await asyncio.wait_for(asyncio.to_thread(proc.wait), timeout=5.0)
+            except asyncio.TimeoutError:
+                proc.kill()
+            _procs.pop(execution_id, None)
+
+            timeout_msg = f"Execution timed out after {EXECUTION_TIMEOUT:.0f}s"
+            exc_row = db.query(Execution).filter_by(id=execution_id).first()
+            exc_row.status = "failed"
+            exc_row.error = timeout_msg
+            exc_row.finished_at = datetime.utcnow()
+            db.commit()
+            _persist_log(db, execution_id, {"level": "error", "message": timeout_msg, "step": "_engine"})
+            await ws_manager.send(execution_id, {
+                "type": "log", "level": "error", "message": timeout_msg,
+                "step": "_engine", "timestamp": datetime.utcnow().isoformat(),
+            })
+            await ws_manager.send(execution_id, {
+                "type": "status", "status": "failed", "error": timeout_msg,
+            })
+            _schedule_ws_cleanup(execution_id)
+            return
 
         await asyncio.to_thread(proc.wait)
 
@@ -367,7 +429,10 @@ async def start_execution(execution_id: str) -> None:
             "error": exc_row.error,
         })
 
-        # cleanup temp files
+        # ── auto-retry on failure ─────────────────────────────────────────────
+        if exc_row.status == "failed" and exc_row.retry_count < exc_row.max_retries:
+            await _schedule_retry(exc_row)
+
         try:
             runner.unlink(missing_ok=True)
             input_file.unlink(missing_ok=True)
@@ -381,13 +446,50 @@ async def start_execution(execution_id: str) -> None:
         _mark_failed(db, execution_id, str(e))
         await ws_manager.send(execution_id, {"type": "status", "status": "failed", "error": str(e)})
     finally:
+        if slot_acquired:
+            _get_semaphore().release()
         _procs.pop(execution_id, None)
         db.close()
-        # keep replay buffer around briefly so a reconnect after status=completed
-        # still sees the final logs, then drop it
-        asyncio.get_event_loop().call_later(
-            300, ws_manager.cleanup, execution_id
+        _schedule_ws_cleanup(execution_id)
+
+
+async def _schedule_retry(failed_row: Execution) -> None:
+    """Spawn a new Execution row as a retry of the given failed one."""
+    db = SessionLocal()
+    try:
+        retry_exc = Execution(
+            script_id=failed_row.script_id,
+            input_data=failed_row.input_data,
+            max_retries=failed_row.max_retries,
+            retry_count=failed_row.retry_count + 1,
         )
+        db.add(retry_exc)
+        db.commit()
+        db.refresh(retry_exc)
+        retry_id = retry_exc.id
+        retry_num = retry_exc.retry_count
+    finally:
+        db.close()
+
+    msg = f"Auto-retry {retry_num}/{failed_row.max_retries} → new execution {retry_id}"
+    db2 = SessionLocal()
+    try:
+        _persist_log(db2, failed_row.id, {"level": "info", "message": msg, "step": "_engine"})
+    finally:
+        db2.close()
+    await ws_manager.send(failed_row.id, {
+        "type": "log", "level": "info", "message": msg,
+        "step": "_engine", "timestamp": datetime.utcnow().isoformat(),
+    })
+    spawn_execution(retry_id)
+
+
+def _schedule_ws_cleanup(execution_id: str) -> None:
+    try:
+        loop = asyncio.get_event_loop()
+        loop.call_later(300, ws_manager.cleanup, execution_id)
+    except RuntimeError:
+        pass
 
 
 async def stop_execution(execution_id: str) -> bool:

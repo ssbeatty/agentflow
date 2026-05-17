@@ -33,7 +33,7 @@ export default function Dashboard() {
       <header className="border-b border-border px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Zap className="h-5 w-5 text-primary" />
-          <span className="font-semibold text-base">OpenGraph</span>
+          <span className="font-semibold text-base">AgentFlow</span>
         </div>
         <div className="flex items-center gap-2">
           <Link href="/converse">

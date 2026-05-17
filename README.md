@@ -179,7 +179,7 @@ ws://localhost:8000/ws/executions/<EXECUTION_ID>
 
 ```bash
 # SQLite (默认，零依赖)
-DATABASE_URL=sqlite:///./data/opengraph.db
+DATABASE_URL=sqlite:///./data/agentflow.db
 
 # Postgres
 DATABASE_URL=postgresql+psycopg2://user:pass@host:5432/dbname
@@ -188,7 +188,7 @@ DATABASE_URL=postgresql+psycopg2://user:pass@host:5432/dbname
 DATABASE_URL=mysql+pymysql://user:pass@host/dbname
 ```
 
-表结构在应用启动时自动 `create_all`。生产想做 schema 迁移再加 Alembic。
+表结构在应用启动时自动 `create_all`（仅建表，不补列）。Schema 变更通过 `backend/migrations/` 管理，运行 `python migrations/apply.py` 应用。
 
 ---
 
@@ -199,7 +199,7 @@ DATABASE_URL=mysql+pymysql://user:pass@host/dbname
 │  Next.js (static export → served by FastAPI)│
 │  ├ /          Dashboard                     │
 │  ├ /script    Editor + Logs + Runs          │
-│  ├ /chat      Chat with any script          │
+│  ├ /converse  Chat with any script          │
 │  ├ /docs      API reference                 │
 │  └ /settings  LLM configs                   │
 └───────────────────┬─────────────────────────┘

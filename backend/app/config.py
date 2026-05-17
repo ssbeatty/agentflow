@@ -12,10 +12,10 @@ class Settings(BaseSettings):
     cors_origins: str = "*"
 
     # SQLAlchemy URL. Examples:
-    #   sqlite:///./data/opengraph.db
+    #   sqlite:///./data/agentflow.db
     #   postgresql+psycopg2://user:pass@host:5432/dbname
     #   mysql+pymysql://user:pass@host/dbname
-    database_url: str = f"sqlite:///{(DEFAULT_DATA_DIR / 'opengraph.db').as_posix()}"
+    database_url: str = f"sqlite:///{(DEFAULT_DATA_DIR / 'agentflow.db').as_posix()}"
 
     # Where per-script .venv directories live. Override in docker via env.
     data_dir: str = str(DEFAULT_DATA_DIR / "scripts")

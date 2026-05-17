@@ -25,10 +25,11 @@ import DependencyManager from "@/components/DependencyManager";
 import FileTree, { type TreeFile } from "@/components/FileTree";
 import { useResizable } from "@/components/Splitter";
 
-type RunStatus = "idle" | "running" | "completed" | "failed" | "cancelled";
+type RunStatus = "idle" | "queued" | "running" | "completed" | "failed" | "cancelled";
 
 const STATUS_COLORS: Record<RunStatus, string> = {
   idle: "text-muted-foreground",
+  queued: "text-yellow-400",
   running: "text-blue-400",
   completed: "text-emerald-400",
   failed: "text-destructive",
@@ -183,7 +184,8 @@ function ScriptPage() {
       } else if (msg.type === "status") {
         setRunStatus(msg.status as RunStatus);
         if (msg.output !== undefined) setOutput(msg.output);
-        if (msg.status !== "running") {
+        const terminal = ["completed", "failed", "cancelled"].includes(msg.status);
+        if (terminal) {
           ws.close();
           if (msg.status === "failed" && msg.error) toast.error(`Failed: ${msg.error}`);
           if (msg.status === "completed") toast.success("Execution completed");
@@ -415,7 +417,7 @@ function ScriptPage() {
         <div className="ml-auto flex items-center gap-2">
           {runStatus !== "idle" && (
             <span className={`text-xs font-medium flex items-center gap-1.5 ${STATUS_COLORS[runStatus]}`}>
-              {runStatus === "running" && <Loader2 className="h-3 w-3 animate-spin" />}
+              {(runStatus === "queued" || runStatus === "running") && <Loader2 className="h-3 w-3 animate-spin" />}
               {runStatus}
             </span>
           )}
@@ -423,7 +425,7 @@ function ScriptPage() {
             {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
             Save
           </Button>
-          {runStatus === "running" ? (
+          {(runStatus === "queued" || runStatus === "running") ? (
             <Button variant="destructive" size="sm" onClick={handleStop}>
               <Square className="h-3 w-3" />Stop
             </Button>

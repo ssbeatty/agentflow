@@ -129,7 +129,7 @@ async def chat_start(conv_id: str, body: ConverseChatStartRequest, db: Session =
         running_exc = db.query(Execution).filter_by(
             id=last_msg.execution_id
         ).first()
-        if running_exc and running_exc.status in ("pending", "running"):
+        if running_exc and running_exc.status in ("pending", "queued", "running"):
             raise HTTPException(409, "A reply is already being generated for this conversation")
 
     # Persist user message immediately

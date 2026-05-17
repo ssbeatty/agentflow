@@ -46,13 +46,16 @@ class Execution(Base):
 
     id = Column(String, primary_key=True, default=_id)
     script_id = Column(String, ForeignKey("scripts.id", ondelete="CASCADE"), nullable=False)
-    status = Column(String(50), default="pending")  # pending/running/completed/failed/cancelled
+    status = Column(String(50), default="pending")  # pending/queued/running/completed/failed/cancelled
     input_data = Column(JSON, default=dict)
     output_data = Column(JSON, nullable=True)
     error = Column(Text, nullable=True)
+    queued_at = Column(DateTime, nullable=True)
     started_at = Column(DateTime, nullable=True)
     finished_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    retry_count = Column(Integer, default=0)
+    max_retries = Column(Integer, default=0)
 
     script = relationship("Script", back_populates="executions")
     logs = relationship("ExecutionLog", back_populates="execution", cascade="all, delete-orphan",

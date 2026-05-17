@@ -373,6 +373,10 @@ function ConverseInner() {
   // Used to decide whether to run the typewriter animation after confirm —
   // if tokens already streamed in, the content is already visible so we skip it.
   const tokenReceivedRef = useRef(false);
+  // When send() auto-creates a conversation, setActiveConvId triggers the
+  // message-load effect which would wipe the optimistic messages. This ref
+  // tells the effect to skip one load cycle.
+  const skipNextMsgReloadRef = useRef(false);
 
   // Load scripts on mount
   useEffect(() => {
@@ -421,6 +425,10 @@ function ConverseInner() {
   // Load messages when conversation changes
   useEffect(() => {
     if (!activeConvId) return;
+    if (skipNextMsgReloadRef.current) {
+      skipNextMsgReloadRef.current = false;
+      return;
+    }
     convsApi.get(activeConvId).then((conv) => {
       setContextTurns(conv.context_turns);
       setMessages(conv.messages.map((m) => ({
@@ -471,7 +479,7 @@ function ConverseInner() {
     }
   }
 
-  const openWebSocket = useCallback((executionId: string, assistantMsgId: string) => {
+  const openWebSocket = useCallback((executionId: string, assistantMsgId: string, convId: string) => {
     if (wsRef.current) wsRef.current.close();
     tokenReceivedRef.current = false;
 
@@ -501,39 +509,33 @@ function ConverseInner() {
         if (done) {
           ws.close();
           wsRef.current = null;
-          // Confirm + persist
-          if (activeConvId) {
-            convsApi.confirm(activeConvId, executionId).then((saved) => {
-              // Only run typewriter if no tokens arrived during streaming.
-              // If tokens streamed in, content is already visible — no need to re-animate.
-              const wasStreamed = tokenReceivedRef.current;
-              const shouldAnimate = !wasStreamed && !saved.error && !!saved.content;
-              setMessages((prev) => prev.map((m) =>
-                m.id === assistantMsgId
-                  ? {
-                      ...m,
-                      content: saved.content,
-                      error: saved.error ?? undefined,
-                      streaming: false,
-                      animating: shouldAnimate,
-                    }
-                  : m
-              ));
-              if (shouldAnimate) {
-                setAnimatingId(assistantMsgId);
-              }
-              setSending(false);
-              // Refresh conversation list order
-              setConvList((prev) =>
-                prev.map((c) =>
-                  c.id === activeConvId ? { ...c, updated_at: new Date().toISOString() } : c
-                ).sort((a, b) => b.updated_at.localeCompare(a.updated_at))
-              );
-            }).catch(() => {
-              setSending(false);
-              toast.error("Failed to save reply");
-            });
-          }
+          convsApi.confirm(convId, executionId).then((saved) => {
+            const wasStreamed = tokenReceivedRef.current;
+            const shouldAnimate = !wasStreamed && !saved.error && !!saved.content;
+            setMessages((prev) => prev.map((m) =>
+              m.id === assistantMsgId
+                ? {
+                    ...m,
+                    content: saved.content,
+                    error: saved.error ?? undefined,
+                    streaming: false,
+                    animating: shouldAnimate,
+                  }
+                : m
+            ));
+            if (shouldAnimate) {
+              setAnimatingId(assistantMsgId);
+            }
+            setSending(false);
+            setConvList((prev) =>
+              prev.map((c) =>
+                c.id === convId ? { ...c, updated_at: new Date().toISOString() } : c
+              ).sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+            );
+          }).catch(() => {
+            setSending(false);
+            toast.error("Failed to save reply");
+          });
         }
       }
     };
@@ -542,8 +544,7 @@ function ConverseInner() {
       setSending(false);
       toast.error("WebSocket error");
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeConvId]);
+  }, []);
 
   async function send() {
     const msg = input.trim();
@@ -554,6 +555,7 @@ function ConverseInner() {
     if (!convId) {
       try {
         const conv = await convsApi.create({ script_id: scriptId, context_turns: contextTurns });
+        skipNextMsgReloadRef.current = true;
         setConvList((prev) => [conv, ...prev]);
         setActiveConvId(conv.id);
         convId = conv.id;
@@ -593,7 +595,7 @@ function ConverseInner() {
           .catch(() => {});
       }
 
-      openWebSocket(execution_id, assistantId);
+      openWebSocket(execution_id, assistantId, convId);
     } catch (err) {
       setSending(false);
       setMessages((prev) => prev.filter((m) => m.id !== assistantId).map((m) =>

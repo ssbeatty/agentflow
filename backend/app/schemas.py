@@ -62,6 +62,7 @@ class ScriptDetail(ScriptSummary):
 class ExecutionCreate(BaseModel):
     script_id: str
     input_data: dict = {}
+    max_retries: int = 0
 
 
 class ExecutionLogOut(BaseModel):
@@ -79,9 +80,12 @@ class ExecutionSummary(BaseModel):
     id: str
     script_id: str
     status: str
+    queued_at: Optional[datetime] = None
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
     created_at: datetime
+    retry_count: int = 0
+    max_retries: int = 0
 
     model_config = {"from_attributes": True}
 
