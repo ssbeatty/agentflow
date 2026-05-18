@@ -13,12 +13,87 @@ import os
 import re
 import sys
 import json
+from pathlib import Path
+from types import SimpleNamespace
 
 _PREFIX = "__AGENTFLOW__"
 _IN_PLATFORM = bool(os.environ.get("AGENTFLOW_EXECUTION_ID"))
 
 # Populated by the runner before user code runs when MCP servers are configured.
 _injected_tools: list = []
+
+
+# ── Paths exposed to user scripts ──────────────────────────────────────────────
+#
+#   paths.run_dir     — cwd of this execution (fresh per run, auto-pruned)
+#   paths.workspace   — persistent dir shared across runs of the same script
+#   paths.script_dir  — root of the script (main.py lives here)
+#   paths.uploads     — read-only global uploads pool (rarely needed; use file refs)
+#
+# Outside the platform these all fall back to the current working directory so
+# scripts can still be smoke-tested locally with `python main.py`.
+
+def _p(env_key: str) -> Path:
+    v = os.environ.get(env_key)
+    return Path(v) if v else Path.cwd()
+
+
+paths = SimpleNamespace(
+    run_dir=_p("AGENTFLOW_RUN_DIR"),
+    workspace=_p("AGENTFLOW_WORKSPACE_DIR"),
+    script_dir=_p("AGENTFLOW_SCRIPT_DIR"),
+    uploads=_p("AGENTFLOW_UPLOADS_DIR"),
+)
+
+
+# ── Uploaded-file wrapper ──────────────────────────────────────────────────────
+
+class AgentFlowFile:
+    """Handle for a file uploaded via /api/files/upload and referenced from
+    input_data via {"$file": "<id>"}.
+
+    The execution engine resolves the reference before launch; user code
+    receives an AgentFlowFile in place of the marker dict.
+    """
+
+    __slots__ = ("id", "name", "mime", "size", "path")
+
+    def __init__(self, *, id: str, name: str, mime: str, size: int, path: str):
+        self.id = id
+        self.name = name
+        self.mime = mime
+        self.size = size
+        self.path = Path(path)
+
+    def read_bytes(self) -> bytes:
+        return self.path.read_bytes()
+
+    def read_text(self, encoding: str = "utf-8", errors: str = "strict") -> str:
+        return self.path.read_text(encoding=encoding, errors=errors)
+
+    def open(self, mode: str = "rb"):
+        return self.path.open(mode)
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"AgentFlowFile(id={self.id!r}, name={self.name!r}, size={self.size})"
+
+
+_FILE_MARKER = "__agentflow_file__"
+
+
+def _hydrate_file_refs(value):
+    """Recursively replace engine-planted file marker dicts with AgentFlowFile
+    instances. Called by the runner before invoking user code."""
+    if isinstance(value, dict):
+        if value.get(_FILE_MARKER) is True:
+            return AgentFlowFile(
+                id=value["id"], name=value["name"], mime=value.get("mime", ""),
+                size=value.get("size", 0), path=value["path"],
+            )
+        return {k: _hydrate_file_refs(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_hydrate_file_refs(v) for v in value]
+    return value
 
 
 def _norm(name: str) -> str:
@@ -36,8 +111,16 @@ def list_llms() -> list[str]:
     return []
 
 
+def _json_default(o):
+    if isinstance(o, AgentFlowFile):
+        return {"$file": o.id, "name": o.name, "mime": o.mime, "size": o.size}
+    if isinstance(o, Path):
+        return str(o)
+    return repr(o)  # last resort so log() never crashes on weird types
+
+
 def _emit(data: dict) -> None:
-    print(_PREFIX + json.dumps(data, ensure_ascii=False), flush=True)
+    print(_PREFIX + json.dumps(data, ensure_ascii=False, default=_json_default), flush=True)
 
 
 def log(

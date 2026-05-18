@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse
 
 from app.config import settings
 from app.database import engine, Base
-from app.routers import scripts, executions, llm_configs, cron_jobs, ws, mcp_servers, conversations
+from app.routers import scripts, executions, llm_configs, cron_jobs, ws, mcp_servers, conversations, files
 from services.scheduler import scheduler_service
 
 FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend" / "out"
@@ -53,6 +53,7 @@ app.include_router(cron_jobs.router,   prefix="/api/cron-jobs",   tags=["cron-jo
 app.include_router(ws.router,          prefix="/ws",              tags=["websocket"])
 app.include_router(mcp_servers.router,    prefix="/api/mcp-servers",    tags=["mcp-servers"])
 app.include_router(conversations.router,  prefix="/api/conversations",  tags=["conversations"])
+app.include_router(files.router,          prefix="/api/files",          tags=["files"])
 
 @app.get("/health")
 def health():

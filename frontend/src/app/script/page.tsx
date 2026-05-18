@@ -26,6 +26,7 @@ import FileTree, { type TreeFile } from "@/components/FileTree";
 import { useResizable } from "@/components/Splitter";
 import RevisionPanel from "@/components/RevisionPanel";
 import InputPresetEditor from "@/components/InputPresetEditor";
+import FileUploadPanel from "@/components/FileUploadPanel";
 
 type RunStatus = "idle" | "queued" | "running" | "completed" | "failed" | "cancelled";
 
@@ -673,6 +674,34 @@ function ScriptPage() {
                   onChange={setInputJson}
                   error={inputError}
                   onError={setInputError}
+                />
+
+                {/* Uploaded files */}
+                <FileUploadPanel
+                  scriptId={id}
+                  onInsertRef={snippet => {
+                    setInputJson(prev => {
+                      const trimmed = (prev ?? "").trim();
+                      // empty / placeholder → start a fresh object with key "file"
+                      if (!trimmed || trimmed === "{}") {
+                        return `{\n  "file": ${snippet}\n}`;
+                      }
+                      // valid JSON object → add/replace top-level "file" key
+                      try {
+                        const obj = JSON.parse(trimmed);
+                        if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+                          let key = "file";
+                          let i = 2;
+                          while (key in obj) key = `file${i++}`;
+                          obj[key] = JSON.parse(snippet);
+                          return JSON.stringify(obj, null, 2);
+                        }
+                      } catch { /* fallthrough to append */ }
+                      // otherwise just append on a new line
+                      return `${prev}\n${snippet}`;
+                    });
+                    setInputError("");
+                  }}
                 />
 
               </div>

@@ -7,6 +7,7 @@ import type {
   Conversation, ConversationSummary, ConversationMessage,
   ScriptRevision, ScriptRevisionDetail,
   ScriptInputPreset,
+  UploadedFile,
 } from "./types";
 
 const BASE = "/api";
@@ -203,6 +204,29 @@ export const conversations = {
 
   deleteMessage: (convId: string, msgId: string) =>
     req<void>(`/conversations/${convId}/messages/${msgId}`, { method: "DELETE" }),
+};
+
+// ── Uploaded Files ────────────────────────────────────────────────────────────
+
+export const files = {
+  list: (scriptId?: string) =>
+    req<UploadedFile[]>(`/files${scriptId ? `?script_id=${scriptId}` : ""}`),
+
+  upload: async (file: File, scriptId?: string): Promise<UploadedFile> => {
+    const fd = new FormData();
+    fd.append("file", file);
+    if (scriptId) fd.append("script_id", scriptId);
+    const res = await fetch(`${BASE}/files/upload`, { method: "POST", body: fd });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => res.statusText);
+      throw new Error(detail || `HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+
+  delete: (id: string) => req<void>(`/files/${id}`, { method: "DELETE" }),
+
+  downloadUrl: (id: string) => `${BASE}/files/${id}`,
 };
 
 // ── Cron Jobs ──────────────────────────────────────────────────────────────────

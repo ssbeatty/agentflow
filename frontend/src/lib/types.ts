@@ -100,6 +100,17 @@ export interface MCPServerConfig {
   updated_at: string;
 }
 
+// ── UploadedFile ──────────────────────────────────────────────────────────────
+
+export interface UploadedFile {
+  id: string;
+  original_name: string;
+  mime: string | null;
+  size: number;
+  script_id: string | null;
+  created_at: string | null;
+}
+
 // ── ScriptInputPreset ────────────────────────────────────────────────────────
 
 export interface ScriptInputPreset {

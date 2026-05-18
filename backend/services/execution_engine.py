@@ -22,7 +22,8 @@ from typing import Any
 
 from app.config import BACKEND_ROOT
 from app.database import SessionLocal
-from app.models import Execution, ExecutionLog, Script
+from app.models import Execution, ExecutionLog, Script, UploadedFile
+from services.file_storage import UPLOADS_DIR, blob_path
 from services.script_files import script_file_path
 from services.venv_manager import get_script_dir, get_venv_python, venv_exists, _clean_env
 
@@ -106,15 +107,55 @@ def queue_stats() -> dict:
     return {"max_concurrent": MAX_CONCURRENT, "running_slots_used": running}
 
 
+# ── File-reference resolution ──────────────────────────────────────────────────
+
+_FILE_MARKER = "__agentflow_file__"
+
+
+def _resolve_file_refs(value: Any, db) -> Any:
+    """Walk input_data recursively; replace any {"$file": "<id>"} with a marker
+    dict that the runner converts into an AgentFlowFile object.
+
+    Returns the rewritten value. Unknown file ids raise ValueError so the caller
+    can surface a clear error before launching the subprocess.
+    """
+    if isinstance(value, dict):
+        # treat {"$file": "<id>"} as a leaf, not a regular dict
+        if set(value.keys()) == {"$file"} and isinstance(value["$file"], str):
+            file_id = value["$file"]
+            row = db.query(UploadedFile).filter_by(id=file_id).first()
+            if not row:
+                raise ValueError(f"file ref {{$file: {file_id!r}}} not found")
+            bp = blob_path(file_id)
+            return {
+                _FILE_MARKER: True,
+                "id": row.id,
+                "name": row.original_name,
+                "mime": row.mime or "",
+                "size": row.size,
+                "path": str(bp).replace("\\", "/"),
+            }
+        return {k: _resolve_file_refs(v, db) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_resolve_file_refs(v, db) for v in value]
+    return value
+
+
 # ── Wrapper generation ─────────────────────────────────────────────────────────
 
-def _write_runner(script_dir: Path, entry_fn: str, execution_id: str, llm_envs: dict) -> Path:
+def _write_runner(
+    script_dir: Path,
+    run_dir: Path,
+    entry_fn: str,
+    execution_id: str,
+    llm_envs: dict,
+) -> tuple[Path, Path]:
     backend_root = str(BACKEND_ROOT).replace("\\", "/")
     script_dir_s = str(script_dir).replace("\\", "/")
-    input_file = script_dir / f"_input_{execution_id}.json"
+    input_file = run_dir / "_input.json"
     input_path = str(input_file).replace("\\", "/")
 
-    runner = script_dir / f"_runner_{execution_id}.py"
+    runner = run_dir / "_runner.py"
     runner.write_text(
         f'''import sys, os, json, traceback, asyncio, inspect
 import importlib.util
@@ -166,6 +207,9 @@ async def _main():
 
         fn = getattr(mod, "{entry_fn}")
         inp = json.loads(Path(r"{input_path}").read_text(encoding="utf-8"))
+        # Convert {{"__agentflow_file__": true, ...}} markers (planted by the engine
+        # when resolving {{"$file": "<id>"}} refs) into AgentFlowFile objects.
+        inp = _af._hydrate_file_refs(inp)
         result = await fn(inp) if inspect.iscoroutinefunction(fn) else fn(inp)
         _emit({{"type": "result", "data": result
             if isinstance(result, (dict, list, str, int, float, bool, type(None)))
@@ -235,6 +279,22 @@ async def start_execution(execution_id: str) -> None:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(f.content, encoding="utf-8")
 
+        # ── per-execution working directory (cwd) + persistent workspace ──────
+        run_dir = script_dir / "runs" / execution_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        workspace_dir = script_dir / "workspace"
+        workspace_dir.mkdir(parents=True, exist_ok=True)
+
+        # ── resolve {"$file": "<id>"} refs in input_data before persisting ────
+        try:
+            resolved_input = _resolve_file_refs(exc_row.input_data or {}, db)
+        except ValueError as e:
+            _mark_failed(db, execution_id, str(e))
+            await ws_manager.send(execution_id, {
+                "type": "status", "status": "failed", "error": str(e),
+            })
+            return
+
         # ── build LLM env vars ────────────────────────────────────────────────
         from app.models import LLMConfig, MCPServerConfig
         import re
@@ -281,9 +341,17 @@ async def start_execution(execution_id: str) -> None:
                 mcp_configs[srv.name] = cfg
         llm_envs["AGENTFLOW_MCP_CONFIGS"] = json.dumps(mcp_configs)
 
+        # expose paths to user scripts via env (read by agentflow.paths)
+        llm_envs["AGENTFLOW_RUN_DIR"] = str(run_dir)
+        llm_envs["AGENTFLOW_WORKSPACE_DIR"] = str(workspace_dir)
+        llm_envs["AGENTFLOW_SCRIPT_DIR"] = str(script_dir)
+        llm_envs["AGENTFLOW_UPLOADS_DIR"] = str(UPLOADS_DIR)
+
         # ── write runner + input ──────────────────────────────────────────────
-        runner, input_file = _write_runner(script_dir, script.entry_function, execution_id, llm_envs)
-        input_file.write_text(json.dumps(exc_row.input_data or {}), encoding="utf-8")
+        runner, input_file = _write_runner(
+            script_dir, run_dir, script.entry_function, execution_id, llm_envs,
+        )
+        input_file.write_text(json.dumps(resolved_input), encoding="utf-8")
 
         py = get_venv_python(exc_row.script_id) if venv_exists(exc_row.script_id) else Path(sys.executable)
 
@@ -322,7 +390,7 @@ async def start_execution(execution_id: str) -> None:
             [str(py), str(runner)],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            cwd=str(script_dir),
+            cwd=str(run_dir),
             env=sub_env,
             bufsize=1,
             text=True,
@@ -461,9 +529,14 @@ async def start_execution(execution_id: str) -> None:
         if exc_row.status == "failed" and exc_row.retry_count < exc_row.max_retries:
             await _schedule_retry(exc_row)
 
+        # leave run_dir intact for post-mortem inspection; prune old runs
         try:
             runner.unlink(missing_ok=True)
             input_file.unlink(missing_ok=True)
+        except Exception:
+            pass
+        try:
+            _prune_old_runs(script_dir, keep=20)
         except Exception:
             pass
 
@@ -510,6 +583,18 @@ async def _schedule_retry(failed_row: Execution) -> None:
         "step": "_engine", "timestamp": datetime.utcnow().isoformat(),
     })
     spawn_execution(retry_id)
+
+
+def _prune_old_runs(script_dir: Path, keep: int) -> None:
+    """Keep only the `keep` most recently modified subdirs under script_dir/runs/."""
+    runs_dir = script_dir / "runs"
+    if not runs_dir.is_dir():
+        return
+    entries = [p for p in runs_dir.iterdir() if p.is_dir()]
+    entries.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    import shutil as _shutil
+    for stale in entries[keep:]:
+        _shutil.rmtree(stale, ignore_errors=True)
 
 
 def _schedule_ws_cleanup(execution_id: str) -> None:

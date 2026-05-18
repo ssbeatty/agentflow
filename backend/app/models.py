@@ -175,6 +175,18 @@ class ConversationMessage(Base):
     conversation = relationship("Conversation", back_populates="messages")
 
 
+class UploadedFile(Base):
+    __tablename__ = "uploaded_files"
+
+    id = Column(String, primary_key=True, default=_id)
+    original_name = Column(String(500), nullable=False)
+    mime = Column(String(255), nullable=True)
+    size = Column(Integer, nullable=False, default=0)
+    script_id = Column(String, ForeignKey("scripts.id", ondelete="SET NULL"), nullable=True)
+    storage_path = Column(Text, nullable=False)  # absolute path to blob on disk
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class CronJob(Base):
     __tablename__ = "cron_jobs"
 

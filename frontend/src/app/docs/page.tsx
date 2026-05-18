@@ -85,6 +85,75 @@ export default function DocsPage() {
         </Section>
 
         <Section
+          title="Upload a file"
+          desc="Upload arbitrary binaries (PDFs, CSVs, images, etc.) that scripts can read by reference. Files persist until you delete them. Optionally tag with script_id for filtering."
+        >
+          <Endpoint method="POST" path="/api/files/upload" />
+          <Code
+            label="curl"
+            code={`# upload + tag to a script (script_id is optional)
+curl -X POST ${origin}/api/files/upload \\
+  -F 'file=@./report.pdf' \\
+  -F 'script_id=${scriptId}'
+
+# → {"id":"<FILE_ID>","original_name":"report.pdf","mime":"application/pdf","size":12345,...}`}
+          />
+        </Section>
+
+        <Section
+          title="Run a script with file input"
+          desc='Pass a file reference anywhere in input_data using the marker {"$file": "<FILE_ID>"}. The execution engine resolves it before launch; your script receives an AgentFlowFile object in its place. Markers can be nested in objects / arrays.'
+        >
+          <Endpoint method="POST" path="/api/executions/run" />
+          <Code
+            label="curl"
+            code={`curl -X POST ${origin}/api/executions/run \\
+  -H 'Content-Type: application/json' \\
+  -d '{
+    "script_id": "${scriptId}",
+    "input_data": {
+      "doc":   {"$file": "<FILE_ID>"},
+      "extras": [{"$file": "<FILE_ID_2>"}, {"$file": "<FILE_ID_3>"}],
+      "query": "summarise the doc"
+    }
+  }'`}
+          />
+          <Code
+            label="python (script side)"
+            code={`from agentflow import paths, AgentFlowFile
+
+def run(input):
+    doc: AgentFlowFile = input["doc"]
+    text = doc.read_text()                   # or .read_bytes() / .open("rb")
+    print(doc.name, doc.mime, doc.size)
+
+    # Persistent cache shared across runs of this script:
+    (paths.workspace / "index.json").write_text("...")
+
+    # Per-execution scratch dir (cwd; isolated between runs, auto-pruned):
+    open("scratch.txt", "w").write("...")
+
+    return {"reply": text[:200]}`}
+          />
+        </Section>
+
+        <Section
+          title="List / delete files"
+          desc="Filter by script_id to show files tagged to a script plus untagged globals."
+        >
+          <Endpoint method="GET" path="/api/files?script_id=..." />
+          <Endpoint method="GET" path="/api/files/{file_id}" />
+          <Endpoint method="GET" path="/api/files/{file_id}/meta" />
+          <Endpoint method="DELETE" path="/api/files/{file_id}" />
+          <Code
+            label="curl"
+            code={`curl '${origin}/api/files?script_id=${scriptId}'
+curl ${origin}/api/files/<FILE_ID> -o downloaded.bin
+curl -X DELETE ${origin}/api/files/<FILE_ID>`}
+          />
+        </Section>
+
+        <Section
           title="Run asynchronously"
           desc="Returns immediately with an execution id; poll GET /executions/{id} or subscribe via WebSocket for logs. Better for long jobs and fan-out."
         >
@@ -187,6 +256,21 @@ while True:
               <b className="text-foreground">Logging</b>: use
               <code className="text-foreground"> from agentflow import log</code>. Structured logs go to the Logs panel
               and are persisted to the run history.
+            </li>
+            <li>
+              <b className="text-foreground">File inputs</b>: upload via
+              <code className="text-foreground"> /api/files/upload</code>, then reference in
+              <code className="text-foreground"> input_data</code> as
+              <code className="text-foreground"> {`{"$file": "<id>"}`}</code> at any depth.
+              The script receives an <code className="text-foreground">AgentFlowFile</code> with
+              <code className="text-foreground"> .name / .mime / .size / .path / .read_text() / .read_bytes() / .open()</code>.
+            </li>
+            <li>
+              <b className="text-foreground">Working directories</b>: import
+              <code className="text-foreground"> paths</code> from <code className="text-foreground">agentflow</code>.
+              <code className="text-foreground"> paths.run_dir</code> is this run&apos;s cwd (fresh each run, auto-pruned);
+              <code className="text-foreground"> paths.workspace</code> persists across runs of the same script
+              (good for caches, vector indexes, sqlite files).
             </li>
           </ul>
         </Section>
