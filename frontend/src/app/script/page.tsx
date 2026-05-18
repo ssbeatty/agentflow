@@ -8,12 +8,11 @@ import {
   History, CheckCircle2, XCircle, MinusCircle, Copy, Trash2, Wrench, Check,
 } from "lucide-react";
 import { toast } from "sonner";
-import { scripts, executions, mcpServers, revisions as revisionsApi } from "@/lib/api";
-import type { Script, ScriptFile, ExecutionLog, WsEvent, MCPServerConfig, ScriptRevisionDetail, TraceEvent, GraphTopology } from "@/lib/types";
+import { scripts, executions, mcpServers, revisions as revisionsApi, inputPresets } from "@/lib/api";
+import type { Script, ScriptFile, ExecutionLog, WsEvent, MCPServerConfig, ScriptRevisionDetail, TraceEvent, GraphTopology, ScriptInputPreset } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -26,6 +25,7 @@ import DependencyManager from "@/components/DependencyManager";
 import FileTree, { type TreeFile } from "@/components/FileTree";
 import { useResizable } from "@/components/Splitter";
 import RevisionPanel from "@/components/RevisionPanel";
+import InputPresetEditor from "@/components/InputPresetEditor";
 
 type RunStatus = "idle" | "queued" | "running" | "completed" | "failed" | "cancelled";
 
@@ -226,15 +226,6 @@ function ScriptPage() {
       if (e instanceof SyntaxError) { setInputError("Invalid JSON"); return; }
       toast.error(String(e));
       setRunStatus("failed");
-    }
-  }
-
-  function formatJson() {
-    try {
-      setInputJson(JSON.stringify(JSON.parse(inputJson), null, 2));
-      setInputError("");
-    } catch {
-      setInputError("Invalid JSON");
     }
   }
 
@@ -675,26 +666,14 @@ function ScriptPage() {
                   </div>
                 )}
 
-                {/* Input JSON */}
-                <div className="space-y-1.5">
-                  <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/70 flex items-center justify-between">
-                    <span className="flex items-center gap-2">
-                      Input JSON
-                      {inputError && <span className="text-destructive normal-case font-normal">{inputError}</span>}
-                    </span>
-                    <button onClick={formatJson}
-                      className="text-[10px] normal-case font-normal text-muted-foreground hover:text-foreground transition-colors">
-                      Format
-                    </button>
-                  </p>
-                  <Textarea
-                    value={inputJson}
-                    onChange={e => { setInputJson(e.target.value); setInputError(""); }}
-                    className="text-xs font-mono min-h-[100px] resize-y"
-                    placeholder="{}"
-                    spellCheck={false}
-                  />
-                </div>
+                {/* Input JSON with presets */}
+                <InputPresetEditor
+                  scriptId={id}
+                  value={inputJson}
+                  onChange={setInputJson}
+                  error={inputError}
+                  onError={setInputError}
+                />
 
               </div>
             </div>
@@ -753,18 +732,35 @@ function ScheduleTab({ scriptId }: { scriptId: string }) {
   const [expr, setExpr] = useState("0 * * * *");
   const [label, setLabel] = useState("");
   const [adding, setAdding] = useState(false);
+  const [presets, setPresets] = useState<ScriptInputPreset[]>([]);
+  const [newInput, setNewInput] = useState("{}");
+  const [newInputError, setNewInputError] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editJson, setEditJson] = useState("");
+  const [editError, setEditError] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
 
   useEffect(() => {
     cronJobs.list(scriptId).then(setJobs).catch(() => null);
+    inputPresets.list(scriptId).then(setPresets).catch(() => null);
   }, [scriptId]);
 
   async function add() {
     if (!expr) return;
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(newInput || "{}");
+    } catch {
+      setNewInputError("Invalid JSON");
+      return;
+    }
+    setNewInputError("");
     setAdding(true);
     try {
-      const j = await cronJobs.create({ script_id: scriptId, label, cron_expression: expr, input_data: {}, enabled: true });
+      const j = await cronJobs.create({ script_id: scriptId, label, cron_expression: expr, input_data: parsed, enabled: true });
       setJobs(p => [...p, j]);
       setLabel("");
+      setNewInput("{}");
     } catch (e: unknown) {
       toast.error(String(e));
     } finally { setAdding(false); }
@@ -773,12 +769,49 @@ function ScheduleTab({ scriptId }: { scriptId: string }) {
   async function remove(jobId: string) {
     await cronJobs.delete(jobId);
     setJobs(p => p.filter(j => j.id !== jobId));
+    if (editingId === jobId) setEditingId(null);
   }
 
   async function toggle(job: CronJob) {
     const updated = await cronJobs.update(job.id, { enabled: !job.enabled });
     setJobs(p => p.map(j => j.id === updated.id ? updated : j));
   }
+
+  function startEdit(job: CronJob) {
+    setEditingId(job.id);
+    setEditJson(JSON.stringify(job.input_data ?? {}, null, 2));
+    setEditError("");
+  }
+
+  async function saveEdit() {
+    if (!editingId) return;
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(editJson || "{}");
+    } catch {
+      setEditError("Invalid JSON");
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      const updated = await cronJobs.update(editingId, { input_data: parsed });
+      setJobs(p => p.map(j => j.id === updated.id ? updated : j));
+      setEditingId(null);
+    } catch (e: unknown) {
+      toast.error(String(e));
+    } finally { setSavingEdit(false); }
+  }
+
+  function applyPreset(setter: (v: string) => void, errSetter: (e: string) => void, presetId: string) {
+    if (!presetId) return;
+    const p = presets.find(x => x.id === presetId);
+    if (!p) return;
+    setter(p.input_json);
+    errSetter("");
+  }
+
+  const hasInput = (d: Record<string, unknown> | undefined | null) =>
+    d && Object.keys(d).length > 0;
 
   return (
     <ScrollArea className="h-full">
@@ -808,6 +841,30 @@ function ScheduleTab({ scriptId }: { scriptId: string }) {
               {adding ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
             </Button>
           </div>
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/70">
+                Input JSON {newInputError && <span className="text-destructive normal-case font-normal ml-1">{newInputError}</span>}
+              </span>
+              {presets.length > 0 && (
+                <select
+                  value=""
+                  onChange={e => { applyPreset(setNewInput, setNewInputError, e.target.value); e.target.value = ""; }}
+                  className="h-6 text-[10px] bg-secondary/30 border border-border rounded px-1.5 text-muted-foreground hover:text-foreground"
+                  title="Pre-fill from preset">
+                  <option value="">From preset…</option>
+                  {presets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              )}
+            </div>
+            <textarea
+              value={newInput}
+              onChange={e => { setNewInput(e.target.value); setNewInputError(""); }}
+              className="w-full text-xs font-mono px-2 py-1.5 rounded-md border border-border bg-input min-h-[60px] resize-y focus:outline-none focus:ring-1 focus:ring-ring"
+              placeholder="{}"
+              spellCheck={false}
+            />
+          </div>
         </div>
 
         {/* Job list */}
@@ -815,19 +872,64 @@ function ScheduleTab({ scriptId }: { scriptId: string }) {
           <div className="space-y-1.5">
             <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/70">Schedules</p>
             {jobs.map(j => (
-              <div key={j.id}
-                className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg border border-border bg-secondary/10 group hover:bg-secondary/20 transition-colors">
-                <button onClick={() => toggle(j)} title={j.enabled ? "Disable" : "Enable"} className="shrink-0">
-                  <div className={`h-2 w-2 rounded-full transition-colors ${j.enabled ? "bg-emerald-400" : "bg-muted-foreground/30"}`} />
-                </button>
-                <div className="flex-1 min-w-0">
-                  <div className="font-mono text-xs text-foreground">{j.cron_expression}</div>
-                  {j.label && <div className="text-[10px] text-muted-foreground truncate mt-0.5">{j.label}</div>}
+              <div key={j.id} className="rounded-lg border border-border bg-secondary/10 hover:bg-secondary/20 transition-colors group">
+                <div className="flex items-center gap-2.5 px-2.5 py-2">
+                  <button onClick={() => toggle(j)} title={j.enabled ? "Disable" : "Enable"} className="shrink-0">
+                    <div className={`h-2 w-2 rounded-full transition-colors ${j.enabled ? "bg-emerald-400" : "bg-muted-foreground/30"}`} />
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-mono text-xs text-foreground flex items-center gap-1.5">
+                      {j.cron_expression}
+                      {hasInput(j.input_data) && (
+                        <span className="text-[9px] px-1 py-0.5 rounded bg-secondary/60 text-muted-foreground font-sans" title={JSON.stringify(j.input_data)}>
+                          input
+                        </span>
+                      )}
+                    </div>
+                    {j.label && <div className="text-[10px] text-muted-foreground truncate mt-0.5">{j.label}</div>}
+                  </div>
+                  <button onClick={() => editingId === j.id ? setEditingId(null) : startEdit(j)}
+                    className="text-muted-foreground hover:text-foreground transition-colors shrink-0 text-[10px]"
+                    title="Edit input">
+                    {editingId === j.id ? "close" : "input"}
+                  </button>
+                  <button onClick={() => remove(j.id)}
+                    className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all shrink-0">
+                    <Trash2 className="h-3 w-3" />
+                  </button>
                 </div>
-                <button onClick={() => remove(j.id)}
-                  className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all shrink-0">
-                  <Trash2 className="h-3 w-3" />
-                </button>
+                {editingId === j.id && (
+                  <div className="px-2.5 pb-2.5 space-y-1.5 border-t border-border/60 pt-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/70">
+                        Input JSON {editError && <span className="text-destructive normal-case font-normal ml-1">{editError}</span>}
+                      </span>
+                      {presets.length > 0 && (
+                        <select
+                          value=""
+                          onChange={e => { applyPreset(setEditJson, setEditError, e.target.value); e.target.value = ""; }}
+                          className="h-6 text-[10px] bg-secondary/30 border border-border rounded px-1.5 text-muted-foreground hover:text-foreground">
+                          <option value="">From preset…</option>
+                          {presets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        </select>
+                      )}
+                    </div>
+                    <textarea
+                      value={editJson}
+                      onChange={e => { setEditJson(e.target.value); setEditError(""); }}
+                      className="w-full text-xs font-mono px-2 py-1.5 rounded-md border border-border bg-input min-h-[80px] resize-y focus:outline-none focus:ring-1 focus:ring-ring"
+                      spellCheck={false}
+                    />
+                    <div className="flex justify-end gap-1.5">
+                      <Button variant="outline" size="sm" className="h-6 px-2 text-xs" onClick={() => setEditingId(null)}>
+                        Cancel
+                      </Button>
+                      <Button size="sm" className="h-6 px-2 text-xs" onClick={saveEdit} disabled={savingEdit}>
+                        {savingEdit ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save"}
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>

@@ -6,6 +6,7 @@ import type {
   MCPServerConfig,
   Conversation, ConversationSummary, ConversationMessage,
   ScriptRevision, ScriptRevisionDetail,
+  ScriptInputPreset,
 } from "./types";
 
 const BASE = "/api";
@@ -93,6 +94,26 @@ export const revisions = {
     req<Script>(`/scripts/${scriptId}/revisions/${revId}/fork`, {
       method: "POST", body: JSON.stringify({ name }),
     }),
+};
+
+// ── Input Presets ─────────────────────────────────────────────────────────────
+
+export const inputPresets = {
+  list: (scriptId: string) =>
+    req<ScriptInputPreset[]>(`/scripts/${scriptId}/presets`),
+
+  create: (scriptId: string, data: { name: string; input_json: string }) =>
+    req<ScriptInputPreset>(`/scripts/${scriptId}/presets`, {
+      method: "POST", body: JSON.stringify(data),
+    }),
+
+  update: (scriptId: string, presetId: string, data: { name?: string; input_json?: string }) =>
+    req<ScriptInputPreset>(`/scripts/${scriptId}/presets/${presetId}`, {
+      method: "PATCH", body: JSON.stringify(data),
+    }),
+
+  delete: (scriptId: string, presetId: string) =>
+    req<void>(`/scripts/${scriptId}/presets/${presetId}`, { method: "DELETE" }),
 };
 
 // ── Executions ─────────────────────────────────────────────────────────────────

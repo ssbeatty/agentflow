@@ -29,6 +29,10 @@ class Script(Base):
         "ScriptRevision", back_populates="script", cascade="all, delete-orphan",
         order_by="ScriptRevision.revision_number.desc()",
     )
+    input_presets = relationship(
+        "ScriptInputPreset", back_populates="script", cascade="all, delete-orphan",
+        order_by="ScriptInputPreset.created_at",
+    )
 
 
 class ScriptFile(Base):
@@ -59,6 +63,19 @@ class ScriptRevision(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     script = relationship("Script", back_populates="revisions")
+
+
+class ScriptInputPreset(Base):
+    __tablename__ = "script_input_presets"
+
+    id = Column(String, primary_key=True, default=_id)
+    script_id = Column(String, ForeignKey("scripts.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(255), nullable=False)
+    input_json = Column(Text, default="{}")  # raw JSON text (preserves formatting)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    script = relationship("Script", back_populates="input_presets")
 
 
 class Execution(Base):

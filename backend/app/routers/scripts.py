@@ -4,14 +4,16 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Script, ScriptFile, ScriptRevision
+from app.models import Script, ScriptFile, ScriptRevision, ScriptInputPreset
 from app.schemas import (
     ScriptCreate, ScriptUpdate, ScriptDetail, ScriptSummary, ScriptFileUpsert, ScriptFileOut,
     RevisionCreate, RevisionLabelUpdate, RevisionSummaryOut, RevisionDetailOut,
     RevisionFileOut, ForkRevisionRequest,
+    InputPresetCreate, InputPresetUpdate, InputPresetOut,
 )
 from services.venv_manager import (
     venv_exists, stream_create_venv, stream_install, delete_venv,
@@ -266,6 +268,65 @@ def fork_revision(script_id: str, rev_id: str, body: ForkRevisionRequest, db: Se
     return new_script
 
 
+# ── Input presets ─────────────────────────────────────────────────────────────
+
+@router.get("/{script_id}/presets", response_model=list[InputPresetOut])
+def list_presets(script_id: str, db: Session = Depends(get_db)):
+    _get_or_404(script_id, db)
+    return (
+        db.query(ScriptInputPreset)
+        .filter_by(script_id=script_id)
+        .order_by(ScriptInputPreset.created_at)
+        .all()
+    )
+
+
+@router.post("/{script_id}/presets", response_model=InputPresetOut, status_code=201)
+def create_preset(script_id: str, body: InputPresetCreate, db: Session = Depends(get_db)):
+    _get_or_404(script_id, db)
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(400, "Name required")
+    _validate_json(body.input_json)
+    p = ScriptInputPreset(script_id=script_id, name=name, input_json=body.input_json)
+    db.add(p)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, f"Preset named {name!r} already exists")
+    db.refresh(p)
+    return p
+
+
+@router.patch("/{script_id}/presets/{preset_id}", response_model=InputPresetOut)
+def update_preset(script_id: str, preset_id: str, body: InputPresetUpdate, db: Session = Depends(get_db)):
+    p = _get_preset_or_404(preset_id, script_id, db)
+    data = body.model_dump(exclude_none=True)
+    if "name" in data:
+        data["name"] = data["name"].strip()
+        if not data["name"]:
+            raise HTTPException(400, "Name required")
+    if "input_json" in data:
+        _validate_json(data["input_json"])
+    for k, v in data.items():
+        setattr(p, k, v)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "Preset with this name already exists")
+    db.refresh(p)
+    return p
+
+
+@router.delete("/{script_id}/presets/{preset_id}", status_code=204)
+def delete_preset(script_id: str, preset_id: str, db: Session = Depends(get_db)):
+    p = _get_preset_or_404(preset_id, script_id, db)
+    db.delete(p)
+    db.commit()
+
+
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _get_or_404(script_id: str, db: Session) -> Script:
@@ -280,6 +341,22 @@ def _get_rev_or_404(rev_id: str, script_id: str, db: Session) -> ScriptRevision:
     if not r:
         raise HTTPException(404, "Revision not found")
     return r
+
+
+def _get_preset_or_404(preset_id: str, script_id: str, db: Session) -> ScriptInputPreset:
+    p = db.query(ScriptInputPreset).filter_by(id=preset_id, script_id=script_id).first()
+    if not p:
+        raise HTTPException(404, "Preset not found")
+    return p
+
+
+def _validate_json(text: str) -> None:
+    try:
+        parsed = json.loads(text or "{}")
+    except json.JSONDecodeError as e:
+        raise HTTPException(400, f"Invalid JSON: {e.msg}")
+    if not isinstance(parsed, dict):
+        raise HTTPException(400, "Input JSON must be an object")
 
 
 def _rev_detail(rev: ScriptRevision) -> RevisionDetailOut:

@@ -100,6 +100,17 @@ export interface MCPServerConfig {
   updated_at: string;
 }
 
+// ── ScriptInputPreset ────────────────────────────────────────────────────────
+
+export interface ScriptInputPreset {
+  id: string;
+  script_id: string;
+  name: string;
+  input_json: string;
+  created_at: string;
+  updated_at: string;
+}
+
 // ── ScriptRevision ────────────────────────────────────────────────────────────
 
 export interface RevisionFile {

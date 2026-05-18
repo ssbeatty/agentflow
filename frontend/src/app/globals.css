@@ -17,6 +17,10 @@
     --muted-foreground: 0 0% 55%;
     --accent: 0 0% 16%;
     --accent-foreground: 0 0% 93%;
+    --popover: 0 0% 11%;
+    --popover-foreground: 0 0% 93%;
+    --card: 0 0% 9%;
+    --card-foreground: 0 0% 93%;
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 93%;
     --radius: 0.5rem;

@@ -94,6 +94,29 @@ class ForkRevisionRequest(BaseModel):
     name: str
 
 
+# ── ScriptInputPreset ─────────────────────────────────────────────────────────
+
+class InputPresetCreate(BaseModel):
+    name: str
+    input_json: str = "{}"
+
+
+class InputPresetUpdate(BaseModel):
+    name: Optional[str] = None
+    input_json: Optional[str] = None
+
+
+class InputPresetOut(BaseModel):
+    id: str
+    script_id: str
+    name: str
+    input_json: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 # ── Execution ─────────────────────────────────────────────────────────────────
 
 class ExecutionCreate(BaseModel):
