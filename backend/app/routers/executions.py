@@ -1,6 +1,8 @@
 import asyncio
+import mimetypes
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db, SessionLocal
@@ -10,6 +12,7 @@ from services.execution_engine import (
     spawn_execution, stop_execution, queue_stats,
     MAX_CONCURRENT, EXECUTION_TIMEOUT,
 )
+from services.venv_manager import get_script_dir
 
 router = APIRouter()
 
@@ -146,3 +149,21 @@ async def rerun(execution_id: str, db: Session = Depends(get_db)):
 
     spawn_execution(new_exc.id)
     return new_exc
+
+
+@router.get("/{execution_id}/artifacts/{filename}")
+def get_artifact(execution_id: str, filename: str, db: Session = Depends(get_db)):
+    """Serve a file written by an artifact emitter (image/, etc.)."""
+    exc = db.query(Execution).filter_by(id=execution_id).first()
+    if not exc:
+        raise HTTPException(404, "execution not found")
+
+    base = (get_script_dir(exc.script_id) / "runs" / execution_id / "_artifacts").resolve()
+    target = (base / filename).resolve()
+    # path-traversal guard
+    if base != target and base not in target.parents:
+        raise HTTPException(400, "invalid path")
+    if not target.is_file():
+        raise HTTPException(404, "artifact not found")
+    mime, _ = mimetypes.guess_type(target.name)
+    return FileResponse(target, media_type=mime or "application/octet-stream")

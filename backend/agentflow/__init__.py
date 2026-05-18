@@ -13,6 +13,7 @@ import os
 import re
 import sys
 import json
+import uuid as _uuid
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -154,6 +155,124 @@ def token(content: str) -> None:
     if not _IN_PLATFORM:
         sys.stdout.write(content)
         sys.stdout.flush()
+
+
+# ── Artifact emitters (rich rendering in the Artifacts tab) ────────────────────
+
+_ARTIFACTS_SUBDIR = "_artifacts"
+_MIME_EXT = {
+    "image/png": ".png", "image/jpeg": ".jpg", "image/jpg": ".jpg",
+    "image/gif": ".gif", "image/webp": ".webp", "image/svg+xml": ".svg",
+}
+
+
+def _exec_id() -> str | None:
+    return os.environ.get("AGENTFLOW_EXECUTION_ID")
+
+
+def _save_artifact_bytes(data: bytes, mime: str | None, suffix_hint: str = "") -> str | None:
+    """Save bytes under run_dir/_artifacts/, return the filename. None outside platform."""
+    eid = _exec_id()
+    if not eid:
+        print("[agentflow] artifact outside platform: cannot save bytes", file=sys.stderr)
+        return None
+    ext = _MIME_EXT.get((mime or "").lower(), suffix_hint or ".bin")
+    fname = f"{_uuid.uuid4().hex}{ext}"
+    out_dir = paths.run_dir / _ARTIFACTS_SUBDIR
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / fname).write_bytes(data)
+    return fname
+
+
+def _artifact_url(filename: str) -> str | None:
+    eid = _exec_id()
+    return f"/api/executions/{eid}/artifacts/{filename}" if eid else None
+
+
+def markdown(content: str, *, title: str | None = None) -> None:
+    """Render a markdown block in the Artifacts tab."""
+    _emit({"type": "artifact", "kind": "markdown", "content": str(content), "title": title})
+
+
+def image(src, *, alt: str = "", mime: str | None = None, title: str | None = None) -> None:
+    """Show an image artifact.
+
+    `src` can be:
+        - URL string (http://… / https://… / /…)
+        - filesystem path (str or Path) — file is copied into the run's artifacts dir
+        - raw bytes — saved under the run's artifacts dir with a generated name
+
+    Example:
+        image("https://example.com/chart.png", alt="last week")
+        image(paths.workspace / "plot.png")
+        with open("plot.png", "rb") as fh: image(fh.read(), mime="image/png")
+    """
+    url: str | None = None
+
+    if isinstance(src, (bytes, bytearray)):
+        fname = _save_artifact_bytes(bytes(src), mime)
+        if fname:
+            url = _artifact_url(fname)
+    elif isinstance(src, (str, Path)):
+        if isinstance(src, str) and (src.startswith("http://") or src.startswith("https://") or src.startswith("/")):
+            url = src
+        else:
+            p = Path(src)
+            if not p.is_file():
+                print(f"[agentflow] image(): file not found: {src}", file=sys.stderr)
+                return
+            fname = _save_artifact_bytes(p.read_bytes(), mime, suffix_hint=p.suffix)
+            if fname:
+                url = _artifact_url(fname)
+    else:
+        print(f"[agentflow] image(): unsupported src type {type(src).__name__}", file=sys.stderr)
+        return
+
+    if url:
+        _emit({"type": "artifact", "kind": "image", "url": url, "alt": alt, "mime": mime, "title": title})
+
+
+def table(rows, *, columns: list[str] | None = None, title: str | None = None) -> None:
+    """Render a table artifact.
+
+    `rows` may be:
+        - list[dict]  → keys form columns (insertion order, unioned across rows)
+        - list[list]  → must pass `columns=` for headers
+    Pandas users: call `df.to_dict("records")` first.
+
+    Example:
+        table([{"name": "alice", "score": 92}, {"name": "bob", "score": 81}])
+        table([[1, 2], [3, 4]], columns=["a", "b"], title="Sample")
+    """
+    rows_list = list(rows)
+    cols: list[str] = list(columns) if columns is not None else []
+    norm: list[list] = []
+
+    if rows_list and isinstance(rows_list[0], dict):
+        if not cols:
+            cols = list(rows_list[0].keys())
+            seen = set(cols)
+            for r in rows_list[1:]:
+                for k in r.keys():
+                    if k not in seen:
+                        cols.append(k); seen.add(k)
+        norm = [[r.get(c) for c in cols] for r in rows_list]
+    else:
+        if not cols:
+            width = len(rows_list[0]) if rows_list else 0
+            cols = [f"col{i+1}" for i in range(width)]
+        norm = [list(r) for r in rows_list]
+
+    _emit({"type": "artifact", "kind": "table", "columns": cols, "rows": norm, "title": title})
+
+
+def html(snippet: str, *, title: str | None = None) -> None:
+    """Render an arbitrary HTML snippet inside a sandboxed iframe.
+
+    The iframe blocks scripts and forms by default; use this only for static
+    presentation (styled cards, custom layouts, embed widgets that ship inline).
+    """
+    _emit({"type": "artifact", "kind": "html", "html": str(snippet), "title": title})
 
 
 def get_llm(name: str = "default"):

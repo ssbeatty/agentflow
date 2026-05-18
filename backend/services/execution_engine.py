@@ -457,6 +457,18 @@ async def start_execution(execution_id: str) -> None:
                             **payload,
                             "timestamp": datetime.utcnow().isoformat(),
                         })
+                    elif t == "artifact":
+                        # persisted so historical runs can re-render in Artifacts tab
+                        _persist_log(db, execution_id, {
+                            "level": "_artifact",
+                            "message": payload.get("kind", ""),
+                            "data": payload,
+                            "step": payload.get("kind"),
+                        })
+                        await ws_manager.send(execution_id, {
+                            **payload,
+                            "timestamp": datetime.utcnow().isoformat(),
+                        })
                     elif t == "graph":
                         _persist_log(db, execution_id, {
                             "level": "_graph",

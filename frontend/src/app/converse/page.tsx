@@ -10,7 +10,9 @@ import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { scripts as scriptsApi, conversations as convsApi } from "@/lib/api";
-import type { ScriptSummary, ConversationSummary, ConversationMessage, WsEvent } from "@/lib/types";
+import type { ScriptSummary, ConversationSummary, ConversationMessage, WsEvent, ArtifactEvent, ExecutionLog } from "@/lib/types";
+import { executions as executionsApi } from "@/lib/api";
+import { ArtifactCard } from "@/components/ArtifactsPanel";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -123,6 +125,8 @@ interface UiMessage {
   streaming?: boolean;   // actively receiving tokens
   animating?: boolean;   // playing typewriter after confirm
   logs?: WsEvent[];
+  artifacts?: ArtifactEvent[];
+  execution_id?: string;
 }
 
 function MessageRow({
@@ -164,6 +168,11 @@ function MessageRow({
             <MarkdownContent text={msg.content} />
           )}
         </div>
+        {msg.artifacts && msg.artifacts.length > 0 && (
+          <div className="flex flex-col gap-2 w-full max-w-[680px]">
+            {msg.artifacts.map((a, i) => <ArtifactCard key={i} a={a} />)}
+          </div>
+        )}
         {msg.logs && msg.logs.length > 0 && <LogStrip logs={msg.logs} />}
         {canDelete && (
           <button
@@ -429,14 +438,36 @@ function ConverseInner() {
       skipNextMsgReloadRef.current = false;
       return;
     }
-    convsApi.get(activeConvId).then((conv) => {
+    convsApi.get(activeConvId).then(async (conv) => {
       setContextTurns(conv.context_turns);
-      setMessages(conv.messages.map((m) => ({
+      const base: UiMessage[] = conv.messages.map((m) => ({
         id: m.id,
         role: m.role,
         content: m.content,
         error: m.error ?? undefined,
-      })));
+        execution_id: m.execution_id ?? undefined,
+      }));
+      setMessages(base);
+
+      // Hydrate artifacts for assistant messages that had a script run.
+      const targets = base.filter((m) => m.role === "assistant" && m.execution_id);
+      if (!targets.length) return;
+      const results = await Promise.allSettled(
+        targets.map((m) => executionsApi.get(m.execution_id!))
+      );
+      const byMsg = new Map<string, ArtifactEvent[]>();
+      results.forEach((r, i) => {
+        if (r.status !== "fulfilled") return;
+        const arts = (r.value.logs as ExecutionLog[])
+          .filter((l) => l.level === "_artifact" && l.data)
+          .map((l) => l.data as ArtifactEvent);
+        if (arts.length) byMsg.set(targets[i].id, arts);
+      });
+      if (byMsg.size) {
+        setMessages((prev) => prev.map((m) =>
+          byMsg.has(m.id) ? { ...m, artifacts: byMsg.get(m.id) } : m
+        ));
+      }
     }).catch(() => toast.error("Failed to load conversation"));
   }, [activeConvId]);
 
@@ -502,6 +533,12 @@ function ConverseInner() {
         setMessages((prev) => prev.map((m) =>
           m.id === assistantMsgId
             ? { ...m, logs: [...(m.logs ?? []), evt] }
+            : m
+        ));
+      } else if (evt.type === "artifact") {
+        setMessages((prev) => prev.map((m) =>
+          m.id === assistantMsgId
+            ? { ...m, artifacts: [...(m.artifacts ?? []), evt] }
             : m
         ));
       } else if (evt.type === "status") {

@@ -32,9 +32,10 @@ export interface ScriptSummary {
 export interface ExecutionLog {
   id: string;
   timestamp: string;
-  // "_trace" and "_graph" are internal levels used to persist flow-panel events
-  // alongside logs so historical runs can replay them. LogPanel filters them out.
-  level: "info" | "warning" | "error" | "node" | "debug" | "raw" | "_trace" | "_graph";
+  // "_trace" / "_graph" / "_artifact" are internal levels used to persist
+  // panel-specific events alongside logs so historical runs can replay them.
+  // LogPanel filters them out.
+  level: "info" | "warning" | "error" | "node" | "debug" | "raw" | "_trace" | "_graph" | "_artifact";
   message: string;
   data?: unknown;
   step?: string;
@@ -174,6 +175,13 @@ export interface GraphTopology {
   nodes: string[];
 }
 
+// ── Artifacts (rich rendering in the Artifacts tab) ─────────────────────────
+export type ArtifactEvent =
+  | { type: "artifact"; kind: "markdown"; content: string; title?: string | null; timestamp?: string }
+  | { type: "artifact"; kind: "image"; url: string; alt?: string; mime?: string | null; title?: string | null; timestamp?: string }
+  | { type: "artifact"; kind: "table"; columns: string[]; rows: unknown[][]; title?: string | null; timestamp?: string }
+  | { type: "artifact"; kind: "html"; html: string; title?: string | null; timestamp?: string };
+
 // WebSocket events
 export type WsEvent =
   | { type: "log"; level: string; message: string; data?: unknown; step?: string; timestamp: string }
@@ -181,6 +189,7 @@ export type WsEvent =
   | { type: "token"; content: string }
   | TraceEvent
   | GraphTopology
+  | ArtifactEvent
   | { type: "ping" };
 
 // ── Conversation ──────────────────────────────────────────────────────────────

@@ -5,11 +5,11 @@ import Link from "next/link";
 import {
   ArrowLeft, Play, Square, Save, Terminal, Settings2,
   Clock, ChevronRight, Loader2, CalendarClock, Workflow,
-  History, CheckCircle2, XCircle, MinusCircle, Copy, Trash2, Wrench, Check,
+  History, CheckCircle2, XCircle, MinusCircle, Copy, Trash2, Wrench, Check, Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { scripts, executions, mcpServers, revisions as revisionsApi, inputPresets } from "@/lib/api";
-import type { Script, ScriptFile, ExecutionLog, WsEvent, MCPServerConfig, ScriptRevisionDetail, TraceEvent, GraphTopology, ScriptInputPreset } from "@/lib/types";
+import type { Script, ScriptFile, ExecutionLog, WsEvent, MCPServerConfig, ScriptRevisionDetail, TraceEvent, GraphTopology, ScriptInputPreset, ArtifactEvent } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
@@ -27,6 +27,7 @@ import { useResizable } from "@/components/Splitter";
 import RevisionPanel from "@/components/RevisionPanel";
 import InputPresetEditor from "@/components/InputPresetEditor";
 import FileUploadPanel from "@/components/FileUploadPanel";
+import ArtifactsPanel from "@/components/ArtifactsPanel";
 
 type RunStatus = "idle" | "queued" | "running" | "completed" | "failed" | "cancelled";
 
@@ -96,6 +97,7 @@ function ScriptPage() {
   const [output, setOutput] = useState<unknown>(null);
   const [trace, setTrace] = useState<TraceEvent[]>([]);
   const [topology, setTopology] = useState<GraphTopology | null>(null);
+  const [artifacts, setArtifacts] = useState<ArtifactEvent[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
 
   const [lintIssues, setLintIssues] = useState<LintIssue[]>([]);
@@ -195,6 +197,8 @@ function ScriptPage() {
         setTrace(prev => [...prev, msg]);
       } else if (msg.type === "graph") {
         setTopology(msg);
+      } else if (msg.type === "artifact") {
+        setArtifacts(prev => [...prev, msg]);
       } else if (msg.type === "status") {
         setRunStatus(msg.status as RunStatus);
         if (msg.output !== undefined) setOutput(msg.output);
@@ -218,6 +222,7 @@ function ScriptPage() {
       setOutput(null);
       setTrace([]);
       setTopology(null);
+      setArtifacts([]);
       setRunStatus("running");
       setActiveTab("logs");
       const exec = await executions.create(id, parsed);
@@ -541,6 +546,12 @@ function ScriptPage() {
                 <TabsTrigger value="output" className="text-xs gap-1.5">
                   <ChevronRight className="h-3 w-3" />Output
                 </TabsTrigger>
+                <TabsTrigger value="artifacts" className="text-xs gap-1.5">
+                  <Sparkles className="h-3 w-3" />Artifacts
+                  {artifacts.length > 0 && (
+                    <span className="text-[10px] text-muted-foreground tabular-nums">{artifacts.length}</span>
+                  )}
+                </TabsTrigger>
                 <TabsTrigger value="schedule" className="text-xs gap-1.5">
                   <CalendarClock className="h-3 w-3" />Schedule
                 </TabsTrigger>
@@ -562,6 +573,9 @@ function ScriptPage() {
                       : <p className="text-xs text-muted-foreground">No output yet.</p>}
                   </ScrollArea>
                 </TabsContent>
+                <TabsContent value="artifacts" className="h-full m-0">
+                  <ArtifactsPanel items={artifacts} />
+                </TabsContent>
                 <TabsContent value="schedule" className="h-full m-0">
                   <ScheduleTab scriptId={id} />
                 </TabsContent>
@@ -576,6 +590,7 @@ function ScriptPage() {
                       setOutput(exec.output_data ?? null);
                       setTrace(exec.trace);
                       setTopology(exec.topology);
+                      setArtifacts(exec.artifacts);
                       setRunStatus(exec.status as RunStatus);
                       setActiveTab("logs");
                     }}
@@ -987,6 +1002,7 @@ function RunsTab({
     output_data: unknown;
     trace: TraceEvent[];
     topology: GraphTopology | null;
+    artifacts: ArtifactEvent[];
   }) => void;
 }) {
   const [items, setItems] = useState<ExecutionSummary[]>([]);
@@ -1015,12 +1031,15 @@ function RunsTab({
       const full = await executions.get(runId);
       const trace: TraceEvent[] = [];
       let topology: GraphTopology | null = null;
+      const artifacts: ArtifactEvent[] = [];
       const visibleLogs: ExecutionLog[] = [];
       for (const l of full.logs) {
         if (l.level === "_trace" && l.data) {
           trace.push(l.data as TraceEvent);
         } else if (l.level === "_graph" && l.data) {
           topology = l.data as GraphTopology;
+        } else if (l.level === "_artifact" && l.data) {
+          artifacts.push(l.data as ArtifactEvent);
         } else {
           visibleLogs.push({ ...l });
         }
@@ -1032,6 +1051,7 @@ function RunsTab({
         output_data: full.output_data,
         trace,
         topology,
+        artifacts,
       });
     } catch (e) { toast.error(String(e)); }
   }
