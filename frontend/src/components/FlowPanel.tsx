@@ -1,38 +1,10 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
-import mermaid from "mermaid";
+import { useMemo, useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ChevronDown, ChevronRight, AlertCircle, Wrench, Box, Bot, Flag, Brain } from "lucide-react";
+import { ChevronDown, ChevronRight, Wrench, Box, Bot, Flag, Brain } from "lucide-react";
 import type { TraceEvent, GraphTopology } from "@/lib/types";
 import { cn } from "@/lib/utils";
-
-mermaid.initialize({
-  startOnLoad: false,
-  theme: "base",
-  securityLevel: "loose",
-  flowchart: { htmlLabels: true, curve: "basis" },
-  themeVariables: {
-    // Match the AgentFlow dark UI; in particular make edge labels readable
-    // (mermaid's defaults paint them with a near-white background that the
-    // dark-purple text disappears into).
-    background: "transparent",
-    primaryColor: "#1e293b",
-    primaryTextColor: "#e5e7eb",
-    primaryBorderColor: "#475569",
-    secondaryColor: "#334155",
-    tertiaryColor: "#0f172a",
-    lineColor: "#94a3b8",
-    textColor: "#e5e7eb",
-    nodeBorder: "#475569",
-    clusterBkg: "#1e293b",
-    clusterBorder: "#475569",
-    edgeLabelBackground: "#0f172a",
-    labelTextColor: "#e5e7eb",
-    titleColor: "#e5e7eb",
-    mainBkg: "#1e293b",
-    nodeTextColor: "#e5e7eb",
-  },
-});
+import MermaidView from "@/components/MermaidView";
 
 interface Props {
   trace: TraceEvent[];
@@ -193,39 +165,6 @@ export default function FlowPanel({ trace, topology }: Props) {
   );
 }
 
-// ── Mermaid renderer ────────────────────────────────────────────────────────
-
-let _renderCounter = 0;
-
-function MermaidView({ source }: { source: string }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!ref.current || !source) return;
-    const id = `mmd-${++_renderCounter}`;
-    setError(null);
-    mermaid.render(id, source)
-      .then(({ svg }) => {
-        if (ref.current) ref.current.innerHTML = svg;
-      })
-      .catch((e: Error) => setError(e.message));
-  }, [source]);
-
-  if (error) {
-    return (
-      <div className="p-3 text-xs text-amber-400">
-        <AlertCircle className="inline h-3 w-3 mr-1" />
-        Mermaid render failed: {error}
-        <details className="mt-1">
-          <summary className="cursor-pointer text-muted-foreground">source</summary>
-          <pre className="mt-1 text-[10px] text-muted-foreground whitespace-pre-wrap">{source}</pre>
-        </details>
-      </div>
-    );
-  }
-  return <div ref={ref} className="p-2 flex justify-center overflow-auto" />;
-}
 
 // ── Single trace row ────────────────────────────────────────────────────────
 

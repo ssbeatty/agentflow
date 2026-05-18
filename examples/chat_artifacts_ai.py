@@ -18,6 +18,8 @@ How to test in /converse — just talk naturally:
   "render a markdown weekly status report"
   "draw a dashboard card showing uptime"
   "find me a cat picture"
+  "draw a flowchart for the OAuth flow"
+  "show me a sequence diagram for a login"
   "give me a table AND a brief summary"
   "hi"                  ← regular chat works, no tools triggered
 
@@ -33,6 +35,7 @@ from agentflow import (
     image as _image,
     table as _table,
     html as _html,
+    mermaid as _mermaid,
 )
 
 
@@ -79,7 +82,33 @@ def show_html(html_snippet: str, title: str = "") -> str:
     return "rendered html"
 
 
-TOOLS = [show_markdown, show_table, show_image, show_html]
+@tool
+def show_mermaid(diagram: str, title: str = "") -> str:
+    """Render a Mermaid diagram (flowchart, sequence, state, class, ER, gantt, etc.).
+
+    Pass ONLY the diagram source — no surrounding ```mermaid fences.
+
+    Examples:
+        show_mermaid('''
+            flowchart LR
+                A[Start] --> B{Decide}
+                B -->|yes| C[Do]
+                B -->|no| D[Skip]
+        ''', title="decision flow")
+
+        show_mermaid('''
+            sequenceDiagram
+                User->>Server: POST /api/login
+                Server->>DB: SELECT user
+                DB-->>Server: row
+                Server-->>User: token
+        ''', title="login sequence")
+    """
+    _mermaid(diagram, title=title or None)
+    return "rendered mermaid"
+
+
+TOOLS = [show_markdown, show_table, show_image, show_html, show_mermaid]
 
 
 SYSTEM_PROMPT = """You are a chat assistant that can render rich artifacts.
@@ -89,10 +118,13 @@ Available rendering tools:
   - show_table(rows, title)         # rows is list of dicts
   - show_image(url, alt, title)     # URL must be public
   - show_html(html_snippet, title)  # sandboxed iframe, inline CSS only
+  - show_mermaid(diagram, title)    # flowchart / sequence / state / class / ER / gantt
 
 Rules:
-  - If the user asks to see / show / draw / render / display / visualise
+  - If the user asks to see / show / draw / render / display / visualise / 流程图
     something, call the matching tool.
+  - For ANY flowchart, sequence diagram, state machine, architecture diagram,
+    decision tree, or process diagram → prefer show_mermaid over show_image.
   - Then ALWAYS also write a short text reply (1-2 sentences) explaining
     what you rendered. The text streams as a typewriter alongside the card.
   - When the user is just exploring ("show me a table"), invent plausible
@@ -104,6 +136,11 @@ Examples:
   User: "show me a sales table"
     → show_table([{"product":"Widget A","qty":120,"revenue":2400}, ...], title="sales")
     → "Here's a sample sales table."
+
+  User: "draw a login flow"
+    → show_mermaid("sequenceDiagram\\n  User->>Server: POST /login\\n  Server-->>User: token",
+                   title="login")
+    → "Here's the login sequence."
 
   User: "render a status dashboard"
     → show_html('<div style="...">...</div>', title="status")

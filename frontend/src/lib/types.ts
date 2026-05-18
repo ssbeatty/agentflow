@@ -180,7 +180,8 @@ export type ArtifactEvent =
   | { type: "artifact"; kind: "markdown"; content: string; title?: string | null; timestamp?: string }
   | { type: "artifact"; kind: "image"; url: string; alt?: string; mime?: string | null; title?: string | null; timestamp?: string }
   | { type: "artifact"; kind: "table"; columns: string[]; rows: unknown[][]; title?: string | null; timestamp?: string }
-  | { type: "artifact"; kind: "html"; html: string; title?: string | null; timestamp?: string };
+  | { type: "artifact"; kind: "html"; html: string; title?: string | null; timestamp?: string }
+  | { type: "artifact"; kind: "mermaid"; code: string; title?: string | null; timestamp?: string };
 
 // WebSocket events
 export type WsEvent =

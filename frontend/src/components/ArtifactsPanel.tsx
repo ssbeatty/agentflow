@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import type { ArtifactEvent } from "@/lib/types";
+import MermaidView from "@/components/MermaidView";
 
 interface Props {
   items: ArtifactEvent[];
@@ -13,7 +14,7 @@ export default function ArtifactsPanel({ items }: Props) {
   if (!items.length) {
     return (
       <div className="h-full flex items-center justify-center text-xs text-muted-foreground">
-        <p>Call <code className="font-mono">markdown()</code> / <code className="font-mono">image()</code> / <code className="font-mono">table()</code> / <code className="font-mono">html()</code> from your script to render here.</p>
+        <p>Call <code className="font-mono">markdown()</code> / <code className="font-mono">image()</code> / <code className="font-mono">table()</code> / <code className="font-mono">html()</code> / <code className="font-mono">mermaid()</code> from your script to render here.</p>
       </div>
     );
   }
@@ -42,6 +43,7 @@ export function ArtifactCard({ a }: { a: ArtifactEvent }) {
         {a.kind === "image" && <ImageView url={a.url} alt={a.alt ?? ""} />}
         {a.kind === "table" && <TableView columns={a.columns} rows={a.rows} />}
         {a.kind === "html" && <HtmlView html={a.html} />}
+        {a.kind === "mermaid" && <MermaidView source={a.code} />}
       </div>
     </div>
   );
@@ -50,7 +52,24 @@ export function ArtifactCard({ a }: { a: ArtifactEvent }) {
 function MarkdownView({ content }: { content: string }) {
   return (
     <div className="prose prose-sm prose-invert max-w-none prose-pre:bg-background prose-pre:border prose-pre:border-border/60">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          // Intercept ```mermaid``` fenced blocks and render them as diagrams.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          code: ({ inline, className, children, ...props }: any) => {
+            const match = /language-(\w+)/.exec(className || "");
+            const lang = match?.[1];
+            if (!inline && lang === "mermaid") {
+              const code = String(children).replace(/\n$/, "");
+              return <MermaidView source={code} className="my-2 flex justify-center overflow-auto" />;
+            }
+            return <code className={className} {...props}>{children}</code>;
+          },
+        }}
+      >
+        {content}
+      </ReactMarkdown>
     </div>
   );
 }

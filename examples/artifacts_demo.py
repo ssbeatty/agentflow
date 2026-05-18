@@ -3,9 +3,11 @@ Artifacts demo — exercises every rich-rendering channel.
 
 Open the script's "Artifacts" tab after running to see:
   - markdown()  → headings, lists, code blocks, GFM tables, links
+                  + embedded ```mermaid``` fences auto-render as diagrams
   - table()     → list[dict] and list[list] forms
   - image()     → external URL, local file (from an uploaded {"$file"}), raw bytes
   - html()      → sandboxed iframe with inline styles
+  - mermaid()   → flowchart / sequence / state / class / ER / gantt etc.
 
 How to use:
   1. Create a new AgentFlow script and paste this whole file into main.py.
@@ -20,7 +22,7 @@ Input shape (all optional):
     "uploaded":   {"$file": "<file_id>"}    // any image you upload
   }
 """
-from agentflow import log, markdown, image, table, html, paths, AgentFlowFile
+from agentflow import log, markdown, image, table, html, mermaid, paths, AgentFlowFile
 
 
 # A 1×1 transparent PNG so the demo always has bytes to render
@@ -145,21 +147,74 @@ def run(input: dict) -> dict:
     # ── 8. HTML (sandboxed iframe; no scripts, inline styles only)
     html(HTML_SAMPLE, title="html() — dashboard widget")
 
-    # ── 9. One more markdown to bookend
+    # ── 9. Mermaid flowchart via explicit emitter
+    mermaid(
+        """flowchart LR
+    Client[Browser] --> LB[Load balancer]
+    LB --> A1[App #1]
+    LB --> A2[App #2]
+    A1 --> DB[(Postgres)]
+    A2 --> DB
+    A1 --> Cache[(Redis)]
+    A2 --> Cache
+""",
+        title="mermaid() — flowchart",
+    )
+
+    # ── 10. Mermaid sequence diagram
+    mermaid(
+        """sequenceDiagram
+    autonumber
+    participant U as User
+    participant API as API gateway
+    participant W as Worker
+    participant Q as Queue
+    U->>API: POST /jobs
+    API->>Q: enqueue
+    API-->>U: 202 Accepted
+    Q-->>W: pop job
+    W->>W: process
+    W-->>API: result
+""",
+        title="mermaid() — sequence",
+    )
+
+    # ── 11. Markdown that EMBEDS a mermaid code fence (renderer auto-detects it)
+    markdown(
+        "## State machine in a markdown block\n\n"
+        "The renderer auto-detects ` ```mermaid ` fences inside `markdown()`:\n\n"
+        "```mermaid\n"
+        "stateDiagram-v2\n"
+        "    [*] --> Idle\n"
+        "    Idle --> Running: start\n"
+        "    Running --> Done: finish\n"
+        "    Running --> Failed: error\n"
+        "    Failed --> Idle: retry\n"
+        "    Done --> [*]\n"
+        "```\n\n"
+        "So you can mix prose, headings, and diagrams in one card.",
+        title="markdown + embedded mermaid",
+    )
+
+    # ── 12. One more markdown to bookend
+    base_count = 11  # md(2) + table(2) + image(3) + html(1) + mermaid(2) + md-with-mermaid(1)
+    total = base_count + (1 if isinstance(uploaded, AgentFlowFile) else 0)
     markdown(
         "## ✅ Done\n\n"
-        f"Rendered **{8 if not isinstance(uploaded, AgentFlowFile) else 9}** artifact cards above.\n\n"
-        "All four artifact types are working: `markdown()`, `table()`, `image()`, `html()`.",
+        f"Rendered **{total}** artifact cards above.\n\n"
+        "All five artifact types are working: "
+        "`markdown()`, `table()`, `image()`, `html()`, `mermaid()`.",
         title="summary",
     )
 
     log("demo finished")
     return {
         "rendered": {
-            "markdown": 4,
+            "markdown": 5,
             "table": 2,
             "image": 3 if not isinstance(uploaded, AgentFlowFile) else 4,
             "html": 1,
+            "mermaid": 2,
         },
         "uploaded_used": isinstance(uploaded, AgentFlowFile),
     }

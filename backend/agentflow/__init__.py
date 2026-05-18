@@ -275,6 +275,25 @@ def html(snippet: str, *, title: str | None = None) -> None:
     _emit({"type": "artifact", "kind": "html", "html": str(snippet), "title": title})
 
 
+def mermaid(diagram: str, *, title: str | None = None) -> None:
+    """Render a Mermaid diagram (flowchart, sequence, class, state, ER, etc).
+
+    Pass the raw Mermaid source (without the surrounding ```mermaid fence).
+
+    Example:
+        mermaid('''
+            flowchart LR
+                A[Start] --> B{Decide}
+                B -->|yes| C[Do thing]
+                B -->|no|  D[Skip]
+        ''', title="my flow")
+
+    You can also embed ```mermaid``` fenced blocks inside markdown() — the
+    renderer auto-detects and converts them to diagrams.
+    """
+    _emit({"type": "artifact", "kind": "mermaid", "code": str(diagram), "title": title})
+
+
 def get_llm(name: str = "default"):
     """
     Return a LangChain chat model.
