@@ -135,13 +135,23 @@ export const executions = {
 
 // ── LLM Configs ────────────────────────────────────────────────────────────────
 
+export interface LLMConfigInput {
+  name: string;
+  provider: string;
+  model: string;
+  api_key?: string;
+  base_url?: string;
+  is_default: boolean;
+  extra_config: Record<string, unknown>;
+}
+
 export const llmConfigs = {
   list: () => req<LLMConfig[]>("/llm-configs"),
 
-  create: (data: Omit<LLMConfig, "id" | "created_at">) =>
+  create: (data: LLMConfigInput) =>
     req<LLMConfig>("/llm-configs", { method: "POST", body: JSON.stringify(data) }),
 
-  update: (id: string, data: Partial<Omit<LLMConfig, "id" | "created_at">>) =>
+  update: (id: string, data: Partial<LLMConfigInput>) =>
     req<LLMConfig>(`/llm-configs/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
 
   delete: (id: string) => req<void>(`/llm-configs/${id}`, { method: "DELETE" }),

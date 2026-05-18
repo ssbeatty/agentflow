@@ -67,7 +67,7 @@ export interface LLMConfig {
   name: string;
   provider: string;
   model: string;
-  api_key?: string;
+  has_api_key: boolean;
   base_url?: string;
   is_default: boolean;
   extra_config: Record<string, unknown>;

@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, computed_field
 from typing import Any, Optional
 from datetime import datetime
 
@@ -184,13 +184,18 @@ class LLMConfigOut(BaseModel):
     name: str
     provider: str
     model: str
-    api_key: Optional[str] = None
+    api_key: Optional[str] = Field(default=None, exclude=True, repr=False)
     base_url: Optional[str] = None
     is_default: bool
     extra_config: dict
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+    @computed_field
+    @property
+    def has_api_key(self) -> bool:
+        return bool(self.api_key)
 
 
 # ── MCPServerConfig ───────────────────────────────────────────────────────────

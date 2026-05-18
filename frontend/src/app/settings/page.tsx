@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Plus, Trash2, Star, StarOff, Eye, EyeOff } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Star, StarOff } from "lucide-react";
 import { toast } from "sonner";
 import { llmConfigs } from "@/lib/api";
 import type { LLMConfig } from "@/lib/types";
@@ -45,7 +45,6 @@ export default function SettingsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
-  const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -72,7 +71,7 @@ export default function SettingsPage() {
       name: cfg.name,
       provider: cfg.provider as ProviderKey,
       model: cfg.model,
-      api_key: cfg.api_key || "",
+      api_key: "",
       base_url: cfg.base_url || "",
       is_default: cfg.is_default,
     });
@@ -173,17 +172,9 @@ export default function SettingsPage() {
                   {cfg.provider} · {cfg.model}
                   {cfg.base_url && ` · ${cfg.base_url}`}
                 </p>
-                {cfg.api_key && (
-                  <p className="text-xs text-muted-foreground font-mono mt-0.5 flex items-center gap-1">
-                    {showKeys[cfg.id]
-                      ? cfg.api_key
-                      : cfg.api_key.slice(0, 8) + "••••••••••••••••"}
-                    <button
-                      onClick={() => setShowKeys((p) => ({ ...p, [cfg.id]: !p[cfg.id] }))}
-                      className="opacity-60 hover:opacity-100"
-                    >
-                      {showKeys[cfg.id] ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-                    </button>
+                {cfg.has_api_key && (
+                  <p className="text-xs text-muted-foreground font-mono mt-0.5">
+                    ••••••••••••••••
                   </p>
                 )}
               </div>
@@ -246,12 +237,17 @@ export default function SettingsPage() {
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label>API Key</Label>
+              <Label>
+                API Key
+                {editId && (
+                  <span className="text-muted-foreground"> (leave blank to keep existing)</span>
+                )}
+              </Label>
               <Input
                 type="password"
                 value={form.api_key}
                 onChange={(e) => setForm((p) => ({ ...p, api_key: e.target.value }))}
-                placeholder="sk-..."
+                placeholder={editId ? "••••••••" : "sk-..."}
               />
             </div>
             <div className="space-y-1.5">
