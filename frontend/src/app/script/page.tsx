@@ -8,8 +8,8 @@ import {
   History, CheckCircle2, XCircle, MinusCircle, Copy, Trash2, Wrench, Check,
 } from "lucide-react";
 import { toast } from "sonner";
-import { scripts, executions, mcpServers } from "@/lib/api";
-import type { Script, ScriptFile, ExecutionLog, WsEvent, MCPServerConfig } from "@/lib/types";
+import { scripts, executions, mcpServers, revisions as revisionsApi } from "@/lib/api";
+import type { Script, ScriptFile, ExecutionLog, WsEvent, MCPServerConfig, ScriptRevisionDetail } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
@@ -24,6 +24,7 @@ import LogPanel from "@/components/LogPanel";
 import DependencyManager from "@/components/DependencyManager";
 import FileTree, { type TreeFile } from "@/components/FileTree";
 import { useResizable } from "@/components/Splitter";
+import RevisionPanel from "@/components/RevisionPanel";
 
 type RunStatus = "idle" | "queued" | "running" | "completed" | "failed" | "cancelled";
 
@@ -96,6 +97,11 @@ function ScriptPage() {
   const [lintIssues, setLintIssues] = useState<LintIssue[]>([]);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  // Revision history
+  const [revisionRefresh, setRevisionRefresh] = useState(0);
+  const [loadedRevision, setLoadedRevision] = useState<{ number: number; label: string } | null>(null);
+  const [rightTab, setRightTab] = useState<"config" | "history">("config");
 
   // Lint: debounce on active .py file content
   useEffect(() => {
@@ -251,12 +257,39 @@ function ScriptPage() {
       await Promise.all(ops);
       setDirtyFiles(new Set());
       setScript(prev => prev ? { ...prev, name, entry_function: entryFn, requirements: reqContent, mcp_server_ids: selectedMcpIds } : prev);
+      setLoadedRevision(null);
+      // Create revision snapshot after successful save
+      revisionsApi.create(id).then(() => setRevisionRefresh(n => n + 1)).catch(() => null);
       toast.success("Saved");
     } catch (e: unknown) {
       toast.error(String(e));
     } finally {
       setSaving(false);
     }
+  }
+
+  function handleRevisionLoad(rev: ScriptRevisionDetail) {
+    const newContents = new Map(fileContents);
+    const newDirty = new Set(dirtyFiles);
+
+    for (const f of rev.files) {
+      newContents.set(f.filename, f.content);
+      newDirty.add(f.filename);
+    }
+    // Also restore metadata
+    setName(rev.name);
+    setEntryFn(rev.entry_function);
+    newContents.set("requirements.txt", rev.requirements);
+    newDirty.add("__meta__");
+    newDirty.add("requirements.txt");
+
+    setFileContents(newContents);
+    setDirtyFiles(newDirty);
+    setLoadedRevision({ number: rev.revision_number, label: rev.label });
+
+    const mainFile = rev.files.find(f => f.is_main) ?? rev.files[0];
+    if (mainFile) setActiveFile(mainFile.filename);
+    setRightTab("config");
   }
 
   async function handleDelete() {
@@ -405,7 +438,13 @@ function ScriptPage() {
           <Trash2 className="h-3 w-3" />
         </Button>
 
-        {dirty && <span className="text-xs text-muted-foreground">unsaved</span>}
+        {loadedRevision && (
+          <span className="text-xs text-amber-400 flex items-center gap-1">
+            <History className="h-3 w-3" />
+            Revision #{loadedRevision.number}{loadedRevision.label ? ` "${loadedRevision.label}"` : ""} loaded — save to apply
+          </span>
+        )}
+        {!loadedRevision && dirty && <span className="text-xs text-muted-foreground">unsaved</span>}
         {lintForActive.length > 0 && (
           <span className={`text-xs flex items-center gap-1 ${
             lintForActive.some(i => i.severity === "error") ? "text-destructive" : "text-amber-400"
@@ -537,81 +576,118 @@ function ScriptPage() {
 
         {rightHandle}
 
-        {/* Right: Config panel */}
-        <div className="shrink-0 flex flex-col overflow-y-auto border-l border-border" style={{ width: `${rightWidth}px` }}>
-          <div className="p-4 space-y-5">
+        {/* Right: Config + History panel */}
+        <div className="shrink-0 flex flex-col overflow-hidden border-l border-border" style={{ width: `${rightWidth}px` }}>
+          {/* Tab bar */}
+          <div className="flex border-b border-border shrink-0">
+            <button
+              onClick={() => setRightTab("config")}
+              className={`flex-1 py-2 text-[11px] font-medium transition-colors ${
+                rightTab === "config"
+                  ? "border-b-2 border-primary text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Config
+            </button>
+            <button
+              onClick={() => setRightTab("history")}
+              className={`flex-1 py-2 text-[11px] font-medium transition-colors flex items-center justify-center gap-1 ${
+                rightTab === "history"
+                  ? "border-b-2 border-primary text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <History className="h-3 w-3" />History
+            </button>
+          </div>
 
-            {/* Entry function */}
-            <div className="space-y-1.5">
-              <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/70">Entry function</p>
-              <div className="relative">
-                <Settings2 className="absolute left-2.5 top-[9px] h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                <Input
-                  value={entryFn}
-                  onChange={e => { setEntryFn(e.target.value); markDirty("__meta__"); }}
-                  className="pl-8 h-8 text-xs font-mono"
-                  placeholder="run"
-                />
+          {rightTab === "config" ? (
+            <div className="flex-1 overflow-y-auto">
+              <div className="p-4 space-y-5">
+
+                {/* Entry function */}
+                <div className="space-y-1.5">
+                  <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/70">Entry function</p>
+                  <div className="relative">
+                    <Settings2 className="absolute left-2.5 top-[9px] h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                    <Input
+                      value={entryFn}
+                      onChange={e => { setEntryFn(e.target.value); markDirty("__meta__"); }}
+                      className="pl-8 h-8 text-xs font-mono"
+                      placeholder="run"
+                    />
+                  </div>
+                </div>
+
+                {/* MCP Servers */}
+                {availableMcpServers.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/70 flex items-center gap-1.5">
+                      <Wrench className="h-3 w-3" />MCP Servers
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {availableMcpServers.map(srv => {
+                        const active = selectedMcpIds.includes(srv.id);
+                        return (
+                          <button
+                            key={srv.id}
+                            onClick={() => {
+                              setSelectedMcpIds(prev => active ? prev.filter(x => x !== srv.id) : [...prev, srv.id]);
+                              markDirty("__meta__");
+                            }}
+                            title={srv.transport}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border transition-all ${
+                              active
+                                ? "bg-primary/10 border-primary/40 text-primary"
+                                : "bg-secondary/30 border-border/60 text-muted-foreground hover:border-border hover:text-foreground"
+                            }`}
+                          >
+                            {active
+                              ? <Check className="h-3 w-3 shrink-0" />
+                              : <span className="h-3 w-3 shrink-0" />
+                            }
+                            {srv.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Input JSON */}
+                <div className="space-y-1.5">
+                  <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/70 flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                      Input JSON
+                      {inputError && <span className="text-destructive normal-case font-normal">{inputError}</span>}
+                    </span>
+                    <button onClick={formatJson}
+                      className="text-[10px] normal-case font-normal text-muted-foreground hover:text-foreground transition-colors">
+                      Format
+                    </button>
+                  </p>
+                  <Textarea
+                    value={inputJson}
+                    onChange={e => { setInputJson(e.target.value); setInputError(""); }}
+                    className="text-xs font-mono min-h-[100px] resize-y"
+                    placeholder="{}"
+                    spellCheck={false}
+                  />
+                </div>
+
               </div>
             </div>
-
-            {/* MCP Servers */}
-            {availableMcpServers.length > 0 && (
-              <div className="space-y-2">
-                <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/70 flex items-center gap-1.5">
-                  <Wrench className="h-3 w-3" />MCP Servers
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {availableMcpServers.map(srv => {
-                    const active = selectedMcpIds.includes(srv.id);
-                    return (
-                      <button
-                        key={srv.id}
-                        onClick={() => {
-                          setSelectedMcpIds(prev => active ? prev.filter(x => x !== srv.id) : [...prev, srv.id]);
-                          markDirty("__meta__");
-                        }}
-                        title={srv.transport}
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border transition-all ${
-                          active
-                            ? "bg-primary/10 border-primary/40 text-primary"
-                            : "bg-secondary/30 border-border/60 text-muted-foreground hover:border-border hover:text-foreground"
-                        }`}
-                      >
-                        {active
-                          ? <Check className="h-3 w-3 shrink-0" />
-                          : <span className="h-3 w-3 shrink-0" />
-                        }
-                        {srv.name}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Input JSON */}
-            <div className="space-y-1.5">
-              <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/70 flex items-center justify-between">
-                <span className="flex items-center gap-2">
-                  Input JSON
-                  {inputError && <span className="text-destructive normal-case font-normal">{inputError}</span>}
-                </span>
-                <button onClick={formatJson}
-                  className="text-[10px] normal-case font-normal text-muted-foreground hover:text-foreground transition-colors">
-                  Format
-                </button>
-              </p>
-              <Textarea
-                value={inputJson}
-                onChange={e => { setInputJson(e.target.value); setInputError(""); }}
-                className="text-xs font-mono min-h-[100px] resize-y"
-                placeholder="{}"
-                spellCheck={false}
+          ) : (
+            <div className="flex-1 min-h-0">
+              <RevisionPanel
+                scriptId={id}
+                currentFileContents={fileContents}
+                onLoad={handleRevisionLoad}
+                refreshTrigger={revisionRefresh}
               />
             </div>
-
-          </div>
+          )}
         </div>
       </div>
 

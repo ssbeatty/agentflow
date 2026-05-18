@@ -57,6 +57,43 @@ class ScriptDetail(ScriptSummary):
     files: list[ScriptFileOut] = []
 
 
+# ── ScriptRevision ────────────────────────────────────────────────────────────
+
+class RevisionCreate(BaseModel):
+    label: str = ""
+
+
+class RevisionLabelUpdate(BaseModel):
+    label: str
+
+
+class RevisionFileOut(BaseModel):
+    filename: str
+    content: str
+    is_main: bool
+
+
+class RevisionSummaryOut(BaseModel):
+    id: str
+    script_id: str
+    revision_number: int
+    label: str
+    name: str
+    entry_function: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class RevisionDetailOut(RevisionSummaryOut):
+    requirements: str
+    files: list[RevisionFileOut]
+
+
+class ForkRevisionRequest(BaseModel):
+    name: str
+
+
 # ── Execution ─────────────────────────────────────────────────────────────────
 
 class ExecutionCreate(BaseModel):

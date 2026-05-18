@@ -25,6 +25,10 @@ class Script(Base):
     files = relationship("ScriptFile", back_populates="script", cascade="all, delete-orphan")
     executions = relationship("Execution", back_populates="script", cascade="all, delete-orphan")
     cron_jobs = relationship("CronJob", back_populates="script", cascade="all, delete-orphan")
+    revisions = relationship(
+        "ScriptRevision", back_populates="script", cascade="all, delete-orphan",
+        order_by="ScriptRevision.revision_number.desc()",
+    )
 
 
 class ScriptFile(Base):
@@ -39,6 +43,22 @@ class ScriptFile(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     script = relationship("Script", back_populates="files")
+
+
+class ScriptRevision(Base):
+    __tablename__ = "script_revisions"
+
+    id = Column(String, primary_key=True, default=_id)
+    script_id = Column(String, ForeignKey("scripts.id", ondelete="CASCADE"), nullable=False)
+    revision_number = Column(Integer, nullable=False)
+    label = Column(Text, default="")
+    name = Column(String(255), nullable=False)
+    entry_function = Column(String(255), default="run")
+    requirements = Column(Text, default="")
+    files_snapshot = Column(Text, default="[]")  # JSON: [{filename, content, is_main}]
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    script = relationship("Script", back_populates="revisions")
 
 
 class Execution(Base):

@@ -1,16 +1,25 @@
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Script, ScriptFile
-from app.schemas import ScriptCreate, ScriptUpdate, ScriptDetail, ScriptSummary, ScriptFileUpsert, ScriptFileOut
+from app.models import Script, ScriptFile, ScriptRevision
+from app.schemas import (
+    ScriptCreate, ScriptUpdate, ScriptDetail, ScriptSummary, ScriptFileUpsert, ScriptFileOut,
+    RevisionCreate, RevisionLabelUpdate, RevisionSummaryOut, RevisionDetailOut,
+    RevisionFileOut, ForkRevisionRequest,
+)
 from services.venv_manager import (
     venv_exists, stream_create_venv, stream_install, delete_venv,
     list_installed_packages,
 )
 from services.script_files import normalize_script_filename
+
+MAX_REVISIONS = 50
 
 router = APIRouter()
 
@@ -189,6 +198,74 @@ async def install_deps(script_id: str, db: Session = Depends(get_db)):
     return StreamingResponse(gen(), media_type="text/plain")
 
 
+# ── Revisions ─────────────────────────────────────────────────────────────────
+
+@router.post("/{script_id}/revisions", response_model=RevisionSummaryOut, status_code=201)
+def create_revision(script_id: str, body: RevisionCreate, db: Session = Depends(get_db)):
+    rev = _snapshot(script_id, body.label, db)
+    return rev
+
+
+@router.get("/{script_id}/revisions", response_model=list[RevisionSummaryOut])
+def list_revisions(script_id: str, db: Session = Depends(get_db)):
+    _get_or_404(script_id, db)
+    return (
+        db.query(ScriptRevision)
+        .filter_by(script_id=script_id)
+        .order_by(ScriptRevision.revision_number.desc())
+        .all()
+    )
+
+
+@router.get("/{script_id}/revisions/{rev_id}", response_model=RevisionDetailOut)
+def get_revision(script_id: str, rev_id: str, db: Session = Depends(get_db)):
+    rev = _get_rev_or_404(rev_id, script_id, db)
+    return _rev_detail(rev)
+
+
+@router.patch("/{script_id}/revisions/{rev_id}", response_model=RevisionSummaryOut)
+def update_revision_label(script_id: str, rev_id: str, body: RevisionLabelUpdate, db: Session = Depends(get_db)):
+    rev = _get_rev_or_404(rev_id, script_id, db)
+    rev.label = body.label
+    db.commit()
+    db.refresh(rev)
+    return rev
+
+
+@router.delete("/{script_id}/revisions/{rev_id}", status_code=204)
+def delete_revision(script_id: str, rev_id: str, db: Session = Depends(get_db)):
+    rev = _get_rev_or_404(rev_id, script_id, db)
+    db.delete(rev)
+    db.commit()
+
+
+@router.post("/{script_id}/revisions/{rev_id}/fork", response_model=ScriptDetail, status_code=201)
+def fork_revision(script_id: str, rev_id: str, body: ForkRevisionRequest, db: Session = Depends(get_db)):
+    rev = _get_rev_or_404(rev_id, script_id, db)
+    files = json.loads(rev.files_snapshot or "[]")
+
+    new_script = Script(
+        name=body.name,
+        description=f"Forked from \"{rev.name}\" (revision #{rev.revision_number})",
+        entry_function=rev.entry_function,
+        requirements=rev.requirements,
+    )
+    db.add(new_script)
+    db.flush()
+
+    for f in files:
+        db.add(ScriptFile(
+            script_id=new_script.id,
+            filename=f["filename"],
+            content=f["content"],
+            is_main=f.get("is_main", False),
+        ))
+
+    db.commit()
+    db.refresh(new_script)
+    return new_script
+
+
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _get_or_404(script_id: str, db: Session) -> Script:
@@ -196,6 +273,63 @@ def _get_or_404(script_id: str, db: Session) -> Script:
     if not s:
         raise HTTPException(404, "Script not found")
     return s
+
+
+def _get_rev_or_404(rev_id: str, script_id: str, db: Session) -> ScriptRevision:
+    r = db.query(ScriptRevision).filter_by(id=rev_id, script_id=script_id).first()
+    if not r:
+        raise HTTPException(404, "Revision not found")
+    return r
+
+
+def _rev_detail(rev: ScriptRevision) -> RevisionDetailOut:
+    files = [RevisionFileOut(**f) for f in json.loads(rev.files_snapshot or "[]")]
+    return RevisionDetailOut(
+        id=rev.id,
+        script_id=rev.script_id,
+        revision_number=rev.revision_number,
+        label=rev.label,
+        name=rev.name,
+        entry_function=rev.entry_function,
+        requirements=rev.requirements,
+        created_at=rev.created_at,
+        files=files,
+    )
+
+
+def _snapshot(script_id: str, label: str, db: Session) -> ScriptRevision:
+    script = _get_or_404(script_id, db)
+    max_num = db.query(func.max(ScriptRevision.revision_number)).filter_by(script_id=script_id).scalar() or 0
+
+    files_data = [
+        {"filename": f.filename, "content": f.content, "is_main": f.is_main}
+        for f in script.files
+    ]
+    rev = ScriptRevision(
+        script_id=script_id,
+        revision_number=max_num + 1,
+        label=label,
+        name=script.name,
+        entry_function=script.entry_function,
+        requirements=script.requirements or "",
+        files_snapshot=json.dumps(files_data),
+    )
+    db.add(rev)
+    db.flush()
+
+    # Prune oldest beyond limit
+    all_revs = (
+        db.query(ScriptRevision)
+        .filter_by(script_id=script_id)
+        .order_by(ScriptRevision.revision_number.asc())
+        .all()
+    )
+    for old in all_revs[: max(0, len(all_revs) - MAX_REVISIONS)]:
+        db.delete(old)
+
+    db.commit()
+    db.refresh(rev)
+    return rev
 
 
 def _default_main(entry_fn: str) -> str:

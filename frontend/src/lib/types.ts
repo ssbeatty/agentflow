@@ -98,6 +98,29 @@ export interface MCPServerConfig {
   updated_at: string;
 }
 
+// ── ScriptRevision ────────────────────────────────────────────────────────────
+
+export interface RevisionFile {
+  filename: string;
+  content: string;
+  is_main: boolean;
+}
+
+export interface ScriptRevision {
+  id: string;
+  script_id: string;
+  revision_number: number;
+  label: string;
+  name: string;
+  entry_function: string;
+  created_at: string;
+}
+
+export interface ScriptRevisionDetail extends ScriptRevision {
+  requirements: string;
+  files: RevisionFile[];
+}
+
 // WebSocket events
 export type WsEvent =
   | { type: "log"; level: string; message: string; data?: unknown; step?: string; timestamp: string }

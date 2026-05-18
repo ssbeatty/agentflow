@@ -5,6 +5,7 @@ import type {
   CronJob,
   MCPServerConfig,
   Conversation, ConversationSummary, ConversationMessage,
+  ScriptRevision, ScriptRevisionDetail,
 } from "./types";
 
 const BASE = "/api";
@@ -64,6 +65,34 @@ export const scripts = {
 
   install: (id: string) =>
     fetch(`${BASE}/scripts/${id}/install`, { method: "POST" }),
+};
+
+// ── Revisions ─────────────────────────────────────────────────────────────────
+
+export const revisions = {
+  list: (scriptId: string) =>
+    req<ScriptRevision[]>(`/scripts/${scriptId}/revisions`),
+
+  create: (scriptId: string, label = "") =>
+    req<ScriptRevision>(`/scripts/${scriptId}/revisions`, {
+      method: "POST", body: JSON.stringify({ label }),
+    }),
+
+  get: (scriptId: string, revId: string) =>
+    req<ScriptRevisionDetail>(`/scripts/${scriptId}/revisions/${revId}`),
+
+  updateLabel: (scriptId: string, revId: string, label: string) =>
+    req<ScriptRevision>(`/scripts/${scriptId}/revisions/${revId}`, {
+      method: "PATCH", body: JSON.stringify({ label }),
+    }),
+
+  delete: (scriptId: string, revId: string) =>
+    req<void>(`/scripts/${scriptId}/revisions/${revId}`, { method: "DELETE" }),
+
+  fork: (scriptId: string, revId: string, name: string) =>
+    req<Script>(`/scripts/${scriptId}/revisions/${revId}/fork`, {
+      method: "POST", body: JSON.stringify({ name }),
+    }),
 };
 
 // ── Executions ─────────────────────────────────────────────────────────────────
