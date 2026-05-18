@@ -32,7 +32,9 @@ export interface ScriptSummary {
 export interface ExecutionLog {
   id: string;
   timestamp: string;
-  level: "info" | "warning" | "error" | "node" | "debug" | "raw";
+  // "_trace" and "_graph" are internal levels used to persist flow-panel events
+  // alongside logs so historical runs can replay them. LogPanel filters them out.
+  level: "info" | "warning" | "error" | "node" | "debug" | "raw" | "_trace" | "_graph";
   message: string;
   data?: unknown;
   step?: string;
@@ -121,11 +123,42 @@ export interface ScriptRevisionDetail extends ScriptRevision {
   files: RevisionFile[];
 }
 
+// ── Execution trace (LangGraph nodes / tool calls / agent actions) ──────────
+
+export interface TraceEvent {
+  type: "trace";
+  kind: "node" | "tool" | "agent_action" | "agent_finish" | "llm";
+  phase: "start" | "end" | "error" | "event";
+  name: string;
+  run_id: string;
+  parent_run_id: string | null;
+  step?: number;
+  langgraph_step?: number;
+  duration_ms?: number | null;
+  ts: number;
+  timestamp?: string;
+  input?: unknown;
+  output?: unknown;
+  error?: string;
+  log?: unknown;
+  model?: string;
+  temperature?: number;
+}
+
+export interface GraphTopology {
+  type: "graph";
+  graph_id: string;
+  mermaid: string;
+  nodes: string[];
+}
+
 // WebSocket events
 export type WsEvent =
   | { type: "log"; level: string; message: string; data?: unknown; step?: string; timestamp: string }
   | { type: "status"; status: Execution["status"]; output?: unknown; error?: string }
   | { type: "token"; content: string }
+  | TraceEvent
+  | GraphTopology
   | { type: "ping" };
 
 // ── Conversation ──────────────────────────────────────────────────────────────

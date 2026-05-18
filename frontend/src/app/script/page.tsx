@@ -4,12 +4,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft, Play, Square, Save, Terminal, Settings2,
-  Clock, ChevronRight, Loader2, CalendarClock,
+  Clock, ChevronRight, Loader2, CalendarClock, Workflow,
   History, CheckCircle2, XCircle, MinusCircle, Copy, Trash2, Wrench, Check,
 } from "lucide-react";
 import { toast } from "sonner";
 import { scripts, executions, mcpServers, revisions as revisionsApi } from "@/lib/api";
-import type { Script, ScriptFile, ExecutionLog, WsEvent, MCPServerConfig, ScriptRevisionDetail } from "@/lib/types";
+import type { Script, ScriptFile, ExecutionLog, WsEvent, MCPServerConfig, ScriptRevisionDetail, TraceEvent, GraphTopology } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import ScriptEditor, { type LintIssue } from "@/components/ScriptEditor";
 import LogPanel from "@/components/LogPanel";
+import FlowPanel from "@/components/FlowPanel";
 import DependencyManager from "@/components/DependencyManager";
 import FileTree, { type TreeFile } from "@/components/FileTree";
 import { useResizable } from "@/components/Splitter";
@@ -92,6 +93,8 @@ function ScriptPage() {
   const [currentExecId, setCurrentExecId] = useState<string | null>(null);
   const [logs, setLogs] = useState<ExecutionLog[]>([]);
   const [output, setOutput] = useState<unknown>(null);
+  const [trace, setTrace] = useState<TraceEvent[]>([]);
+  const [topology, setTopology] = useState<GraphTopology | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   const [lintIssues, setLintIssues] = useState<LintIssue[]>([]);
@@ -127,7 +130,7 @@ function ScriptPage() {
     storageKey: "ag.pkgHeight", side: "end",
   });
   const [bottomHeight, bottomHandle] = useResizable({
-    direction: "horizontal", initial: 200, min: 80, max: 500,
+    direction: "horizontal", initial: 200, min: 80, max: 2000,
     storageKey: "ag.bottomHeight", side: "end",
   });
   const [rightWidth, rightHandle] = useResizable({
@@ -187,6 +190,10 @@ function ScriptPage() {
           data: msg.data,
           step: msg.step,
         }]);
+      } else if (msg.type === "trace") {
+        setTrace(prev => [...prev, msg]);
+      } else if (msg.type === "graph") {
+        setTopology(msg);
       } else if (msg.type === "status") {
         setRunStatus(msg.status as RunStatus);
         if (msg.output !== undefined) setOutput(msg.output);
@@ -208,6 +215,8 @@ function ScriptPage() {
       if (dirty) await handleSave();
       setLogs([]);
       setOutput(null);
+      setTrace([]);
+      setTopology(null);
       setRunStatus("running");
       setActiveTab("logs");
       const exec = await executions.create(id, parsed);
@@ -531,6 +540,12 @@ function ScriptPage() {
                 <TabsTrigger value="logs" className="text-xs gap-1.5">
                   <Terminal className="h-3 w-3" />Logs
                 </TabsTrigger>
+                <TabsTrigger value="flow" className="text-xs gap-1.5">
+                  <Workflow className="h-3 w-3" />Flow
+                  {trace.length > 0 && (
+                    <span className="text-[10px] text-muted-foreground tabular-nums">{trace.filter(t => t.phase === "start" || t.phase === "event").length}</span>
+                  )}
+                </TabsTrigger>
                 <TabsTrigger value="output" className="text-xs gap-1.5">
                   <ChevronRight className="h-3 w-3" />Output
                 </TabsTrigger>
@@ -544,6 +559,9 @@ function ScriptPage() {
               <div className="flex-1 overflow-hidden">
                 <TabsContent value="logs" className="h-full m-0">
                   <LogPanel logs={logs} />
+                </TabsContent>
+                <TabsContent value="flow" className="h-full m-0">
+                  <FlowPanel trace={trace} topology={topology} />
                 </TabsContent>
                 <TabsContent value="output" className="h-full m-0 p-3">
                   <ScrollArea className="h-full">
@@ -564,6 +582,8 @@ function ScriptPage() {
                       setCurrentExecId(exec.id);
                       setLogs(exec.logs.map(l => ({ ...l })));
                       setOutput(exec.output_data ?? null);
+                      setTrace(exec.trace);
+                      setTopology(exec.topology);
                       setRunStatus(exec.status as RunStatus);
                       setActiveTab("logs");
                     }}
@@ -829,7 +849,14 @@ function RunsTab({
   scriptId: string;
   currentExecId: string | null;
   runStatus: RunStatus;
-  onSelect: (exec: { id: string; status: string; logs: ExecutionLog[]; output_data: unknown }) => void;
+  onSelect: (exec: {
+    id: string;
+    status: string;
+    logs: ExecutionLog[];
+    output_data: unknown;
+    trace: TraceEvent[];
+    topology: GraphTopology | null;
+  }) => void;
 }) {
   const [items, setItems] = useState<ExecutionSummary[]>([]);
   const [loadingRuns, setLoadingRuns] = useState(false);
@@ -855,7 +882,26 @@ function RunsTab({
   async function openRun(runId: string) {
     try {
       const full = await executions.get(runId);
-      onSelect({ id: full.id, status: full.status, logs: full.logs, output_data: full.output_data });
+      const trace: TraceEvent[] = [];
+      let topology: GraphTopology | null = null;
+      const visibleLogs: ExecutionLog[] = [];
+      for (const l of full.logs) {
+        if (l.level === "_trace" && l.data) {
+          trace.push(l.data as TraceEvent);
+        } else if (l.level === "_graph" && l.data) {
+          topology = l.data as GraphTopology;
+        } else {
+          visibleLogs.push({ ...l });
+        }
+      }
+      onSelect({
+        id: full.id,
+        status: full.status,
+        logs: visibleLogs,
+        output_data: full.output_data,
+        trace,
+        topology,
+      });
     } catch (e) { toast.error(String(e)); }
   }
 

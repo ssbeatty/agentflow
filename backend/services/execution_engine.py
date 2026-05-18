@@ -147,6 +147,15 @@ async def _main():
 
     import agentflow as _af
 
+    # Zero-intrusion execution tracing: emits __AGENTFLOW__ trace events
+    # for every LangGraph node, tool call, and agent action. User scripts
+    # don't have to do anything.
+    try:
+        from agentflow._tracer import install as _install_tracer
+        _install_tracer()
+    except Exception as _exc:
+        print(f"[agentflow] tracer install failed: {{_exc}}", file=sys.stderr)
+
     _mcp = json.loads(os.environ.get("AGENTFLOW_MCP_CONFIGS", "{{}}"))
 
     async def _run():
@@ -368,6 +377,25 @@ async def start_execution(execution_id: str) -> None:
                             "type": "token",
                             "content": payload.get("content", ""),
                         })
+                    elif t == "trace":
+                        # persist so historical runs can re-render the flow
+                        _persist_log(db, execution_id, {
+                            "level": "_trace",
+                            "message": payload.get("name", ""),
+                            "data": payload,
+                            "step": payload.get("kind"),
+                        })
+                        await ws_manager.send(execution_id, {
+                            **payload,
+                            "timestamp": datetime.utcnow().isoformat(),
+                        })
+                    elif t == "graph":
+                        _persist_log(db, execution_id, {
+                            "level": "_graph",
+                            "message": "graph",
+                            "data": payload,
+                        })
+                        await ws_manager.send(execution_id, payload)
                     elif t == "result":
                         result_data = payload.get("data")
                     elif t == "error":

@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import { FileCode, Search, Wrench, Globe, Zap } from "lucide-react";
+import { FileCode, Search, Wrench, Globe, Zap, Workflow } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ── Templates ──────────────────────────────────────────────────────────────────
@@ -125,6 +125,102 @@ def run(input: dict) -> dict:
     answer = result["messages"][-1].content
     log("Done", step="done")
     return {"url": url, "question": question, "answer": answer}
+`,
+  },
+  {
+    id: "research-loop",
+    label: "Research Loop",
+    description: "Multi-node LangGraph with cycle + conditional edge",
+    icon: <Workflow className="h-4 w-4" />,
+    entryFunction: "run",
+    mainPy:
+`"""
+Multi-node LangGraph demo.
+
+Graph topology:
+   START → planner → researcher → (count < max?) ──no──→ summarizer → END
+                         ▲                   │
+                         └────── yes ────────┘
+
+Loop is controlled purely by an iteration counter (no LLM-judge node), so the
+number of rounds is deterministic and easy to reason about.
+"""
+from typing import TypedDict, Literal
+from langgraph.graph import StateGraph, START, END
+from agentflow import log, get_llm
+
+
+class State(TypedDict):
+    topic: str
+    notes: list[str]
+    iterations: int
+    summary: str
+    max_rounds: int
+
+
+def planner(state: State) -> dict:
+    log(f"Planning research on: {state['topic']} (max {state['max_rounds']} rounds)", step="planner")
+    return {"notes": [], "iterations": 0}
+
+
+def researcher(state: State) -> dict:
+    """Ask the LLM for one new fact each loop."""
+    llm = get_llm()
+    prior = "\\n".join(f"- {n}" for n in state["notes"]) or "(none yet)"
+    fact = llm.invoke(
+        f"Topic: {state['topic']}\\n"
+        f"Existing notes:\\n{prior}\\n\\n"
+        "Give ONE concise new fact (one sentence) not already covered."
+    ).content.strip()
+    iteration = state["iterations"] + 1
+    log(f"Round {iteration}: {fact[:80]}", step="researcher")
+    return {"notes": state["notes"] + [fact], "iterations": iteration}
+
+
+def summarizer(state: State) -> dict:
+    llm = get_llm()
+    notes = "\\n".join(f"- {n}" for n in state["notes"])
+    summary = llm.invoke(
+        f"Write a 3-sentence summary of {state['topic']} based on:\\n{notes}"
+    ).content.strip()
+    log("Summary ready", step="summarizer")
+    return {"summary": summary}
+
+
+def route(state: State) -> Literal["researcher", "summarizer"]:
+    """Loop while we still have rounds left; otherwise finish."""
+    if state["iterations"] >= state["max_rounds"]:
+        return "summarizer"
+    return "researcher"
+
+
+def _build_graph():
+    g = StateGraph(State)
+    g.add_node("planner", planner)
+    g.add_node("researcher", researcher)
+    g.add_node("summarizer", summarizer)
+    g.add_edge(START, "planner")
+    g.add_edge("planner", "researcher")
+    g.add_conditional_edges("researcher", route, {
+        "researcher": "researcher",
+        "summarizer": "summarizer",
+    })
+    g.add_edge("summarizer", END)
+    return g.compile()
+
+
+def run(input: dict) -> dict:
+    app = _build_graph()
+    result = app.invoke({
+        "topic":      input.get("topic", "the LangGraph framework"),
+        "max_rounds": input.get("max_rounds", 3),
+    })
+    return {
+        "topic":      result["topic"],
+        "summary":    result["summary"],
+        "iterations": result["iterations"],
+        "notes":      result["notes"],
+    }
 `,
   },
   {

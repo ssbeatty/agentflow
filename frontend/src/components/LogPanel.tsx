@@ -68,7 +68,7 @@ function LogEntry({ log }: { log: ExecutionLog }) {
         )}
       </div>
       {/* message row */}
-      <div className={cn("text-xs break-words pl-[2px]", color)}>{log.message}</div>
+      <div className={cn("text-xs whitespace-pre-wrap break-all pl-[2px]", color)}>{log.message}</div>
       {hasData && (
         <details className="mt-0.5 pl-[2px]">
           <summary className="cursor-pointer text-muted-foreground/60 text-[10px]">data</summary>
