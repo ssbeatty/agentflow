@@ -20,6 +20,13 @@ class Settings(BaseSettings):
     # Where per-script .venv directories live. Override in docker via env.
     data_dir: str = str(DEFAULT_DATA_DIR / "scripts")
 
+    # Public base URL of the deployment, e.g. "https://agentflow.example.com".
+    # Used to build absolute callback URLs (notably the MCP OAuth redirect_uri).
+    # Leave blank for local/dev — the request's own base URL is used instead.
+    # MUST be set (to an https URL) behind a reverse proxy, or OAuth providers
+    # will reject the http/internal redirect_uri during client registration.
+    public_base_url: str = ""
+
     # ── Auth ──────────────────────────────────────────────────────────────────
     # Secret used to sign admin session tokens. If blank, a random key is
     # generated once and persisted to data/.secret_key so tokens survive restart.

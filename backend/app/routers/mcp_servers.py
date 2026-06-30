@@ -3,6 +3,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
+from app.config import settings
 from app.database import get_db
 from app.models import MCPServerConfig
 from app.schemas import MCPServerCreate, MCPServerUpdate, MCPServerOut
@@ -94,7 +95,11 @@ def oauth_authorize_url(srv_id: str, request: Request, db: Session = Depends(get
         raise HTTPException(400, "OAuth applies to network transports (http/sse/websocket)")
     if not srv.url:
         raise HTTPException(400, "server has no URL")
-    redirect_uri = str(request.base_url).rstrip("/") + f"/api/mcp-servers/{srv_id}/oauth/callback"
+    # OAuth providers require an https redirect_uri (localhost excepted) and
+    # reject the http/internal URL a reverse proxy leaves on request.base_url.
+    # Prefer the explicitly-configured public base URL when set.
+    base = (settings.public_base_url or str(request.base_url)).rstrip("/")
+    redirect_uri = base + f"/api/mcp-servers/{srv_id}/oauth/callback"
     from services.mcp_oauth import build_authorize_url
     try:
         url, _ = build_authorize_url(srv, redirect_uri, db)

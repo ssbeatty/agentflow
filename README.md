@@ -45,6 +45,24 @@ docker compose up -d
 > 想钉某个版本：`AGENTFLOW_IMAGE=ghcr.io/ssbeatty/agentflow:v1.2.3 docker compose up -d`
 > 想从源码本地构建：`docker build -t agentflow:local . && AGENTFLOW_IMAGE=agentflow:local docker compose up -d`
 
+### 方式 1b：HTTPS 上线（Traefik + Let's Encrypt）
+
+公网部署用 `docker-compose.traefik.yml`：Traefik 在前面终结 TLS、自动申请证书（ACME TLS challenge）、`80 → 443` 跳转，并反代到 app。它会自动设好 `PUBLIC_BASE_URL` / `COOKIE_SECURE` / `CORS_ORIGINS`，所以 **MCP OAuth 和登录 Cookie 在 https 下都正常**。
+
+前置：域名 A 记录指向本机，开放 80 / 443 端口。
+
+```bash
+cp .env.example .env
+# 至少填：DOMAIN=your.domain.com  SSL_EMAIL=you@example.com
+#         POSTGRES_PASSWORD=...   SECRET_KEY=<随机串>
+docker compose -f docker-compose.traefik.yml pull
+docker compose -f docker-compose.traefik.yml up -d
+```
+
+打开 `https://your.domain.com` → 进入 `/setup` 创建管理员。
+
+> **MCP OAuth 注意**：自托管（非 Traefik）的反代部署，必须设 `PUBLIC_BASE_URL=https://你的域名`，否则 OAuth 注册时会用 http/内网地址、被 Todoist 等 provider 拒绝（400）。
+
 ### 方式 2：本地开发
 
 需要：Python 3.12+、Node 20+
@@ -306,6 +324,8 @@ DATABASE_URL=mysql+pymysql://user:pass@host/dbname
 | `SECRET_KEY` | 自动生成并存 `data/.secret_key` | 签发管理员会话 Cookie 的密钥；多副本部署需显式设置 |
 | `SESSION_TTL_HOURS` | `168` | 登录有效期（小时） |
 | `COOKIE_SECURE` | `false` | HTTPS 部署设 `true`，会话 Cookie 标记为 Secure |
+| `PUBLIC_BASE_URL` | 空（用请求地址） | 反代/HTTPS 部署必填，如 `https://域名`；用于拼 MCP OAuth 回调地址 |
+| `DOMAIN` / `SSL_EMAIL` | — | 仅 `docker-compose.traefik.yml` 用：域名 + Let's Encrypt 邮箱 |
 
 ---
 

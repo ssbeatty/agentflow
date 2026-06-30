@@ -20,6 +20,7 @@ AgentFlow — a self-hosted platform for writing/running LangGraph/LangChain Pyt
 | Docker (app + postgres) | `docker compose pull && docker compose up -d` (pulls `ghcr.io/ssbeatty/agentflow:latest`) |
 | Docker (sqlite only) | `DATABASE_URL=sqlite:////app/backend/data/agentflow.db docker compose up -d app --no-deps` |
 | Docker (build from source) | `docker build -t agentflow:local . && AGENTFLOW_IMAGE=agentflow:local docker compose up -d` |
+| Docker HTTPS (Traefik + Let's Encrypt) | set `DOMAIN`/`SSL_EMAIL` in `.env`, then `docker compose -f docker-compose.traefik.yml up -d` |
 
 There is **no test suite**. Verify changes by running the backend and exercising flows through the UI or `curl`.
 
@@ -77,7 +78,7 @@ The per-server connection dict is built by **one** helper — `services/mcp_conf
 Servers like Todoist / Fastmail sit behind OAuth — a static `Authorization` header won't do. Because scripts run headless in subprocesses (no browser), the **backend** owns the flow (`services/mcp_oauth.py`):
 
 - `MCPServerConfig.auth_type` = `none` | `oauth2`. `oauth_config` (JSON) caches discovered + manual endpoints and client creds; `oauth_token` (JSON) holds the live grant. **Neither is ever serialized to the frontend** — `MCPServerOut` only exposes `auth_type`, a computed `oauth_connected`, and `oauth_scope`.
-- `GET .../oauth/authorize-url` discovers the auth server (RFC 9728 → RFC 8414 / OIDC), dynamically registers a client if needed (RFC 7591), generates PKCE, and returns a URL the UI opens in a popup.
+- `GET .../oauth/authorize-url` discovers the auth server (RFC 9728 → RFC 8414 / OIDC), dynamically registers a client if needed (RFC 7591), generates PKCE, and returns a URL the UI opens in a popup. The `redirect_uri` is built from `settings.public_base_url` if set, else `request.base_url`. **Behind a reverse proxy you must set `PUBLIC_BASE_URL=https://host`** — otherwise the redirect_uri is the proxy's internal http URL and providers reject it at the registration step (400). The Docker image runs uvicorn with `--proxy-headers` so a proxy that sends `X-Forwarded-Proto` also fixes the scheme; `docker-compose.traefik.yml` sets `PUBLIC_BASE_URL` from `$DOMAIN`.
 - `GET .../oauth/callback` exchanges the code for tokens and renders a self-closing page that `postMessage`s `{source:"agentflow-oauth", ok}` back to the opener (Tools page listens and reloads).
 - `POST .../oauth/disconnect` clears the token.
 - At run time `build_connection()` calls `ensure_access_token()` (refresh-if-expired) and folds the bearer into `headers["Authorization"]`, so the subprocess only ever sees a static header — no token objects crossing the `AGENTFLOW_MCP_CONFIGS` JSON boundary.

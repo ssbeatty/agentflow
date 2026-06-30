@@ -1,0 +1,98 @@
+# docker-compose.traefik.yml — production HTTPS stack (Traefik + Let's Encrypt)
+#
+# Traefik terminates TLS on :443 (auto-redirects :80 → :443), obtains a free
+# certificate via the ACME TLS-ALPN challenge, and reverse-proxies to the app.
+# The app sees X-Forwarded-Proto=https (uvicorn runs with --proxy-headers) and
+# PUBLIC_BASE_URL is set, so admin cookies are Secure and MCP OAuth redirect URIs
+# are correct https URLs.
+#
+# Prerequisites
+#   * A domain whose DNS A record points at this server.
+#   * Ports 80 and 443 open to the internet (ACME + traffic).
+#   * A .env file next to this one with at least:
+#       DOMAIN=agentflow.example.com
+#       SSL_EMAIL=you@example.com
+#       POSTGRES_PASSWORD=change-me
+#       SECRET_KEY=<random hex>          # so logins survive restarts
+#
+# Run
+#   docker compose -f docker-compose.traefik.yml pull
+#   docker compose -f docker-compose.traefik.yml up -d
+#
+# Then open https://$DOMAIN — first visit lands on /setup to create the admin.
+
+services:
+  traefik:
+    image: traefik:v3
+    restart: unless-stopped
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.le.acme.tlschallenge=true"
+      - "--certificatesresolvers.le.acme.email=${SSL_EMAIL}"
+      - "--certificatesresolvers.le.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - traefik-data:/letsencrypt
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [agentflow]
+
+  app:
+    image: ${AGENTFLOW_IMAGE:-ghcr.io/ssbeatty/agentflow:latest}
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://agentflow:agentflow@postgres:5432/agentflow}
+      DATA_DIR: /app/backend/data/scripts
+      APP_ENV: ${APP_ENV:-production}
+      # https-aware settings — derived from $DOMAIN so OAuth/cookies are correct.
+      PUBLIC_BASE_URL: "https://${DOMAIN}"
+      CORS_ORIGINS: "https://${DOMAIN}"
+      COOKIE_SECURE: "true"
+      SECRET_KEY: ${SECRET_KEY:-}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-168}
+    volumes:
+      - app-data:/app/backend/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.agentflow.rule=Host(`${DOMAIN}`)"
+      - "traefik.http.routers.agentflow.entrypoints=websecure"
+      - "traefik.http.routers.agentflow.tls.certresolver=le"
+      # FastAPI serves the UI, /api and the /ws WebSocket all on 8000; Traefik
+      # proxies WebSocket upgrades transparently, so no extra config is needed.
+      - "traefik.http.services.agentflow.loadbalancer.server.port=8000"
+    networks: [agentflow]
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-agentflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agentflow}
+      POSTGRES_DB: ${POSTGRES_DB:-agentflow}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agentflow}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [agentflow]
+
+volumes:
+  app-data:
+  postgres-data:
+  traefik-data:
+
+networks:
+  agentflow:
+    driver: bridge
