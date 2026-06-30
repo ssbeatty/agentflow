@@ -120,6 +120,18 @@ export interface Channel {
   created_at: string;
 }
 
+export interface Secret {
+  id: string;
+  key: string;
+  description: string;
+  /** read-only: whether a value is stored (the value itself is never returned) */
+  has_value: boolean;
+  /** read-only: masked hint, e.g. "••••ab" */
+  preview: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface MCPToolInfo {
   name: string;
   title?: string | null;

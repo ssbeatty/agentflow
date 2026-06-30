@@ -324,6 +324,54 @@ class MCPServerOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# ── Secret (externally-managed credentials for user scripts) ───────────────────
+
+# Keys are matched case-insensitively by get_secret() (non-alnum → "_"), so we
+# constrain them to env-var-like names to avoid ambiguity / collisions.
+_SECRET_KEY_PATTERN = r"^[A-Za-z_][A-Za-z0-9_]*$"
+
+
+class SecretCreate(BaseModel):
+    key: str = Field(pattern=_SECRET_KEY_PATTERN, max_length=255)
+    value: str = ""
+    description: str = ""
+
+
+class SecretUpdate(BaseModel):
+    value: Optional[str] = None
+    description: Optional[str] = None
+
+
+class SecretOut(BaseModel):
+    id: str
+    key: str
+    description: str = ""
+    created_at: datetime
+    updated_at: datetime
+
+    # Read from the ORM for derivation only — the value itself is never serialized.
+    value: Optional[str] = Field(default=None, exclude=True, repr=False)
+
+    model_config = {"from_attributes": True}
+
+    @computed_field
+    @property
+    def has_value(self) -> bool:
+        return bool(self.value)
+
+    @computed_field
+    @property
+    def preview(self) -> str:
+        """A masked hint so the operator can confirm which value is set without
+        ever exposing it. Shows the last 2 chars only when long enough."""
+        v = self.value or ""
+        if not v:
+            return ""
+        if len(v) <= 4:
+            return "•" * len(v)
+        return "••••" + v[-2:]
+
+
 # ── CronJob ───────────────────────────────────────────────────────────────────
 
 class CronJobCreate(BaseModel):

@@ -18,7 +18,7 @@ from app.database import engine, Base, SessionLocal
 from app.auth_deps import require_admin
 from app.routers import (
     scripts, executions, llm_configs, cron_jobs, ws, mcp_servers,
-    conversations, files, channels, auth, api_keys,
+    conversations, files, channels, auth, api_keys, secrets,
 )
 from services.scheduler import scheduler_service
 
@@ -79,6 +79,7 @@ app.include_router(api_keys.router,    prefix="/api/api-keys",    tags=["api-key
 app.include_router(mcp_servers.router,    prefix="/api/mcp-servers",    tags=["mcp-servers"],    dependencies=_admin)
 app.include_router(conversations.router,  prefix="/api/conversations",  tags=["conversations"],  dependencies=_admin)
 app.include_router(files.router,          prefix="/api/files",          tags=["files"],          dependencies=_admin)
+app.include_router(secrets.router,        prefix="/api/secrets",        tags=["secrets"],        dependencies=_admin)
 
 @app.get("/health")
 def health():

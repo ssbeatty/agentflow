@@ -84,6 +84,15 @@ Servers like Todoist / Fastmail sit behind OAuth — a static `Authorization` he
 - At run time `build_connection()` calls `ensure_access_token()` (refresh-if-expired) and folds the bearer into `headers["Authorization"]`, so the subprocess only ever sees a static header — no token objects crossing the `AGENTFLOW_MCP_CONFIGS` JSON boundary.
 - `PATCH /api/mcp-servers/{id}` **shallow-merges** `oauth_config` so editing e.g. scope in the UI doesn't wipe the discovered endpoints / client_id.
 
+### External secrets (credentials for user scripts)
+
+Scripts must not hard-code API keys / tokens / webhook URLs. The `Secret` model (`secrets` table: `key`, `value`, `description`) holds them, managed via `routers/secrets.py` (admin-gated CRUD) and the `/secrets` page. Mirrors the channel/OAuth "secret never crosses to the frontend" contract:
+
+- `SecretOut` reads `value` only to derive a computed `has_value` + masked `preview` (`Field(exclude=True)`); the raw value is **never serialized**. `SecretCreate.key` is constrained to `^[A-Za-z_][A-Za-z0-9_]*$` so the env-var mapping is unambiguous; the router also rejects keys that collide once upper-cased.
+- At run time `execution_engine` loads all secrets and builds `AGENTFLOW_SECRET_<NORM(key)>` env vars (+ `AGENTFLOW_SECRET_NAMES`). These go into **`sub_env` only** — deliberately **not** passed to `_write_runner()`, so secret values are never baked into the on-disk `_runner.py` (unlike `llm_envs`, which currently are). The diagnostic log prints secret **keys**, never values.
+- Scripts read them via `agentflow.get_secret("<key>")` (case-insensitive, non-alnum → `_`, same `_norm` as `get_llm`) / `list_secrets()`. Global by design — single-admin model, every script sees every secret (no per-script opt-in like `mcp_server_ids`).
+- **At rest the value is plaintext in the DB** — consistent with `channels.api_key` and `oauth_token`; the DB lives on the protected data volume and is never exposed via the API. Encryption-at-rest would need a non-stdlib cipher (breaks `security.py`'s stdlib-only rule), so it's intentionally out of scope.
+
 ### Database
 
 - `app/database.py` switches on `DATABASE_URL` (sqlite vs anything else). SQLite gets WAL pragmas + `check_same_thread=False`; everything else gets pool defaults.
@@ -119,6 +128,7 @@ Backend uses naive `datetime.utcnow()` everywhere (stored without TZ). Frontend 
 - **Chat page convention**: input is `{message, history: [{role, content}]}`, output is `{reply}` (with fallbacks: `message` / `response` / `result` / stringified). Maintained client-side in `frontend/src/app/converse/page.tsx` (Open-WebUI-style: collapsible searchable sidebar, flat full-width assistant messages, hover copy/delete, stop-generation, scroll-to-bottom). The chat page also consumes `trace` WS events and renders agent internals via `AgentNarrative` — one **collapsed-by-default** "Agent 过程" block above each assistant answer that expands to the readable story of the turn: the agent's intermediate text returns rendered as markdown, each tool call as a card with args/result/status (chronological, from `buildRows`). The last LLM turn's text is excluded (`excludeLastLlmText`) since the authoritative `content` renders it as the final answer. The shared markdown renderer is `components/Markdown.tsx`. On reload it re-hydrates from the run's `_trace` logs. (`AgentTraceInline.tsx` is the older compact-timeline view, no longer wired into the chat.) The tracer (`agentflow/_tracer.py`) is global, so any `get_agent()` / LangGraph run is traced automatically — a plain `run()` that isn't a LangGraph node won't show node steps, but its tool/LLM calls still do.
 - **Baseline packages** auto-installed on venv create: see `BASELINE_PACKAGES` in `venv_manager.py`. Currently: `langchain-core`, `langchain-openai`, `langchain-deepseek`, `langgraph`, `httpx`, `ddgs`, `langchain-mcp-adapters`, `nest-asyncio`. Users add more via `requirements.txt`.
 - **MCP tool injection is per-script opt-in**: `script.mcp_server_ids` (JSON array of `MCPServerConfig.id`) controls which servers are connected at runtime. Empty = no MCP tools. The `enabled` flag on `MCPServerConfig` is a global availability switch (AND-ed with the per-script selection). Configure in the script's right panel.
+- **Secrets & convenience helpers (`agentflow`)**: `get_secret("KEY")` / `list_secrets()` read externally-managed credentials (see *External secrets* above) — keys are case-insensitive (`_norm`, same as `get_llm`). `http_get` / `http_post` / `http_request` are **provider-agnostic** thin `httpx` wrappers (default timeout / follow-redirects / raise-for-status) returning the `httpx.Response` — they kill request boilerplate without locking the platform to any specific service. Add reusable cross-script helpers here rather than re-implementing them in each script; **keep them generic** — no per-vendor logic (e.g. Bark/Slack/Todoist) belongs in the core SDK.
 
 ## Dev gotchas
 
@@ -155,3 +165,7 @@ Backend uses naive `datetime.utcnow()` everywhere (stored without TZ). Frontend 
 | Auth & API-key endpoints | `backend/app/routers/auth.py` + `routers/api_keys.py` |
 | Gate a router behind admin login | `app/main.py` include_router `dependencies=[Depends(require_admin)]` |
 | Frontend login wall / login / setup / security pages | `frontend/src/components/AuthGate.tsx` + `app/login` + `app/setup` + `app/security` |
+| Secret store (model / schema / CRUD) | `app/models.py::Secret` + `schemas.py` (`Secret*`) + `routers/secrets.py` + `V8__secrets.sql` |
+| Secret injection into user scripts | `services/execution_engine.py` (`secret_envs` → `sub_env`) |
+| Script-facing secret / HTTP helpers | `backend/agentflow/__init__.py::get_secret` / `list_secrets` / `http_get` / `http_post` |
+| Secrets management UI | `frontend/src/app/secrets/page.tsx` (+ navbar link in `app/page.tsx`) |

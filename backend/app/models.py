@@ -173,6 +173,24 @@ class MCPServerConfig(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class Secret(Base):
+    """An externally-managed credential (API key / token / webhook url, etc).
+
+    Stored once via the Secrets UI/API; scripts read the value at runtime with
+    `agentflow.get_secret("<key>")`. The value is injected into the user-script
+    subprocess as `AGENTFLOW_SECRET_<NORM(key)>` and is **never serialized to the
+    frontend** (see `SecretOut`) — same contract as channel api_keys / OAuth
+    tokens. Single-admin model → secrets are global (every script can read them)."""
+    __tablename__ = "secrets"
+
+    id = Column(String, primary_key=True, default=_id)
+    key = Column(String(255), nullable=False, unique=True)   # e.g. BARK_KEY
+    value = Column(Text, nullable=False, default="")          # plaintext at rest (like channels.api_key)
+    description = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class Conversation(Base):
     __tablename__ = "conversations"
 

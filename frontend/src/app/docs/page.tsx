@@ -258,6 +258,24 @@ while True:
               and are persisted to the run history.
             </li>
             <li>
+              <b className="text-foreground">Secrets</b>: store credentials once on the
+              <code className="text-foreground"> /secrets</code> page, then read them with
+              <code className="text-foreground"> get_secret(&quot;BARK_KEY&quot;)</code> (keys are case-insensitive).
+              Values are injected into the run&apos;s environment and never appear in your code, input,
+              or the frontend. <code className="text-foreground"> list_secrets()</code> enumerates the keys.
+            </li>
+            <li>
+              <b className="text-foreground">HTTP helpers</b>:
+              <code className="text-foreground"> http_get(url)</code> /
+              <code className="text-foreground"> http_post(url, json=…)</code> /
+              <code className="text-foreground"> http_request(method, url, …)</code> are thin
+              <code className="text-foreground"> httpx</code> wrappers with sane defaults
+              (timeout, follow-redirects, raise-for-status). They return the
+              <code className="text-foreground"> httpx.Response</code> and pass any
+              <code className="text-foreground"> json= / params= / headers= / auth=</code> straight through —
+              so you don&apos;t re-write request boilerplate in every script.
+            </li>
+            <li>
               <b className="text-foreground">File inputs</b>: upload via
               <code className="text-foreground"> /api/files/upload</code>, then reference in
               <code className="text-foreground"> input_data</code> as

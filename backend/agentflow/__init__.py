@@ -112,6 +112,74 @@ def list_llms() -> list[str]:
     return []
 
 
+# ── Secrets (externally-managed credentials) ──────────────────────────────────
+
+def get_secret(key: str, default: str | None = None) -> str | None:
+    """Return the value of a secret configured in the Secrets UI/API.
+
+    Keys are matched case-insensitively (non-alphanumerics → "_"), so
+    `get_secret("BARK_KEY")` and `get_secret("bark_key")` resolve to the same
+    secret. Returns `default` (None) when the secret isn't set.
+
+    Secrets are stored server-side and injected into this run's environment;
+    they never appear in your source code, input data, or the frontend.
+
+    Example:
+        BARK_KEY = get_secret("BARK_KEY")
+    """
+    v = os.environ.get(f"AGENTFLOW_SECRET_{_norm(key)}")
+    return v if v is not None and v != "" else default
+
+
+def list_secrets() -> list[str]:
+    """Return the names (keys) of all secrets available to this run.
+    Values are never exposed — use get_secret(name) to read one."""
+    raw = os.environ.get("AGENTFLOW_SECRET_NAMES")
+    if raw:
+        try:
+            return json.loads(raw)
+        except Exception:
+            pass
+    return []
+
+
+# ── HTTP convenience (provider-agnostic, thin httpx wrapper) ───────────────────
+
+def http_request(method: str, url: str, *, timeout: float = 30, raise_for_status: bool = True, **kwargs):
+    """Thin wrapper over httpx so scripts don't re-implement timeout / redirect /
+    error-raising boilerplate on every call.
+
+    All other keyword args pass straight through to `httpx.request`
+    (`json=`, `data=`, `params=`, `headers=`, `auth=`, ...). Returns the
+    `httpx.Response` — use `.json()`, `.text`, `.status_code`. Pass
+    `raise_for_status=False` to inspect 4xx/5xx yourself instead of raising.
+
+    Example:
+        r = http_post(
+            "https://api.example.com/v1/messages",
+            json={"text": "hello"},
+            headers={"Authorization": f"Bearer {get_secret('SERVICE_TOKEN')}"},
+        )
+        data = r.json()
+    """
+    import httpx
+    kwargs.setdefault("follow_redirects", True)
+    resp = httpx.request(method, url, timeout=timeout, **kwargs)
+    if raise_for_status:
+        resp.raise_for_status()
+    return resp
+
+
+def http_get(url: str, **kwargs):
+    """GET via http_request(); see http_request for options."""
+    return http_request("GET", url, **kwargs)
+
+
+def http_post(url: str, **kwargs):
+    """POST via http_request(); see http_request for options."""
+    return http_request("POST", url, **kwargs)
+
+
 def _json_default(o):
     if isinstance(o, AgentFlowFile):
         return {"$file": o.id, "name": o.name, "mime": o.mime, "size": o.size}

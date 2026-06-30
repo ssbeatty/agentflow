@@ -10,6 +10,7 @@ import type {
   ScriptInputPreset,
   UploadedFile,
   AuthStatus, AuthResult, ApiKey, ApiKeyCreated,
+  Secret,
 } from "./types";
 
 const BASE = "/api";
@@ -329,6 +330,20 @@ export const apiKeys = {
     req<ApiKeyCreated>("/api-keys", { method: "POST", body: JSON.stringify({ name }) }),
 
   delete: (id: string) => req<void>(`/api-keys/${id}`, { method: "DELETE" }),
+};
+
+// ── Secrets (externally-managed credentials read by get_secret() in scripts) ───
+
+export const secrets = {
+  list: () => req<Secret[]>("/secrets"),
+
+  create: (data: { key: string; value: string; description?: string }) =>
+    req<Secret>("/secrets", { method: "POST", body: JSON.stringify(data) }),
+
+  update: (id: string, data: { value?: string; description?: string }) =>
+    req<Secret>(`/secrets/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+
+  delete: (id: string) => req<void>(`/secrets/${id}`, { method: "DELETE" }),
 };
 
 // ── Cron Jobs ──────────────────────────────────────────────────────────────────

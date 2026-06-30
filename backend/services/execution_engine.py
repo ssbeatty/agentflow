@@ -300,7 +300,7 @@ async def start_execution(execution_id: str) -> None:
         # enabled channels serve the same model, the highest-priority one wins
         # (ties → earliest created). The default model (get_llm() with no name)
         # is whichever channel was flagged is_default.
-        from app.models import Channel, MCPServerConfig
+        from app.models import Channel, MCPServerConfig, Secret
         import re
         def _norm(name: str) -> str:
             return re.sub(r"[^A-Z0-9]+", "_", (name or "").upper()).strip("_") or "UNNAMED"
@@ -350,6 +350,17 @@ async def start_execution(execution_id: str) -> None:
                 mcp_configs[srv.name] = build_connection(srv, db)
         llm_envs["AGENTFLOW_MCP_CONFIGS"] = json.dumps(mcp_configs)
 
+        # ── build externally-managed secret env vars ──────────────────────────
+        # Read by agentflow.get_secret("<key>") as AGENTFLOW_SECRET_<NORM(key)>.
+        # These go ONLY into the subprocess env below — deliberately NOT passed to
+        # _write_runner(), so secret values never get baked into the on-disk
+        # _runner.py file. Global by design (single-admin model, no tenancy).
+        secret_envs: dict[str, str] = {}
+        secret_rows = db.query(Secret).all()
+        for sec in secret_rows:
+            secret_envs[f"AGENTFLOW_SECRET_{_norm(sec.key)}"] = sec.value or ""
+        secret_envs["AGENTFLOW_SECRET_NAMES"] = json.dumps([s.key for s in secret_rows])
+
         # expose paths to user scripts via env (read by agentflow.paths)
         llm_envs["AGENTFLOW_RUN_DIR"] = str(run_dir)
         llm_envs["AGENTFLOW_WORKSPACE_DIR"] = str(workspace_dir)
@@ -373,7 +384,8 @@ async def start_execution(execution_id: str) -> None:
         diag_msg = (
             f"LLM models: {list(chosen.keys()) or 'none'}; "
             f"default={default_model or 'none'}; "
-            f"MCP servers: {list(mcp_configs.keys()) or 'none'}"
+            f"MCP servers: {list(mcp_configs.keys()) or 'none'}; "
+            f"secrets: {[s.key for s in secret_rows] or 'none'}"
         )
         _persist_log(db, execution_id, {"level": "debug", "message": diag_msg, "step": "_engine"})
         await ws_manager.send(execution_id, {
@@ -387,6 +399,8 @@ async def start_execution(execution_id: str) -> None:
         sub_env.setdefault("LANGCHAIN_TRACING_V2", "false")
         sub_env.setdefault("LANGSMITH_TRACING", "false")
         sub_env.update(llm_envs)
+        # Secrets last, subprocess-only: never written into the on-disk runner.
+        sub_env.update(secret_envs)
 
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue = asyncio.Queue()
