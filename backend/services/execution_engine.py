@@ -371,8 +371,8 @@ async def start_execution(execution_id: str) -> None:
         await ws_manager.send(execution_id, {"type": "status", "status": "running"})
 
         diag_msg = (
-            f"LLM configs: {[llm.name for llm in llms]}; "
-            f"default={'yes' if any(l.is_default for l in llms) else 'no'}; "
+            f"LLM models: {list(chosen.keys()) or 'none'}; "
+            f"default={default_model or 'none'}; "
             f"MCP servers: {list(mcp_configs.keys()) or 'none'}"
         )
         _persist_log(db, execution_id, {"level": "debug", "message": diag_msg, "step": "_engine"})
