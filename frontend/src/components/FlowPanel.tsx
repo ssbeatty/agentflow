@@ -1,7 +1,7 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type MouseEvent } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ChevronDown, ChevronRight, Wrench, Box, Bot, Flag, Brain } from "lucide-react";
+import { ChevronDown, ChevronRight, Wrench, Box, Bot, Flag, Brain, Copy, Check } from "lucide-react";
 import type { TraceEvent, GraphTopology } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import MermaidView from "@/components/MermaidView";
@@ -260,42 +260,73 @@ function ChatView({ messages }: { messages: ChatMessage[] }) {
   );
 }
 
+// The backend caps oversized node/tool payloads (see agentflow/_tracer.py::_truncate)
+// into this shape. `preview` is the *already-serialized* head of the JSON string —
+// it must be rendered verbatim, never JSON.stringify'd again (that double-escapes
+// every quote/newline into unreadable `\"` / `\\n` soup).
+interface TruncMarker { __truncated__?: boolean; preview?: string; original_bytes?: number }
+
 function JsonBlock({ label, value }: { label: string; value: unknown }) {
   const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const trunc = (value && typeof value === "object" && (value as TruncMarker).__truncated__)
+    ? (value as TruncMarker) : null;
 
   // Chat-message arrays get a friendlier rendering.
-  const chatMsgs = isChatMessageArray(value) ? (value as ChatMessage[]) : null;
-  const text = !chatMsgs && (typeof value === "string" ? value : JSON.stringify(value, null, 2));
-  const charCount = chatMsgs
+  const chatMsgs = !trunc && isChatMessageArray(value) ? (value as ChatMessage[]) : null;
+
+  // For truncated payloads show the raw preview text as-is (cut-off but readable JSON).
+  const text = trunc
+    ? (trunc.preview ?? "")
+    : (!chatMsgs ? (typeof value === "string" ? value : JSON.stringify(value, null, 2)) : "");
+
+  const shownChars = chatMsgs
     ? chatMsgs.reduce((n, m) => n + (typeof m.content === "string" ? m.content.length : JSON.stringify(m.content).length), 0)
     : (text || "").length;
+  // For truncated blobs the chip shows the *real* size; otherwise the shown size.
+  const totalChars = trunc?.original_bytes ?? shownChars;
 
-  // Detect truncated payload from the backend so we can surface it.
-  const truncated = Boolean(value && typeof value === "object" && (value as { __truncated__?: boolean }).__truncated__);
-
-  // Heuristic: collapse anything tall or > ~400 chars by default.
+  // Heuristic: collapse anything tall or > ~400 chars by default; truncated is always large.
   const lineCount = text ? text.split("\n").length : (chatMsgs?.length ?? 0) * 4;
-  const isLarge = charCount > 400 || lineCount > 8;
+  const isLarge = Boolean(trunc) || shownChars > 400 || lineCount > 8;
+
+  const copyText = chatMsgs ? JSON.stringify(value, null, 2) : text;
+  const onCopy = (e: MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard?.writeText(copyText)
+      .then(() => { setCopied(true); setTimeout(() => setCopied(false), 1200); })
+      .catch(() => {});
+  };
 
   return (
     <div>
+      {/* Controls sit just after the label — NOT ml-auto'd to the far right —
+          so the panel's scrollbar / right column can never overlap them. That
+          right-edge overlap was the "expand button disappears" report: the button
+          was there, just hidden under the right-side bar. */}
       <div className="flex items-center gap-2 mb-0.5">
         <span className="text-muted-foreground/60 text-[10px] uppercase tracking-wide">{label}</span>
-        <span className="text-muted-foreground/40 text-[10px] tabular-nums">{charCount.toLocaleString()} chars</span>
-        {truncated && (
-          <span className="text-amber-400/80 text-[10px]">truncated</span>
-        )}
+        <span className="text-muted-foreground/40 text-[10px] tabular-nums">{totalChars.toLocaleString()} chars</span>
+        <button onClick={onCopy} title="Copy full content"
+          className="text-[10px] text-muted-foreground hover:text-foreground inline-flex items-center gap-0.5">
+          {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+        </button>
         {isLarge && (
           <button onClick={() => setExpanded(v => !v)}
-            className="ml-auto text-[10px] text-muted-foreground hover:text-foreground inline-flex items-center gap-0.5">
+            className="text-[10px] text-muted-foreground hover:text-foreground inline-flex items-center gap-0.5">
             {expanded ? <><ChevronDown className="h-3 w-3" />collapse</> : <><ChevronRight className="h-3 w-3" />expand</>}
           </button>
         )}
+        {trunc && (
+          <span className="text-amber-400/80 text-[10px]">truncated · {shownChars.toLocaleString()} shown</span>
+        )}
       </div>
       <div
+        onClick={() => { if (isLarge && !expanded) setExpanded(true); }}
         className={cn(
           "relative rounded text-[11px]",
-          isLarge && !expanded && "max-h-32 overflow-hidden",
+          isLarge && !expanded && "max-h-32 overflow-hidden cursor-pointer",
           isLarge && expanded && "max-h-[60vh] overflow-auto",
         )}
       >
@@ -304,7 +335,9 @@ function JsonBlock({ label, value }: { label: string; value: unknown }) {
           : <pre className="bg-secondary/40 rounded px-2 py-1 text-muted-foreground whitespace-pre-wrap break-words font-mono">{text}</pre>
         }
         {isLarge && !expanded && (
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-6 bg-gradient-to-t from-background to-transparent" />
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-background to-transparent flex items-end justify-center">
+            <span className="text-[10px] text-muted-foreground/70 pb-0.5">click to expand</span>
+          </div>
         )}
       </div>
     </div>

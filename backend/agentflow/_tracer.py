@@ -26,10 +26,17 @@ from typing import Any
 from uuid import UUID
 
 _PREFIX = "__AGENTFLOW__"
-_MAX_PAYLOAD = 4096  # bytes per input/output blob before truncation
-# LLM payloads pass through uncapped — the frontend collapses them visually.
-# A very loose hard ceiling prevents a runaway 100MB generation from blowing
-# up the WS / DB; raise if you actually need more.
+_MAX_PAYLOAD = 262_144  # chars per node/tool input/output blob before truncation.
+# This is a *safety ceiling*, not a display limit — it only exists so a pathological
+# state (a giant document / embedding sitting in the graph state) can't push tens of
+# MB through the WS and into the DB on every node step (the WS replay buffer holds
+# every event in memory for 5 min). The old 4096 was far too aggressive: a normal
+# multi-turn {messages:[...]} state blew past it, so "truncated" fired constantly in
+# the common case. At 256KB it effectively never fires for real runs, while still
+# bounding a runaway. When it does fire the payload becomes
+# {__truncated__, preview, original_bytes}, which the Flow panel renders as readable
+# (cut-off) JSON. The frontend collapses long-but-untruncated blobs visually anyway.
+# LLM payloads get a higher ceiling (a single generation is one blob, not per-step).
 _MAX_LLM_PAYLOAD = 1_000_000
 
 
