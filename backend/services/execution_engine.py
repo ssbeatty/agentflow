@@ -320,6 +320,9 @@ async def start_execution(execution_id: str) -> None:
         llm_envs["AGENTFLOW_LLM_NAMES"] = json.dumps(llm_names)
 
         # ── build MCP server configs ──────────────────────────────────────────
+        # build_connection() also refreshes + injects OAuth bearer tokens so the
+        # headless runner only ever sees a static Authorization header.
+        from services.mcp_config import build_connection
         selected_ids: list[str] = script.mcp_server_ids or []
         mcp_configs: dict[str, dict] = {}
         if selected_ids:
@@ -327,18 +330,7 @@ async def start_execution(execution_id: str) -> None:
                 MCPServerConfig.id.in_(selected_ids),
                 MCPServerConfig.enabled == True,  # noqa: E712
             ).all():
-                cfg: dict = {"transport": srv.transport}
-                if srv.url:
-                    cfg["url"] = srv.url
-                if srv.command:
-                    cfg["command"] = srv.command
-                if srv.args:
-                    cfg["args"] = srv.args
-                if srv.env_vars:
-                    cfg["env"] = srv.env_vars
-                if srv.headers:
-                    cfg["headers"] = srv.headers
-                mcp_configs[srv.name] = cfg
+                mcp_configs[srv.name] = build_connection(srv, db)
         llm_envs["AGENTFLOW_MCP_CONFIGS"] = json.dumps(mcp_configs)
 
         # expose paths to user scripts via env (read by agentflow.paths)

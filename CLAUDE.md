@@ -63,6 +63,23 @@ When you need `script_id` in the URL, use `?id=...` query (not path segment) —
 
 AgentFlow can connect to external MCP servers configured in the Tools UI. `script.mcp_server_ids` selects which enabled `MCPServerConfig` records are connected for a run. The runner builds `AGENTFLOW_MCP_CONFIGS`, creates a `MultiServerMCPClient`, injects tools into `agentflow._injected_tools`, and scripts access them through `get_tools()` / `get_agent()`.
 
+The per-server connection dict is built by **one** helper — `services/mcp_config.py::build_connection(srv, db)` — used by both the runtime injector (`execution_engine`) and the "test connection" probe, so a probe reflects exactly what a run will see.
+
+#### Test connection / tool listing (probe)
+
+`POST /api/mcp-servers/{id}/probe` connects to a single server and returns `{ok, tools:[{name,title,description,input_schema}], error, needs_auth}`. It runs in the **backend** process via the raw `mcp` SDK (`services/mcp_probe.py`), inside a dedicated thread with a fresh `ProactorEventLoop` so `stdio` subprocess transport works regardless of the loop debugpy installs. The MCP client SDK (`mcp`) + `httpx` are backend deps now (`requirements.txt`); `langchain-mcp-adapters` stays a per-script venv baseline. The Tools UI exposes this as a per-server **Test** button that opens a dialog listing the tools + their JSON schemas.
+
+#### OAuth 2.0 for remote MCP servers
+
+Servers like Todoist / Fastmail sit behind OAuth — a static `Authorization` header won't do. Because scripts run headless in subprocesses (no browser), the **backend** owns the flow (`services/mcp_oauth.py`):
+
+- `MCPServerConfig.auth_type` = `none` | `oauth2`. `oauth_config` (JSON) caches discovered + manual endpoints and client creds; `oauth_token` (JSON) holds the live grant. **Neither is ever serialized to the frontend** — `MCPServerOut` only exposes `auth_type`, a computed `oauth_connected`, and `oauth_scope`.
+- `GET .../oauth/authorize-url` discovers the auth server (RFC 9728 → RFC 8414 / OIDC), dynamically registers a client if needed (RFC 7591), generates PKCE, and returns a URL the UI opens in a popup.
+- `GET .../oauth/callback` exchanges the code for tokens and renders a self-closing page that `postMessage`s `{source:"agentflow-oauth", ok}` back to the opener (Tools page listens and reloads).
+- `POST .../oauth/disconnect` clears the token.
+- At run time `build_connection()` calls `ensure_access_token()` (refresh-if-expired) and folds the bearer into `headers["Authorization"]`, so the subprocess only ever sees a static header — no token objects crossing the `AGENTFLOW_MCP_CONFIGS` JSON boundary.
+- `PATCH /api/mcp-servers/{id}` **shallow-merges** `oauth_config` so editing e.g. scope in the UI doesn't wipe the discovered endpoints / client_id.
+
 ### Database
 
 - `app/database.py` switches on `DATABASE_URL` (sqlite vs anything else). SQLite gets WAL pragmas + `check_same_thread=False`; everything else gets pool defaults.
@@ -109,3 +126,6 @@ Backend uses naive `datetime.utcnow()` everywhere (stored without TZ). Frontend 
 | Log rendering | `frontend/src/components/LogPanel.tsx` (uses `toLocalDate`) |
 | Script creation templates | `frontend/src/components/CreateScriptDialog.tsx::TEMPLATES` |
 | External MCP server CRUD UI | `frontend/src/app/tools/page.tsx` |
+| MCP connection probe / tool listing | `services/mcp_probe.py` + `routers/mcp_servers.py::probe_server_endpoint` |
+| MCP OAuth flow (discovery/DCR/PKCE/refresh) | `services/mcp_oauth.py` + `routers/mcp_servers.py` oauth endpoints |
+| MCP per-server connection dict (runtime + probe) | `services/mcp_config.py::build_connection` |

@@ -97,8 +97,27 @@ export interface MCPServerConfig {
   env_vars?: Record<string, string>;
   headers?: Record<string, string>;
   enabled: boolean;
+  auth_type?: "none" | "oauth2";
+  /** read-only: whether a live OAuth token is stored (server-side) */
+  oauth_connected?: boolean;
+  /** read-only: configured OAuth scope, if any */
+  oauth_scope?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface MCPToolInfo {
+  name: string;
+  title?: string | null;
+  description: string;
+  input_schema: Record<string, unknown>;
+}
+
+export interface MCPProbeResult {
+  ok: boolean;
+  tools: MCPToolInfo[];
+  error: string | null;
+  needs_auth?: boolean;
 }
 
 // ── UploadedFile ──────────────────────────────────────────────────────────────

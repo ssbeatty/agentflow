@@ -209,6 +209,8 @@ class MCPServerCreate(BaseModel):
     env_vars: Optional[dict] = None
     headers: Optional[dict] = None
     enabled: bool = True
+    auth_type: str = "none"          # none | oauth2
+    oauth_config: Optional[dict] = None
 
 
 class MCPServerUpdate(BaseModel):
@@ -220,6 +222,8 @@ class MCPServerUpdate(BaseModel):
     env_vars: Optional[dict] = None
     headers: Optional[dict] = None
     enabled: Optional[bool] = None
+    auth_type: Optional[str] = None
+    oauth_config: Optional[dict] = None   # shallow-merged into existing on PATCH
 
 
 class MCPServerOut(BaseModel):
@@ -232,8 +236,23 @@ class MCPServerOut(BaseModel):
     env_vars: Optional[dict] = None
     headers: Optional[dict] = None
     enabled: bool
+    auth_type: str = "none"
     created_at: datetime
     updated_at: datetime
+
+    # Read from the ORM for derivation only — never serialized (secrets stay server-side).
+    oauth_token: Optional[dict] = Field(default=None, exclude=True)
+    oauth_config: Optional[dict] = Field(default=None, exclude=True)
+
+    @computed_field
+    @property
+    def oauth_connected(self) -> bool:
+        return bool((self.oauth_token or {}).get("access_token"))
+
+    @computed_field
+    @property
+    def oauth_scope(self) -> Optional[str]:
+        return (self.oauth_config or {}).get("scope")
 
     model_config = {"from_attributes": True}
 

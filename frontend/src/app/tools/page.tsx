@@ -1,10 +1,13 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Plus, Trash2, ToggleLeft, ToggleRight, Globe, Terminal, Radio } from "lucide-react";
+import {
+  ArrowLeft, Plus, Trash2, ToggleLeft, ToggleRight, Globe, Terminal, Radio,
+  Activity, Plug, Unplug, Loader2, ShieldCheck, ShieldAlert, XCircle,
+} from "lucide-react";
 import { toast } from "sonner";
 import { mcpServers } from "@/lib/api";
-import type { MCPServerConfig } from "@/lib/types";
+import type { MCPServerConfig, MCPProbeResult } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +18,7 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 
 type Transport = MCPServerConfig["transport"];
+type AuthType = "none" | "oauth2";
 
 interface FormState {
   name: string;
@@ -25,10 +29,13 @@ interface FormState {
   env_vars: string;   // JSON string
   headers: string;    // JSON string
   enabled: boolean;
+  auth_type: AuthType;
+  oauth_scope: string;
 }
 
 const EMPTY_FORM: FormState = {
-  name: "", transport: "http", url: "", command: "", args: "", env_vars: "", headers: "", enabled: true,
+  name: "", transport: "http", url: "", command: "", args: "", env_vars: "", headers: "",
+  enabled: true, auth_type: "none", oauth_scope: "",
 };
 
 const TRANSPORT_ICONS: Record<Transport, React.ReactNode> = {
@@ -54,8 +61,24 @@ export default function ToolsPage() {
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+  const [probing, setProbing] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState<string | null>(null);
+  const [probeResult, setProbeResult] = useState<{ srv: MCPServerConfig; result: MCPProbeResult } | null>(null);
 
   useEffect(() => { load(); }, []);
+
+  // The OAuth callback window posts back here when sign-in completes.
+  useEffect(() => {
+    function onMsg(e: MessageEvent) {
+      const d = e.data as { source?: string; ok?: boolean; detail?: string } | null;
+      if (d && typeof d === "object" && d.source === "agentflow-oauth") {
+        if (d.ok) { toast.success("Connected"); load(); }
+        else toast.error(`Authorization failed${d.detail ? `: ${d.detail}` : ""}`);
+      }
+    }
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+  }, []);
 
   async function load() {
     try { setServers(await mcpServers.list()); }
@@ -79,6 +102,8 @@ export default function ToolsPage() {
       env_vars: fmtJson(srv.env_vars as Record<string, string>),
       headers: fmtJson(srv.headers as Record<string, string>),
       enabled: srv.enabled,
+      auth_type: srv.auth_type ?? "none",
+      oauth_scope: srv.oauth_scope ?? "",
     });
     setDialogOpen(true);
   }
@@ -94,15 +119,18 @@ export default function ToolsPage() {
     if (form.headers.trim() && headers === undefined) return toast.error("Headers must be valid JSON");
     if (form.env_vars.trim() && env_vars === undefined) return toast.error("Env vars must be valid JSON");
 
-    const payload: Omit<MCPServerConfig, "id" | "created_at" | "updated_at"> = {
+    const authType: AuthType = isNetwork ? form.auth_type : "none";
+    const payload = {
       name: form.name.trim(),
       transport: form.transport,
       url: form.url.trim() || undefined,
       command: form.command.trim() || undefined,
       args: form.args.trim() ? form.args.split("\n").map(s => s.trim()).filter(Boolean) : undefined,
-      env_vars: env_vars,
-      headers: headers,
+      env_vars,
+      headers,
       enabled: form.enabled,
+      auth_type: authType,
+      ...(authType === "oauth2" ? { oauth_config: { scope: form.oauth_scope.trim() } } : {}),
     };
 
     setSaving(true);
@@ -137,6 +165,42 @@ export default function ToolsPage() {
       const updated = await mcpServers.update(srv.id, { enabled: !srv.enabled });
       setServers(prev => prev.map(s => s.id === srv.id ? updated : s));
     } catch { toast.error("Failed to update"); }
+  }
+
+  async function testConnection(srv: MCPServerConfig) {
+    setProbing(srv.id);
+    try {
+      const result = await mcpServers.probe(srv.id);
+      setProbeResult({ srv, result });
+      if (result.ok) toast.success(`${srv.name}: ${result.tools.length} tool(s) found`);
+      else if (result.needs_auth) toast.error(`${srv.name}: authentication required`);
+      else toast.error(`${srv.name}: connection failed`);
+    } catch (e: unknown) {
+      toast.error(String(e));
+    } finally {
+      setProbing(null);
+    }
+  }
+
+  async function connectOauth(srv: MCPServerConfig) {
+    setConnecting(srv.id);
+    try {
+      const { authorize_url } = await mcpServers.oauthAuthorizeUrl(srv.id);
+      const w = window.open(authorize_url, "agentflow_oauth", "width=620,height=780");
+      if (!w) toast.error("Popup blocked — allow popups for this site");
+    } catch (e: unknown) {
+      toast.error(`OAuth: ${String(e)}`);
+    } finally {
+      setConnecting(null);
+    }
+  }
+
+  async function disconnectOauth(srv: MCPServerConfig) {
+    try {
+      const updated = await mcpServers.oauthDisconnect(srv.id);
+      setServers(prev => prev.map(s => s.id === srv.id ? updated : s));
+      toast.success("Disconnected");
+    } catch { toast.error("Failed to disconnect"); }
   }
 
   const isNetwork = form.transport !== "stdio";
@@ -198,19 +262,49 @@ export default function ToolsPage() {
           {servers.map(srv => (
             <div key={srv.id} className="border border-border rounded-lg p-4 flex items-center justify-between gap-3">
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-medium text-sm">{srv.name}</span>
                   <Badge variant={srv.enabled ? "default" : "secondary"} className="gap-1">
                     {TRANSPORT_ICONS[srv.transport]}
                     {srv.transport}
                   </Badge>
                   {!srv.enabled && <Badge variant="outline">disabled</Badge>}
+                  {srv.auth_type === "oauth2" && (
+                    srv.oauth_connected
+                      ? <Badge variant="outline" className="gap-1 border-green-600/40 text-green-600">
+                          <ShieldCheck className="h-3 w-3" />authorized
+                        </Badge>
+                      : <Badge variant="outline" className="gap-1 border-amber-600/40 text-amber-600">
+                          <ShieldAlert className="h-3 w-3" />not connected
+                        </Badge>
+                  )}
                 </div>
                 <p className="text-xs text-muted-foreground mt-0.5 font-mono truncate">
                   {srv.url || srv.command || "—"}
                 </p>
               </div>
               <div className="flex items-center gap-1 shrink-0">
+                <Button variant="ghost" size="sm" onClick={() => testConnection(srv)}
+                  disabled={probing === srv.id} title="Test connection & list tools">
+                  {probing === srv.id
+                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                    : <Activity className="h-4 w-4" />}
+                  <span className="text-xs ml-1">Test</span>
+                </Button>
+                {srv.auth_type === "oauth2" && (
+                  <Button variant="ghost" size="sm" onClick={() => connectOauth(srv)}
+                    disabled={connecting === srv.id} title={srv.oauth_connected ? "Re-authorize" : "Sign in"}>
+                    {connecting === srv.id
+                      ? <Loader2 className="h-4 w-4 animate-spin" />
+                      : <Plug className="h-4 w-4" />}
+                    <span className="text-xs ml-1">{srv.oauth_connected ? "Reconnect" : "Connect"}</span>
+                  </Button>
+                )}
+                {srv.auth_type === "oauth2" && srv.oauth_connected && (
+                  <Button variant="ghost" size="icon" onClick={() => disconnectOauth(srv)} title="Disconnect">
+                    <Unplug className="h-4 w-4 text-muted-foreground" />
+                  </Button>
+                )}
                 <Button variant="ghost" size="icon" onClick={() => toggleEnabled(srv)} title={srv.enabled ? "Disable" : "Enable"}>
                   {srv.enabled
                     ? <ToggleRight className="h-4 w-4 text-primary" />
@@ -248,6 +342,7 @@ def run(input: dict) -> dict:
         )}
       </main>
 
+      {/* Add / Edit dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -323,16 +418,51 @@ def run(input: dict) -> dict:
             )}
 
             {isNetwork && (
-              <div className="space-y-1.5">
-                <Label>Headers <span className="text-muted-foreground">(JSON object, optional)</span></Label>
-                <Textarea
-                  value={form.headers}
-                  onChange={e => setForm(p => ({ ...p, headers: e.target.value }))}
-                  placeholder={'{"Authorization": "Bearer ..."}'}
-                  rows={2}
-                  className="font-mono text-xs"
-                />
-              </div>
+              <>
+                <div className="space-y-1.5">
+                  <Label>Authentication</Label>
+                  <Select
+                    value={form.auth_type}
+                    onValueChange={v => setForm(p => ({ ...p, auth_type: v as AuthType }))}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None / static headers</SelectItem>
+                      <SelectItem value="oauth2">OAuth 2.0 (browser sign-in)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {form.auth_type === "oauth2" && (
+                  <div className="space-y-1.5">
+                    <Label>OAuth scope <span className="text-muted-foreground">(optional)</span></Label>
+                    <Input
+                      value={form.oauth_scope}
+                      onChange={e => setForm(p => ({ ...p, oauth_scope: e.target.value }))}
+                      placeholder="space-separated scopes"
+                      className="font-mono text-xs"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Save the server, then click <span className="font-medium">Connect</span> to sign in.
+                      Endpoints are auto-discovered (RFC 9728 / 8414) and a client is registered
+                      dynamically when supported.
+                    </p>
+                  </div>
+                )}
+
+                {form.auth_type === "none" && (
+                  <div className="space-y-1.5">
+                    <Label>Headers <span className="text-muted-foreground">(JSON object, optional)</span></Label>
+                    <Textarea
+                      value={form.headers}
+                      onChange={e => setForm(p => ({ ...p, headers: e.target.value }))}
+                      placeholder={'{"Authorization": "Bearer ..."}'}
+                      rows={2}
+                      className="font-mono text-xs"
+                    />
+                  </div>
+                )}
+              </>
             )}
 
             <Separator />
@@ -349,6 +479,61 @@ def run(input: dict) -> dict:
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
             <Button onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Probe result dialog */}
+      <Dialog open={!!probeResult} onOpenChange={o => { if (!o) setProbeResult(null); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{probeResult?.srv.name} — connection test</DialogTitle>
+          </DialogHeader>
+          {probeResult && (probeResult.result.ok ? (
+            <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
+              <p className="text-xs text-muted-foreground">
+                Connected · {probeResult.result.tools.length} tool(s)
+              </p>
+              {probeResult.result.tools.length === 0 && (
+                <p className="text-sm text-muted-foreground">This server exposes no tools.</p>
+              )}
+              {probeResult.result.tools.map(t => (
+                <details key={t.name} className="rounded-md border border-border p-2.5">
+                  <summary className="cursor-pointer text-sm font-mono text-primary">
+                    {t.name}
+                    {t.title && <span className="text-muted-foreground font-sans ml-2">{t.title}</span>}
+                  </summary>
+                  {t.description && (
+                    <p className="text-xs text-muted-foreground mt-1.5 whitespace-pre-wrap">{t.description}</p>
+                  )}
+                  <pre className="mt-2 text-[11px] font-mono bg-muted/50 rounded p-2 overflow-x-auto">
+                    {JSON.stringify(t.input_schema, null, 2)}
+                  </pre>
+                </details>
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-start gap-2 text-sm text-destructive">
+                <XCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                <span className="break-words">{probeResult.result.error}</span>
+              </div>
+              {probeResult.result.needs_auth && probeResult.srv.auth_type === "oauth2" && (
+                <Button size="sm" onClick={() => { connectOauth(probeResult.srv); setProbeResult(null); }}>
+                  <Plug className="h-4 w-4" /> Connect
+                </Button>
+              )}
+              {probeResult.result.needs_auth && probeResult.srv.auth_type !== "oauth2" && (
+                <p className="text-xs text-muted-foreground">
+                  This server requires authentication. Edit it and set Authentication to
+                  {" "}<span className="font-medium">OAuth 2.0</span>, or add an{" "}
+                  <code className="font-mono bg-muted px-1 rounded">Authorization</code> header.
+                </p>
+              )}
+            </div>
+          ))}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setProbeResult(null)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

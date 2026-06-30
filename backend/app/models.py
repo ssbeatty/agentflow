@@ -139,6 +139,15 @@ class MCPServerConfig(Base):
     env_vars = Column(JSON, nullable=True)   # dict for stdio extra env
     headers = Column(JSON, nullable=True)    # dict for http/sse auth headers
     enabled = Column(Boolean, default=True)
+    # OAuth 2.0 (http/sse): auth_type none|oauth2.
+    # oauth_config holds discovered + manual endpoints and client creds
+    #   {authorization_endpoint, token_endpoint, registration_endpoint,
+    #    client_id, client_secret, scope, resource}
+    # oauth_token holds the live grant (never exposed to the frontend)
+    #   {access_token, refresh_token, token_type, scope, expires_at}
+    auth_type = Column(String(20), nullable=False, default="none")
+    oauth_config = Column(JSON, nullable=True)
+    oauth_token = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

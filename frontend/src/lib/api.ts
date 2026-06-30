@@ -3,7 +3,7 @@ import type {
   Execution, ExecutionSummary,
   LLMConfig,
   CronJob,
-  MCPServerConfig,
+  MCPServerConfig, MCPProbeResult,
   Conversation, ConversationSummary, ConversationMessage,
   ScriptRevision, ScriptRevisionDetail,
   ScriptInputPreset,
@@ -162,16 +162,32 @@ export const llmConfigs = {
 
 // ── MCP Servers ────────────────────────────────────────────────────────────────
 
+type MCPServerWritable =
+  Partial<Omit<MCPServerConfig, "id" | "created_at" | "updated_at" | "oauth_connected" | "oauth_scope">>
+  & { oauth_config?: Record<string, unknown> };
+
 export const mcpServers = {
   list: () => req<MCPServerConfig[]>("/mcp-servers"),
 
-  create: (data: Omit<MCPServerConfig, "id" | "created_at" | "updated_at">) =>
+  create: (data: MCPServerWritable) =>
     req<MCPServerConfig>("/mcp-servers", { method: "POST", body: JSON.stringify(data) }),
 
-  update: (id: string, data: Partial<Omit<MCPServerConfig, "id" | "created_at" | "updated_at">>) =>
+  update: (id: string, data: MCPServerWritable) =>
     req<MCPServerConfig>(`/mcp-servers/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
 
   delete: (id: string) => req<void>(`/mcp-servers/${id}`, { method: "DELETE" }),
+
+  /** Connect to the server and list its tools (used by the "Test" button). */
+  probe: (id: string) =>
+    req<MCPProbeResult>(`/mcp-servers/${id}/probe`, { method: "POST" }),
+
+  /** Get the provider authorization URL to open in a browser popup. */
+  oauthAuthorizeUrl: (id: string) =>
+    req<{ authorize_url: string }>(`/mcp-servers/${id}/oauth/authorize-url`),
+
+  /** Clear the stored OAuth token. */
+  oauthDisconnect: (id: string) =>
+    req<MCPServerConfig>(`/mcp-servers/${id}/oauth/disconnect`, { method: "POST" }),
 };
 
 // ── Conversations ──────────────────────────────────────────────────────────────
