@@ -19,6 +19,7 @@ class Script(Base):
     entry_function = Column(String(255), default="run")
     requirements = Column(Text, default="")
     mcp_server_ids = Column(JSON, default=list)
+    skill_ids = Column(JSON, default=list)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -171,6 +172,42 @@ class MCPServerConfig(Base):
     oauth_token = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Skill(Base):
+    """A reusable Agent Skill — a folder with a SKILL.md (instructions) plus any
+    supporting files. Global like MCP servers; a script opts in via
+    `script.skill_ids`. At run time the engine materializes each bound skill to
+    `run_dir/skills/<name>/`, injects each skill's name+description into the agent
+    system prompt, and the agent loads a skill's full SKILL.md on demand via the
+    built-in `read_skill` tool (Agent Skills "progressive disclosure")."""
+    __tablename__ = "skills"
+
+    id = Column(String, primary_key=True, default=_id)
+    name = Column(String(255), nullable=False, unique=True)
+    description = Column(Text, default="")
+    enabled = Column(Boolean, default=True)
+    source = Column(String(50), default="manual")   # manual | installed:<repo> (future)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    files = relationship("SkillFile", back_populates="skill", cascade="all, delete-orphan")
+
+
+class SkillFile(Base):
+    """A file inside a Skill. Mirrors ScriptFile — content lives in the DB and is
+    written to disk at run time. `is_main` marks the skill's SKILL.md entry."""
+    __tablename__ = "skill_files"
+
+    id = Column(String, primary_key=True, default=_id)
+    skill_id = Column(String, ForeignKey("skills.id", ondelete="CASCADE"), nullable=False)
+    filename = Column(String(255), nullable=False)
+    content = Column(Text, default="")
+    is_main = Column(Boolean, default=False)   # True for SKILL.md
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    skill = relationship("Skill", back_populates="files")
 
 
 class Secret(Base):

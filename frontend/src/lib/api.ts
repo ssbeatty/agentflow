@@ -11,6 +11,7 @@ import type {
   UploadedFile,
   AuthStatus, AuthResult, ApiKey, ApiKeyCreated,
   Secret,
+  Skill, SkillSummary, SkillFile,
 } from "./types";
 
 const BASE = "/api";
@@ -52,7 +53,7 @@ export const scripts = {
   create: (data: { name: string; description?: string; entry_function?: string }) =>
     req<Script>("/scripts", { method: "POST", body: JSON.stringify(data) }),
 
-  update: (id: string, data: Partial<Pick<Script, "name" | "description" | "entry_function" | "requirements" | "mcp_server_ids">>) =>
+  update: (id: string, data: Partial<Pick<Script, "name" | "description" | "entry_function" | "requirements" | "mcp_server_ids" | "skill_ids">>) =>
     req<Script>(`/scripts/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
 
   delete: (id: string) => req<void>(`/scripts/${id}`, { method: "DELETE" }),
@@ -240,6 +241,28 @@ export const mcpServers = {
   /** Clear the stored OAuth token. */
   oauthDisconnect: (id: string) =>
     req<MCPServerConfig>(`/mcp-servers/${id}/oauth/disconnect`, { method: "POST" }),
+};
+
+// ── Skills (Agent Skills: SKILL.md + supporting files) ──────────────────────────
+
+export const skills = {
+  list: () => req<SkillSummary[]>("/skills"),
+
+  get: (id: string) => req<Skill>(`/skills/${id}`),
+
+  create: (data: { name: string; description?: string; enabled?: boolean }) =>
+    req<Skill>("/skills", { method: "POST", body: JSON.stringify(data) }),
+
+  update: (id: string, data: Partial<Pick<Skill, "name" | "description" | "enabled">>) =>
+    req<Skill>(`/skills/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+
+  delete: (id: string) => req<void>(`/skills/${id}`, { method: "DELETE" }),
+
+  upsertFile: (id: string, file: { filename: string; content: string; is_main?: boolean }) =>
+    req<SkillFile>(`/skills/${id}/files`, { method: "PUT", body: JSON.stringify(file) }),
+
+  deleteFile: (id: string, filename: string) =>
+    req<void>(`/skills/${id}/files/${encodeURIComponent(filename)}`, { method: "DELETE" }),
 };
 
 // ── Conversations ──────────────────────────────────────────────────────────────

@@ -143,6 +143,57 @@ def list_secrets() -> list[str]:
     return []
 
 
+# ── Skills (Agent Skills bound to this run) ────────────────────────────────────
+#
+# The engine materializes each bound skill to run_dir/skills/<name>/ and exposes a
+# manifest via AGENTFLOW_SKILLS = [{name, description, dir, main}]. Skills follow
+# the Agent Skills convention: a SKILL.md (instructions) plus supporting files.
+# get_agent() advertises name+description in the system prompt; the agent reads a
+# skill's full body on demand through the built-in `read_skill` tool.
+
+def _skill_manifest() -> list[dict]:
+    raw = os.environ.get("AGENTFLOW_SKILLS")
+    if raw:
+        try:
+            data = json.loads(raw)
+            if isinstance(data, list):
+                return data
+        except Exception:
+            pass
+    return []
+
+
+def list_skills() -> list[dict]:
+    """Return the skills bound to this run as ``[{name, description}]``."""
+    return [{"name": s.get("name", ""), "description": s.get("description", "")}
+            for s in _skill_manifest()]
+
+
+def get_skill(name: str) -> str | None:
+    """Return the full SKILL.md text of a bound skill, or None if not found.
+
+    Matching is case-insensitive on the skill name. Use this (or the agent's
+    built-in `read_skill` tool) to load a skill's instructions on demand."""
+    want = (name or "").strip().lower()
+    for s in _skill_manifest():
+        if (s.get("name", "") or "").strip().lower() == want:
+            main = Path(s["dir"]) / s.get("main", "SKILL.md")
+            try:
+                return main.read_text(encoding="utf-8")
+            except Exception:
+                return None
+    return None
+
+
+def skill_path(name: str) -> Path | None:
+    """Return the on-disk directory of a bound skill (for reading its files)."""
+    want = (name or "").strip().lower()
+    for s in _skill_manifest():
+        if (s.get("name", "") or "").strip().lower() == want:
+            return Path(s["dir"])
+    return None
+
+
 # ── HTTP convenience (provider-agnostic, thin httpx wrapper) ───────────────────
 
 def http_request(method: str, url: str, *, timeout: float = 30, raise_for_status: bool = True, **kwargs):
@@ -486,6 +537,48 @@ def _make_builtin_tools() -> list:
     return [web_fetch, web_search]
 
 
+def _make_skill_tool():
+    """Create the `read_skill` tool the agent uses to load a skill on demand.
+
+    Returns None when no skills are bound to this run so plain agents are
+    unchanged."""
+    manifest = _skill_manifest()
+    if not manifest:
+        return None
+    from langchain_core.tools import tool
+
+    @tool
+    def read_skill(name: str) -> str:
+        """Load the full instructions (SKILL.md) of one of the available skills.
+        Call this when the task matches a skill's description. Pass the skill name."""
+        body = get_skill(name)
+        if body is None:
+            avail = ", ".join(s.get("name", "") for s in _skill_manifest()) or "none"
+            return f"No skill named {name!r}. Available skills: {avail}."
+        return body
+
+    return read_skill
+
+
+def _skill_preamble() -> str:
+    """A system-prompt block listing bound skills (name + description). The agent
+    pulls a skill's full body with the `read_skill` tool — progressive disclosure."""
+    manifest = _skill_manifest()
+    if not manifest:
+        return ""
+    lines = [
+        "## Available skills",
+        "You have access to the following skills. When a task matches a skill's "
+        "description, call the `read_skill` tool with its name to load the full "
+        "instructions, then follow them.",
+        "",
+    ]
+    for s in manifest:
+        desc = (s.get("description", "") or "").strip().replace("\n", " ")
+        lines.append(f"- **{s.get('name', '')}**: {desc}")
+    return "\n".join(lines)
+
+
 _builtin_tools: list | None = None
 
 
@@ -610,6 +703,18 @@ def get_agent(
             "No LLM configured. Add one in AgentFlow Settings before calling get_agent()."
         )
     agent_tools = tools if tools is not None else get_tools()
+
+    # Skills bound to this run are advertised in the system prompt (name +
+    # description) and loaded on demand via the `read_skill` tool.
+    skill_tool = _make_skill_tool()
+    if skill_tool is not None and not any(
+        getattr(t, "name", "") == "read_skill" for t in agent_tools
+    ):
+        agent_tools = list(agent_tools) + [skill_tool]
+    preamble = _skill_preamble()
+    if preamble:
+        system_prompt = f"{system_prompt}\n\n{preamble}" if system_prompt else preamble
+
     if not system_prompt:
         return create_react_agent(llm, agent_tools)
 

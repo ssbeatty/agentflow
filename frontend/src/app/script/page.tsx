@@ -8,8 +8,8 @@ import {
   History, CheckCircle2, XCircle, MinusCircle, Copy, Trash2, Wrench, Check, Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
-import { scripts, executions, mcpServers, revisions as revisionsApi, inputPresets } from "@/lib/api";
-import type { Script, ScriptFile, ExecutionLog, WsEvent, MCPServerConfig, ScriptRevisionDetail, TraceEvent, GraphTopology, ScriptInputPreset, ArtifactEvent } from "@/lib/types";
+import { scripts, executions, mcpServers, skills as skillsApi, revisions as revisionsApi, inputPresets } from "@/lib/api";
+import type { Script, ScriptFile, ExecutionLog, WsEvent, MCPServerConfig, SkillSummary, ScriptRevisionDetail, TraceEvent, GraphTopology, ScriptInputPreset, ArtifactEvent } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
@@ -78,6 +78,8 @@ function ScriptPage() {
   const [entryFn, setEntryFn] = useState("run");
   const [selectedMcpIds, setSelectedMcpIds] = useState<string[]>([]);
   const [availableMcpServers, setAvailableMcpServers] = useState<MCPServerConfig[]>([]);
+  const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
+  const [availableSkills, setAvailableSkills] = useState<SkillSummary[]>([]);
   const [inputJson, setInputJson] = useState("{}");
   const [inputError, setInputError] = useState("");
   const [activeTab, setActiveTab] = useState("logs");
@@ -143,13 +145,15 @@ function ScriptPage() {
 
   // Load script
   useEffect(() => {
-    Promise.all([scripts.get(id), mcpServers.list()])
-      .then(([s, servers]) => {
+    Promise.all([scripts.get(id), mcpServers.list(), skillsApi.list()])
+      .then(([s, servers, skillList]) => {
         setScript(s);
         setName(s.name);
         setEntryFn(s.entry_function);
         setSelectedMcpIds(s.mcp_server_ids || []);
         setAvailableMcpServers(servers.filter(srv => srv.enabled));
+        setSelectedSkillIds(s.skill_ids || []);
+        setAvailableSkills(skillList.filter(sk => sk.enabled));
 
         const contents = new Map<string, string>();
         for (const f of s.files) contents.set(f.filename, f.content);
@@ -252,7 +256,7 @@ function ScriptPage() {
     try {
       const reqContent = fileContents.get("requirements.txt") ?? "";
       const ops: Promise<unknown>[] = [
-        scripts.update(id, { name, entry_function: entryFn, requirements: reqContent, mcp_server_ids: selectedMcpIds }),
+        scripts.update(id, { name, entry_function: entryFn, requirements: reqContent, mcp_server_ids: selectedMcpIds, skill_ids: selectedSkillIds }),
       ];
       for (const filename of dirtyFiles) {
         if (filename === "requirements.txt" || filename === "__meta__") continue;
@@ -262,7 +266,7 @@ function ScriptPage() {
       }
       await Promise.all(ops);
       setDirtyFiles(new Set());
-      setScript(prev => prev ? { ...prev, name, entry_function: entryFn, requirements: reqContent, mcp_server_ids: selectedMcpIds } : prev);
+      setScript(prev => prev ? { ...prev, name, entry_function: entryFn, requirements: reqContent, mcp_server_ids: selectedMcpIds, skill_ids: selectedSkillIds } : prev);
       setLoadedRevision(null);
       // Create revision snapshot after successful save
       revisionsApi.create(id).then(() => setRevisionRefresh(n => n + 1)).catch(() => null);
@@ -675,6 +679,41 @@ function ScriptPage() {
                               : <span className="h-3 w-3 shrink-0" />
                             }
                             {srv.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Skills */}
+                {availableSkills.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/70 flex items-center gap-1.5">
+                      <Sparkles className="h-3 w-3" />Skills
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {availableSkills.map(sk => {
+                        const active = selectedSkillIds.includes(sk.id);
+                        return (
+                          <button
+                            key={sk.id}
+                            onClick={() => {
+                              setSelectedSkillIds(prev => active ? prev.filter(x => x !== sk.id) : [...prev, sk.id]);
+                              markDirty("__meta__");
+                            }}
+                            title={sk.description || sk.name}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border transition-all ${
+                              active
+                                ? "bg-primary/10 border-primary/40 text-primary"
+                                : "bg-secondary/30 border-border/60 text-muted-foreground hover:border-border hover:text-foreground"
+                            }`}
+                          >
+                            {active
+                              ? <Check className="h-3 w-3 shrink-0" />
+                              : <span className="h-3 w-3 shrink-0" />
+                            }
+                            {sk.name}
                           </button>
                         );
                       })}

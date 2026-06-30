@@ -12,6 +12,7 @@ Execution engine:
 import asyncio
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -142,6 +143,12 @@ def _resolve_file_refs(value: Any, db) -> Any:
 
 
 # ── Wrapper generation ─────────────────────────────────────────────────────────
+
+def _safe_skill_dirname(name: str) -> str:
+    """Turn a skill's display name into a filesystem-safe directory name."""
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", (name or "").strip()).strip("-.")
+    return slug or "skill"
+
 
 def _write_runner(
     script_dir: Path,
@@ -300,7 +307,7 @@ async def start_execution(execution_id: str) -> None:
         # enabled channels serve the same model, the highest-priority one wins
         # (ties → earliest created). The default model (get_llm() with no name)
         # is whichever channel was flagged is_default.
-        from app.models import Channel, MCPServerConfig, Secret
+        from app.models import Channel, MCPServerConfig, Secret, Skill
         import re
         def _norm(name: str) -> str:
             return re.sub(r"[^A-Z0-9]+", "_", (name or "").upper()).strip("_") or "UNNAMED"
@@ -350,6 +357,45 @@ async def start_execution(execution_id: str) -> None:
                 mcp_configs[srv.name] = build_connection(srv, db)
         llm_envs["AGENTFLOW_MCP_CONFIGS"] = json.dumps(mcp_configs)
 
+        # ── materialize bound skills + build the skill manifest ───────────────
+        # Each enabled skill the script opts into (script.skill_ids) is written to
+        # run_dir/skills/<safe-name>/ and advertised to the agent via
+        # AGENTFLOW_SKILLS (name+description+dir). get_agent() folds the manifest
+        # into the system prompt; the agent reads a skill's SKILL.md on demand
+        # through the built-in read_skill tool (Agent Skills progressive disclosure).
+        from services.script_files import normalize_script_filename
+        skill_ids: list[str] = script.skill_ids or []
+        skills_root = run_dir / "skills"
+        skill_manifest: list[dict] = []
+        if skill_ids:
+            for sk in db.query(Skill).filter(
+                Skill.id.in_(skill_ids),
+                Skill.enabled == True,  # noqa: E712
+            ).all():
+                safe = _safe_skill_dirname(sk.name)
+                sk_dir = skills_root / safe
+                sk_dir.mkdir(parents=True, exist_ok=True)
+                main_name = "SKILL.md"
+                for sf in sk.files:
+                    try:
+                        rel = normalize_script_filename(sf.filename)
+                    except ValueError:
+                        continue
+                    target = (sk_dir / rel).resolve()
+                    if sk_dir.resolve() not in target.parents and target != sk_dir.resolve():
+                        continue
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_text(sf.content or "", encoding="utf-8")
+                    if sf.is_main:
+                        main_name = rel
+                skill_manifest.append({
+                    "name": sk.name,
+                    "description": sk.description or "",
+                    "dir": str(sk_dir),
+                    "main": main_name,
+                })
+        llm_envs["AGENTFLOW_SKILLS"] = json.dumps(skill_manifest)
+
         # ── build externally-managed secret env vars ──────────────────────────
         # Read by agentflow.get_secret("<key>") as AGENTFLOW_SECRET_<NORM(key)>.
         # These go ONLY into the subprocess env below — deliberately NOT passed to
@@ -385,6 +431,7 @@ async def start_execution(execution_id: str) -> None:
             f"LLM models: {list(chosen.keys()) or 'none'}; "
             f"default={default_model or 'none'}; "
             f"MCP servers: {list(mcp_configs.keys()) or 'none'}; "
+            f"skills: {[s['name'] for s in skill_manifest] or 'none'}; "
             f"secrets: {[s.key for s in secret_rows] or 'none'}"
         )
         _persist_log(db, execution_id, {"level": "debug", "message": diag_msg, "step": "_engine"})

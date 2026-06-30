@@ -14,6 +14,7 @@ export interface Script {
   entry_function: string;
   requirements: string;
   mcp_server_ids: string[];
+  skill_ids: string[];
   created_at: string;
   updated_at: string;
   files: ScriptFile[];
@@ -25,6 +26,7 @@ export interface ScriptSummary {
   description: string;
   entry_function: string;
   mcp_server_ids: string[];
+  skill_ids: string[];
   created_at: string;
   updated_at: string;
 }
@@ -130,6 +132,31 @@ export interface Secret {
   preview: string;
   created_at: string;
   updated_at: string;
+}
+
+// ── Skill (Agent Skills: SKILL.md + supporting files) ─────────────────────────
+
+export interface SkillFile {
+  id: string;
+  skill_id: string;
+  filename: string;
+  content: string;
+  is_main: boolean;
+  updated_at: string;
+}
+
+export interface SkillSummary {
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  source: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Skill extends SkillSummary {
+  files: SkillFile[];
 }
 
 export interface MCPToolInfo {

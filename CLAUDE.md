@@ -104,6 +104,14 @@ Scripts must not hard-code API keys / tokens / webhook URLs. The `Secret` model 
   Check status with `--status`; preview without applying with `--dry-run`. Applied versions are recorded in the `schema_migrations` table.
 - **When adding a column**: write a new `V<N+1>__<description>.sql` with the `ALTER TABLE` statement, then run the migration. Do not drop the DB.
 
+### Skills (reusable agent instructions + files)
+
+A **Skill** is an [Agent Skill](https://github.com/anthropics/skills): a folder with a `SKILL.md` (YAML frontmatter `name`/`description` + markdown instructions) plus any supporting files. Skills are **global** like MCP servers (`skills` + `skill_files` tables, mirroring `scripts`/`script_files` — content lives in the DB, written to disk at run time). A script opts in via `script.skill_ids` (JSON array, AND-ed with the skill's global `enabled` flag), exactly like `mcp_server_ids`.
+
+- **Management**: `routers/skills.py` (admin-gated CRUD + file upsert/delete, reuses `normalize_script_filename`). Creating a skill seeds a starter `SKILL.md` (`is_main=True`). The Tools page (`/tools`) lists skills; editing opens a dedicated editor page `/skill?id=…` that **reuses `FileTree` + `ScriptEditor` (Monaco)** and the same in-list upload flow as the script editor.
+- **Runtime (progressive disclosure, à la LangChain deepagents)**: `execution_engine` materializes each bound+enabled skill to `run_dir/skills/<safe-name>/` and injects `AGENTFLOW_SKILLS` (JSON `[{name, description, dir, main}]`). In `agentflow`, `get_agent()` folds each skill's **name+description into the system prompt** and adds a built-in **`read_skill(name)`** tool the agent calls to load a skill's full `SKILL.md` on demand. Scripts can also read them directly via `list_skills()` / `get_skill(name)` / `skill_path(name)`. No new venv dependency — built on the existing `create_react_agent` + `langchain_core.tools`.
+- Skill **install-from-repo** is intentionally out of scope for now (manual management only); `Skill.source` is reserved for it.
+
 ### Authentication & API keys
 
 The whole management UI/API sits behind a **single admin login**; external systems call the run endpoint with **issued API keys**. There is no multi-user model — auth is a gate, not tenancy.
@@ -169,3 +177,9 @@ Backend uses naive `datetime.utcnow()` everywhere (stored without TZ). Frontend 
 | Secret injection into user scripts | `services/execution_engine.py` (`secret_envs` → `sub_env`) |
 | Script-facing secret / HTTP helpers | `backend/agentflow/__init__.py::get_secret` / `list_secrets` / `http_get` / `http_post` |
 | Secrets management UI | `frontend/src/app/secrets/page.tsx` (+ navbar link in `app/page.tsx`) |
+| Skill store (model / schema / CRUD) | `app/models.py::Skill`/`SkillFile` + `schemas.py` (`Skill*`) + `routers/skills.py` + `V9__skills.sql` |
+| Skill materialization + manifest into runs | `services/execution_engine.py` (`AGENTFLOW_SKILLS`, `_safe_skill_dirname`) |
+| Script-facing skill API + `read_skill` tool | `backend/agentflow/__init__.py::list_skills`/`get_skill`/`_make_skill_tool` (wired in `get_agent`) |
+| Skills list + create | `frontend/src/app/tools/page.tsx` (Skills section) |
+| Skill editor (FileTree + Monaco + upload) | `frontend/src/app/skill/page.tsx` |
+| Bind skills to a script | `frontend/src/app/script/page.tsx` (`selectedSkillIds`) + `script.skill_ids` |
