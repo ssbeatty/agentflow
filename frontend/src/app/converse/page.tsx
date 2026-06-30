@@ -10,9 +10,10 @@ import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { scripts as scriptsApi, conversations as convsApi } from "@/lib/api";
-import type { ScriptSummary, ConversationSummary, ConversationMessage, WsEvent, ArtifactEvent, ExecutionLog } from "@/lib/types";
+import type { ScriptSummary, ConversationSummary, ConversationMessage, WsEvent, ArtifactEvent, ExecutionLog, TraceEvent } from "@/lib/types";
 import { executions as executionsApi } from "@/lib/api";
 import { ArtifactCard } from "@/components/ArtifactsPanel";
+import AgentTraceInline from "@/components/AgentTraceInline";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -126,6 +127,7 @@ interface UiMessage {
   animating?: boolean;   // playing typewriter after confirm
   logs?: WsEvent[];
   artifacts?: ArtifactEvent[];
+  traces?: TraceEvent[]; // agent internals: tool calls, LLM turns, graph nodes
   execution_id?: string;
 }
 
@@ -173,6 +175,7 @@ function MessageRow({
             {msg.artifacts.map((a, i) => <ArtifactCard key={i} a={a} />)}
           </div>
         )}
+        {!isUser && msg.traces && msg.traces.length > 0 && <AgentTraceInline traces={msg.traces} />}
         {msg.logs && msg.logs.length > 0 && <LogStrip logs={msg.logs} />}
         {canDelete && (
           <button
@@ -449,24 +452,32 @@ function ConverseInner() {
       }));
       setMessages(base);
 
-      // Hydrate artifacts for assistant messages that had a script run.
+      // Hydrate artifacts + agent traces for assistant messages that had a run.
       const targets = base.filter((m) => m.role === "assistant" && m.execution_id);
       if (!targets.length) return;
       const results = await Promise.allSettled(
         targets.map((m) => executionsApi.get(m.execution_id!))
       );
-      const byMsg = new Map<string, ArtifactEvent[]>();
+      const artsByMsg = new Map<string, ArtifactEvent[]>();
+      const tracesByMsg = new Map<string, TraceEvent[]>();
       results.forEach((r, i) => {
         if (r.status !== "fulfilled") return;
-        const arts = (r.value.logs as ExecutionLog[])
+        const logs = r.value.logs as ExecutionLog[];
+        const arts = logs
           .filter((l) => l.level === "_artifact" && l.data)
           .map((l) => l.data as ArtifactEvent);
-        if (arts.length) byMsg.set(targets[i].id, arts);
+        if (arts.length) artsByMsg.set(targets[i].id, arts);
+        const trcs = logs
+          .filter((l) => l.level === "_trace" && l.data)
+          .map((l) => l.data as TraceEvent);
+        if (trcs.length) tracesByMsg.set(targets[i].id, trcs);
       });
-      if (byMsg.size) {
-        setMessages((prev) => prev.map((m) =>
-          byMsg.has(m.id) ? { ...m, artifacts: byMsg.get(m.id) } : m
-        ));
+      if (artsByMsg.size || tracesByMsg.size) {
+        setMessages((prev) => prev.map((m) => ({
+          ...m,
+          ...(artsByMsg.has(m.id) ? { artifacts: artsByMsg.get(m.id) } : {}),
+          ...(tracesByMsg.has(m.id) ? { traces: tracesByMsg.get(m.id) } : {}),
+        })));
       }
     }).catch(() => toast.error("Failed to load conversation"));
   }, [activeConvId]);
@@ -533,6 +544,12 @@ function ConverseInner() {
         setMessages((prev) => prev.map((m) =>
           m.id === assistantMsgId
             ? { ...m, logs: [...(m.logs ?? []), evt] }
+            : m
+        ));
+      } else if (evt.type === "trace") {
+        setMessages((prev) => prev.map((m) =>
+          m.id === assistantMsgId
+            ? { ...m, traces: [...(m.traces ?? []), evt as TraceEvent] }
             : m
         ));
       } else if (evt.type === "artifact") {
@@ -611,7 +628,7 @@ function ConverseInner() {
     setMessages((prev) => [
       ...prev,
       { id: tempUserId, role: "user", content: msg },
-      { id: assistantId, role: "assistant", content: "", streaming: true, logs: [] },
+      { id: assistantId, role: "assistant", content: "", streaming: true, logs: [], traces: [] },
     ]);
 
     try {

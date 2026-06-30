@@ -295,29 +295,46 @@ async def start_execution(execution_id: str) -> None:
             })
             return
 
-        # ── build LLM env vars ────────────────────────────────────────────────
-        from app.models import LLMConfig, MCPServerConfig
+        # ── build LLM env vars from channels ──────────────────────────────────
+        # Each model name is served by AGENTFLOW_LLM_<NORM(model)>. When several
+        # enabled channels serve the same model, the highest-priority one wins
+        # (ties → earliest created). The default model (get_llm() with no name)
+        # is whichever channel was flagged is_default.
+        from app.models import Channel, MCPServerConfig
         import re
         def _norm(name: str) -> str:
             return re.sub(r"[^A-Z0-9]+", "_", (name or "").upper()).strip("_") or "UNNAMED"
 
         llm_envs: dict[str, str] = {}
-        llm_names: list[str] = []
-        llms = db.query(LLMConfig).all()
-        for llm in llms:
-            payload = json.dumps({
-                "name": llm.name,
-                "provider": llm.provider,
-                "model": llm.model,
-                "api_key": llm.api_key,
-                "base_url": llm.base_url,
-                "extra_config": llm.extra_config or {},
+        channels = db.query(Channel).filter(Channel.enabled == True).all()  # noqa: E712
+        ranked = sorted(
+            channels,
+            key=lambda c: (-(c.priority or 0), c.created_at or datetime.min),
+        )
+        chosen: dict[str, "Channel"] = {}
+        for ch in ranked:
+            for model in (ch.models or []):
+                chosen.setdefault(model, ch)   # first (highest-priority) wins
+
+        def _blob(model: str, ch) -> str:
+            return json.dumps({
+                "name": model,
+                "provider": ch.provider,
+                "model": model,
+                "api_key": ch.api_key,
+                "base_url": ch.base_url,
+                "extra_config": ch.extra_config or {},
             })
-            llm_envs[f"AGENTFLOW_LLM_{_norm(llm.name)}"] = payload
-            llm_names.append(llm.name)
-            if llm.is_default:
-                llm_envs["AGENTFLOW_LLM_DEFAULT"] = payload
-        llm_envs["AGENTFLOW_LLM_NAMES"] = json.dumps(llm_names)
+
+        for model, ch in chosen.items():
+            llm_envs[f"AGENTFLOW_LLM_{_norm(model)}"] = _blob(model, ch)
+        llm_envs["AGENTFLOW_LLM_NAMES"] = json.dumps(list(chosen.keys()))
+
+        default_model = next(
+            (c.default_model for c in channels if c.is_default and c.default_model), None
+        )
+        if default_model and default_model in chosen:
+            llm_envs["AGENTFLOW_LLM_DEFAULT"] = _blob(default_model, chosen[default_model])
 
         # ── build MCP server configs ──────────────────────────────────────────
         # build_connection() also refreshes + injects OAuth bearer tokens so the

@@ -208,7 +208,7 @@ export default function ToolsPage() {
   return (
     <div className="min-h-screen">
       <header className="border-b border-border px-6 py-3 flex items-center gap-3">
-        <Link href="/settings">
+        <Link href="/">
           <Button variant="ghost" size="icon"><ArrowLeft className="h-4 w-4" /></Button>
         </Link>
         <h1 className="font-semibold">Tools & MCP Servers</h1>

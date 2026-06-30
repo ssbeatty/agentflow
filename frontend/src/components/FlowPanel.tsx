@@ -12,7 +12,7 @@ interface Props {
 }
 
 // Pair start/end events by run_id for compact rendering.
-interface TraceRow {
+export interface TraceRow {
   key: string;
   kind: TraceEvent["kind"];
   name: string;
@@ -25,7 +25,7 @@ interface TraceRow {
   log?: unknown;
 }
 
-function buildRows(events: TraceEvent[]): TraceRow[] {
+export function buildRows(events: TraceEvent[]): TraceRow[] {
   const byRun = new Map<string, TraceRow>();
   const order: TraceRow[] = [];
   for (const ev of events) {

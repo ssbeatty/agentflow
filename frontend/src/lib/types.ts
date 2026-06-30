@@ -106,6 +106,20 @@ export interface MCPServerConfig {
   updated_at: string;
 }
 
+export interface Channel {
+  id: string;
+  name: string;
+  provider: string;
+  base_url?: string;
+  models: string[];
+  priority: number;
+  enabled: boolean;
+  is_default: boolean;
+  default_model?: string | null;
+  has_api_key: boolean;
+  created_at: string;
+}
+
 export interface MCPToolInfo {
   name: string;
   title?: string | null;

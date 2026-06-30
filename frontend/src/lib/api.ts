@@ -3,6 +3,7 @@ import type {
   Execution, ExecutionSummary,
   LLMConfig,
   CronJob,
+  Channel,
   MCPServerConfig, MCPProbeResult,
   Conversation, ConversationSummary, ConversationMessage,
   ScriptRevision, ScriptRevisionDetail,
@@ -158,6 +159,41 @@ export const llmConfigs = {
   delete: (id: string) => req<void>(`/llm-configs/${id}`, { method: "DELETE" }),
 
   setDefault: (id: string) => req<LLMConfig>(`/llm-configs/${id}/set-default`, { method: "POST" }),
+};
+
+// ── Channels (NewAPI-style provider endpoints serving multiple models) ─────────
+
+type ChannelWritable = {
+  name: string;
+  provider: string;
+  api_key?: string;
+  base_url?: string;
+  models?: string[];
+  priority?: number;
+  enabled?: boolean;
+  extra_config?: Record<string, unknown>;
+};
+
+export const channels = {
+  list: () => req<Channel[]>("/channels"),
+
+  create: (data: ChannelWritable) =>
+    req<Channel>("/channels", { method: "POST", body: JSON.stringify(data) }),
+
+  update: (id: string, data: Partial<ChannelWritable>) =>
+    req<Channel>(`/channels/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+
+  delete: (id: string) => req<void>(`/channels/${id}`, { method: "DELETE" }),
+
+  /** Mark one of the channel's models as the global default for get_llm(). */
+  setDefault: (id: string, model?: string) =>
+    req<Channel>(`/channels/${id}/set-default`, { method: "POST", body: JSON.stringify({ model }) }),
+
+  /** Fetch available model ids from the provider's API. */
+  listModels: (data: { provider: string; api_key?: string; base_url?: string }) =>
+    req<{ models: string[]; error: string | null }>(
+      "/channels/list-models", { method: "POST", body: JSON.stringify(data) },
+    ),
 };
 
 // ── MCP Servers ────────────────────────────────────────────────────────────────

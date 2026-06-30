@@ -127,6 +127,27 @@ class LLMConfig(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class Channel(Base):
+    """An LLM provider endpoint (NewAPI-style "channel"): credentials configured
+    once, serving a set of models. `get_llm("<model>")` resolves a model name to
+    the highest-`priority` enabled channel that serves it (ties → earliest)."""
+    __tablename__ = "channels"
+
+    id = Column(String, primary_key=True, default=_id)
+    name = Column(String(255), nullable=False)
+    provider = Column(String(50), nullable=False, default="openai")
+    api_key = Column(Text, nullable=True)
+    base_url = Column(String(500), nullable=True)
+    models = Column(JSON, nullable=True)          # list[str] of model ids served
+    priority = Column(Integer, nullable=False, default=0)   # higher wins
+    enabled = Column(Boolean, nullable=False, default=True)
+    is_default = Column(Boolean, nullable=False, default=False)  # holds the default model
+    default_model = Column(String(255), nullable=True)
+    extra_config = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class MCPServerConfig(Base):
     __tablename__ = "mcp_server_configs"
 

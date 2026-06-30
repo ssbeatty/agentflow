@@ -14,8 +14,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from app.config import settings
-from app.database import engine, Base
-from app.routers import scripts, executions, llm_configs, cron_jobs, ws, mcp_servers, conversations, files
+from app.database import engine, Base, SessionLocal
+from app.routers import (
+    scripts, executions, llm_configs, cron_jobs, ws, mcp_servers,
+    conversations, files, channels,
+)
 from services.scheduler import scheduler_service
 
 FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend" / "out"
@@ -24,6 +27,17 @@ FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend" / "out"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    # Fold any legacy llm_configs rows into the new channels model (idempotent).
+    db = SessionLocal()
+    try:
+        from services.llm_migrate import migrate_llm_configs_to_channels
+        n = migrate_llm_configs_to_channels(db)
+        if n:
+            print(f"[agentflow] migrated {n} LLM channel(s) from legacy configs")
+    except Exception as exc:  # never let migration block startup
+        print(f"[agentflow] LLM channel migration skipped: {exc}")
+    finally:
+        db.close()
     scheduler_service.start()
     try:
         yield
@@ -49,6 +63,7 @@ app.add_middleware(
 app.include_router(scripts.router,     prefix="/api/scripts",     tags=["scripts"])
 app.include_router(executions.router,  prefix="/api/executions",  tags=["executions"])
 app.include_router(llm_configs.router, prefix="/api/llm-configs", tags=["llm-configs"])
+app.include_router(channels.router,    prefix="/api/channels",    tags=["channels"])
 app.include_router(cron_jobs.router,   prefix="/api/cron-jobs",   tags=["cron-jobs"])
 app.include_router(ws.router,          prefix="/ws",              tags=["websocket"])
 app.include_router(mcp_servers.router,    prefix="/api/mcp-servers",    tags=["mcp-servers"])

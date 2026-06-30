@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field, computed_field, field_validator
 from typing import Any, Optional
 from datetime import datetime
 
@@ -177,6 +177,73 @@ class LLMConfigUpdate(BaseModel):
     base_url: Optional[str] = None
     is_default: Optional[bool] = None
     extra_config: Optional[dict] = None
+
+
+class ModelListRequest(BaseModel):
+    provider: str
+    api_key: Optional[str] = None
+    base_url: Optional[str] = None
+
+
+class ModelListResponse(BaseModel):
+    models: list[str] = []
+    error: Optional[str] = None
+
+
+# ── Channel (NewAPI-style provider endpoint serving multiple models) ───────────
+
+class ChannelCreate(BaseModel):
+    name: str
+    provider: str = "openai"
+    api_key: Optional[str] = None
+    base_url: Optional[str] = None
+    models: list[str] = []
+    priority: int = 0
+    enabled: bool = True
+    extra_config: dict = {}
+
+
+class ChannelUpdate(BaseModel):
+    name: Optional[str] = None
+    provider: Optional[str] = None
+    api_key: Optional[str] = None
+    base_url: Optional[str] = None
+    models: Optional[list[str]] = None
+    priority: Optional[int] = None
+    enabled: Optional[bool] = None
+    extra_config: Optional[dict] = None
+
+
+class ChannelSetDefault(BaseModel):
+    model: Optional[str] = None   # which of the channel's models is the default
+
+
+class ChannelOut(BaseModel):
+    id: str
+    name: str
+    provider: str
+    base_url: Optional[str] = None
+    models: list[str] = []
+    priority: int
+    enabled: bool
+    is_default: bool
+    default_model: Optional[str] = None
+    created_at: datetime
+
+    # read for derivation only — api_key value never serialized
+    api_key: Optional[str] = Field(default=None, exclude=True, repr=False)
+
+    model_config = {"from_attributes": True}
+
+    @field_validator("models", mode="before")
+    @classmethod
+    def _models_to_list(cls, v):
+        return v or []
+
+    @computed_field
+    @property
+    def has_api_key(self) -> bool:
+        return bool(self.api_key)
 
 
 class LLMConfigOut(BaseModel):

@@ -298,11 +298,14 @@ def get_llm(name: str = "default"):
     """
     Return a LangChain chat model.
 
-    - `get_llm()`              → the LLM with `is_default=True`
-    - `get_llm("my-config")`   → the LLM whose `name` field matches (case-insensitive,
-                                  non-alphanumerics are normalised to `_`)
+    - `get_llm()`              → the model flagged as default in Settings
+    - `get_llm("gpt-4o")`      → the model by id (case-insensitive; non-alphanumerics
+                                  normalised to `_`). When several channels serve the
+                                  same model id, the highest-priority channel wins
+                                  (ties → earliest); credentials come from that channel.
 
-    Available names can be enumerated with `list_llms()`. Returns None outside the platform.
+    Available model ids can be enumerated with `list_llms()`. Returns None outside
+    the platform.
     """
     if name == "default":
         env_key = "AGENTFLOW_LLM_DEFAULT"
