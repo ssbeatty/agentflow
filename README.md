@@ -32,12 +32,18 @@
 
 ### 方式 1：Docker（推荐）
 
+直接拉取 GHCR 上由 CI 构建的镜像 `ghcr.io/ssbeatty/agentflow:latest`：
+
 ```bash
-cp .env.example .env          # 改个 POSTGRES_PASSWORD
-docker compose up -d --build
+cp .env.example .env          # 改个 POSTGRES_PASSWORD（生产建议设 SECRET_KEY / COOKIE_SECURE）
+docker compose pull
+docker compose up -d
 ```
 
-打开 <http://localhost:8000>
+打开 <http://localhost:8000>，首次访问会进入 `/setup` 创建管理员。
+
+> 想钉某个版本：`AGENTFLOW_IMAGE=ghcr.io/ssbeatty/agentflow:v1.2.3 docker compose up -d`
+> 想从源码本地构建：`docker build -t agentflow:local . && AGENTFLOW_IMAGE=agentflow:local docker compose up -d`
 
 ### 方式 2：本地开发
 

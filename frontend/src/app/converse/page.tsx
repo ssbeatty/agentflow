@@ -8,14 +8,13 @@ import {
   Copy, Square, Search, ArrowDown, PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 import { toast } from "sonner";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import {
   scripts as scriptsApi, conversations as convsApi, executions as executionsApi,
 } from "@/lib/api";
 import type { ScriptSummary, ConversationSummary, ArtifactEvent, ExecutionLog, TraceEvent, WsEvent } from "@/lib/types";
 import { ArtifactCard } from "@/components/ArtifactsPanel";
-import AgentTraceInline from "@/components/AgentTraceInline";
+import AgentNarrative from "@/components/AgentNarrative";
+import { MarkdownContent } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -24,53 +23,6 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-
-// ── Markdown renderer ─────────────────────────────────────────────────────────
-
-function MarkdownContent({ text }: { text: string }) {
-  return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      components={{
-        p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
-        h1: ({ children }) => <h1 className="text-lg font-bold mb-2 mt-3 first:mt-0">{children}</h1>,
-        h2: ({ children }) => <h2 className="text-base font-bold mb-2 mt-3 first:mt-0">{children}</h2>,
-        h3: ({ children }) => <h3 className="text-sm font-semibold mb-1 mt-2 first:mt-0">{children}</h3>,
-        ul: ({ children }) => <ul className="list-disc pl-5 mb-2 space-y-0.5">{children}</ul>,
-        ol: ({ children }) => <ol className="list-decimal pl-5 mb-2 space-y-0.5">{children}</ol>,
-        li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        code: ({ inline, children, ...props }: any) =>
-          inline ? (
-            <code className="bg-muted px-1 py-0.5 rounded text-[0.85em] font-mono" {...props}>{children}</code>
-          ) : (
-            <code className="block font-mono text-xs" {...props}>{children}</code>
-          ),
-        pre: ({ children }) => (
-          <pre className="bg-muted rounded-lg p-3 mb-2 overflow-x-auto text-xs font-mono">{children}</pre>
-        ),
-        blockquote: ({ children }) => (
-          <blockquote className="border-l-2 border-primary/50 pl-3 italic text-muted-foreground mb-2">{children}</blockquote>
-        ),
-        a: ({ href, children }) => (
-          <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2">{children}</a>
-        ),
-        strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-        em: ({ children }) => <em className="italic">{children}</em>,
-        hr: () => <hr className="border-border my-3" />,
-        table: ({ children }) => (
-          <div className="overflow-x-auto mb-2 rounded-lg border border-border">
-            <table className="border-collapse w-full text-xs">{children}</table>
-          </div>
-        ),
-        th: ({ children }) => <th className="border-b border-border px-2.5 py-1.5 bg-muted/60 font-medium text-left">{children}</th>,
-        td: ({ children }) => <td className="border-b border-border/50 px-2.5 py-1.5">{children}</td>,
-      }}
-    >
-      {text}
-    </ReactMarkdown>
-  );
-}
 
 // ── Typewriter ────────────────────────────────────────────────────────────────
 
@@ -216,7 +168,9 @@ function MessageRow({
         <Bot className="h-4 w-4" />
       </div>
       <div className="min-w-0 flex-1 space-y-2">
-        {msg.traces && msg.traces.length > 0 && <AgentTraceInline traces={msg.traces} />}
+        {msg.traces && msg.traces.length > 0 && (
+          <AgentNarrative traces={msg.traces} excludeLastLlmText={!!msg.content && !msg.error} />
+        )}
 
         <div className={`text-sm ${msg.error ? "rounded-xl border border-destructive/40 bg-destructive/5 px-3 py-2" : ""}`}>
           {msg.error ? (

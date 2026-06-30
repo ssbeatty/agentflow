@@ -1,16 +1,18 @@
-# docker-compose.yml — production-ish stack
+# docker-compose.yml — production stack (pulls the published image)
 #
-#   docker compose up -d            (uses default postgres profile)
-#   docker compose --profile sqlite up -d   (single-container, no postgres)
+#   docker compose pull && docker compose up -d   (default: app + postgres)
+#   DATABASE_URL=sqlite:////app/backend/data/agentflow.db \
+#     docker compose up -d app --no-deps          (single container, no postgres)
 #
-# Override env via .env or `docker compose --env-file ...`.
+# Pulls ghcr.io/ssbeatty/agentflow:latest by default. Pin a version or use a
+# locally-built image via the AGENTFLOW_IMAGE env var, e.g.
+#   AGENTFLOW_IMAGE=ghcr.io/ssbeatty/agentflow:v1.2.3 docker compose up -d
+# To build from source instead, run `docker build -t agentflow:local .` and set
+# AGENTFLOW_IMAGE=agentflow:local. Override other env via .env or --env-file.
 
 services:
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: agentflow:latest
+    image: ${AGENTFLOW_IMAGE:-ghcr.io/ssbeatty/agentflow:latest}
     container_name: agentflow-app
     restart: unless-stopped
     environment:
