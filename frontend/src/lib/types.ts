@@ -250,3 +250,32 @@ export interface ConversationSummary {
 export interface Conversation extends ConversationSummary {
   messages: ConversationMessage[];
 }
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+export interface AuthStatus {
+  /** has an admin account been created yet? */
+  initialized: boolean;
+  /** is the current caller logged in? */
+  authenticated: boolean;
+  username: string | null;
+}
+
+export interface AuthResult {
+  username: string;
+  token: string;
+}
+
+export interface ApiKey {
+  id: string;
+  name: string;
+  prefix: string;
+  last_used_at?: string | null;
+  revoked: boolean;
+  created_at: string;
+}
+
+/** Returned only at creation time — the full key is shown exactly once. */
+export interface ApiKeyCreated extends ApiKey {
+  key: string;
+}

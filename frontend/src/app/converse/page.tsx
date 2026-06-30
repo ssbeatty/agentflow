@@ -3,15 +3,17 @@ import { Suspense, useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
-  ArrowLeft, Send, Loader2, MessageSquare, Trash2, User, Bot,
+  ArrowLeft, Send, Loader2, MessageSquare, Trash2, Bot,
   Plus, Settings2, ExternalLink, ChevronDown, ChevronUp, Link2, Check,
+  Copy, Square, Search, ArrowDown, PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { scripts as scriptsApi, conversations as convsApi } from "@/lib/api";
-import type { ScriptSummary, ConversationSummary, ConversationMessage, WsEvent, ArtifactEvent, ExecutionLog, TraceEvent } from "@/lib/types";
-import { executions as executionsApi } from "@/lib/api";
+import {
+  scripts as scriptsApi, conversations as convsApi, executions as executionsApi,
+} from "@/lib/api";
+import type { ScriptSummary, ConversationSummary, ArtifactEvent, ExecutionLog, TraceEvent, WsEvent } from "@/lib/types";
 import { ArtifactCard } from "@/components/ArtifactsPanel";
 import AgentTraceInline from "@/components/AgentTraceInline";
 import { Button } from "@/components/ui/button";
@@ -57,12 +59,12 @@ function MarkdownContent({ text }: { text: string }) {
         em: ({ children }) => <em className="italic">{children}</em>,
         hr: () => <hr className="border-border my-3" />,
         table: ({ children }) => (
-          <div className="overflow-x-auto mb-2">
+          <div className="overflow-x-auto mb-2 rounded-lg border border-border">
             <table className="border-collapse w-full text-xs">{children}</table>
           </div>
         ),
-        th: ({ children }) => <th className="border border-border px-2 py-1 bg-muted font-medium text-left">{children}</th>,
-        td: ({ children }) => <td className="border border-border px-2 py-1">{children}</td>,
+        th: ({ children }) => <th className="border-b border-border px-2.5 py-1.5 bg-muted/60 font-medium text-left">{children}</th>,
+        td: ({ children }) => <td className="border-b border-border/50 px-2.5 py-1.5">{children}</td>,
       }}
     >
       {text}
@@ -102,21 +104,33 @@ const LEVEL_COLORS: Record<string, string> = {
 };
 
 function LogStrip({ logs }: { logs: WsEvent[] }) {
+  const [open, setOpen] = useState(false);
   const logEvents = logs.filter((e): e is Extract<WsEvent, { type: "log" }> => e.type === "log");
   if (logEvents.length === 0) return null;
   return (
-    <div className="mt-1 ml-10 rounded border border-border/50 bg-muted/30 p-2 space-y-0.5 max-h-32 overflow-y-auto">
-      {logEvents.map((e, i) => (
-        <div key={i} className={`text-[11px] font-mono ${LEVEL_COLORS[e.level] ?? "text-muted-foreground"}`}>
-          {e.step && <span className="mr-1 opacity-60">[{e.step}]</span>}
-          {e.message}
+    <div className="w-full max-w-[680px]">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-1 text-[10px] text-muted-foreground/70 hover:text-foreground"
+      >
+        {open ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />}
+        {logEvents.length} 条日志
+      </button>
+      {open && (
+        <div className="mt-1 rounded-lg border border-border/50 bg-muted/30 p-2 space-y-0.5 max-h-40 overflow-y-auto">
+          {logEvents.map((e, i) => (
+            <div key={i} className={`text-[11px] font-mono ${LEVEL_COLORS[e.level] ?? "text-muted-foreground"}`}>
+              {e.step && <span className="mr-1 opacity-60">[{e.step}]</span>}
+              {e.message}
+            </div>
+          ))}
         </div>
-      ))}
+      )}
     </div>
   );
 }
 
-// ── Message row ───────────────────────────────────────────────────────────────
+// ── Message row (Open WebUI style) ────────────────────────────────────────────
 
 interface UiMessage {
   id: string;
@@ -131,6 +145,22 @@ interface UiMessage {
   execution_id?: string;
 }
 
+function ActionButton({
+  onClick, title, danger, children,
+}: { onClick: () => void; title: string; danger?: boolean; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className={`p-1 rounded text-muted-foreground/50 hover:bg-muted/60 transition-colors ${
+        danger ? "hover:text-destructive" : "hover:text-foreground"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
 function MessageRow({
   msg,
   onAnimDone,
@@ -141,51 +171,75 @@ function MessageRow({
   onDelete?: () => void;
 }) {
   const isUser = msg.role === "user";
+  const [copied, setCopied] = useState(false);
   const canDelete = onDelete && !msg.streaming && !msg.animating && !msg.id.startsWith("tmp-");
-  return (
-    <div className={`group flex gap-3 ${isUser ? "flex-row-reverse" : ""}`}>
-      <div className={`h-7 w-7 rounded-full flex items-center justify-center shrink-0 ${
-        isUser ? "bg-primary/20 text-primary" : "bg-secondary text-foreground"
-      }`}>
-        {isUser ? <User className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5" />}
+  const showActions = !msg.streaming && !msg.animating && !msg.error;
+
+  function copy() {
+    navigator.clipboard.writeText(msg.content).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }
+
+  const actions = (
+    <div className={`flex gap-0.5 ${isUser ? "justify-end pr-1" : ""} opacity-0 group-hover:opacity-100 transition-opacity`}>
+      {showActions && msg.content && (
+        <ActionButton onClick={copy} title="复制">
+          {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+        </ActionButton>
+      )}
+      {canDelete && (
+        <ActionButton onClick={onDelete!} title="删除" danger>
+          <Trash2 className="h-3.5 w-3.5" />
+        </ActionButton>
+      )}
+    </div>
+  );
+
+  // User → right-aligned soft bubble
+  if (isUser) {
+    return (
+      <div className="group flex flex-col items-end gap-1">
+        <div className="rounded-2xl rounded-br-md bg-primary/15 text-foreground px-4 py-2.5 text-sm whitespace-pre-wrap break-words max-w-[85%]">
+          {msg.content}
+        </div>
+        {actions}
       </div>
-      <div className={`flex flex-col gap-1 max-w-[80%] ${isUser ? "items-end" : "items-start"}`}>
-        <div className={`rounded-2xl px-4 py-2.5 text-sm ${
-          isUser
-            ? "bg-primary/15 text-foreground whitespace-pre-wrap break-words"
-            : "bg-secondary/50 text-foreground"
-        } ${msg.error ? "border border-destructive/40" : ""}`}>
+    );
+  }
+
+  // Assistant → flat full-width, avatar on the left, trace above the answer
+  return (
+    <div className="group flex gap-3">
+      <div className="h-7 w-7 rounded-full bg-secondary text-foreground flex items-center justify-center shrink-0 mt-0.5">
+        <Bot className="h-4 w-4" />
+      </div>
+      <div className="min-w-0 flex-1 space-y-2">
+        {msg.traces && msg.traces.length > 0 && <AgentTraceInline traces={msg.traces} />}
+
+        <div className={`text-sm ${msg.error ? "rounded-xl border border-destructive/40 bg-destructive/5 px-3 py-2" : ""}`}>
           {msg.error ? (
             <span className="text-destructive text-xs font-mono">{msg.error}</span>
           ) : msg.animating && onAnimDone ? (
             <TypewriterText text={msg.content} onDone={onAnimDone} />
           ) : msg.streaming && !msg.content ? (
             <span className="flex items-center gap-1.5 text-muted-foreground">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              <span className="text-xs">Thinking…</span>
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <span className="text-xs">生成中…</span>
             </span>
-          ) : isUser ? (
-            msg.content
           ) : (
             <MarkdownContent text={msg.content} />
           )}
         </div>
+
         {msg.artifacts && msg.artifacts.length > 0 && (
           <div className="flex flex-col gap-2 w-full max-w-[680px]">
             {msg.artifacts.map((a, i) => <ArtifactCard key={i} a={a} />)}
           </div>
         )}
-        {!isUser && msg.traces && msg.traces.length > 0 && <AgentTraceInline traces={msg.traces} />}
         {msg.logs && msg.logs.length > 0 && <LogStrip logs={msg.logs} />}
-        {canDelete && (
-          <button
-            onClick={onDelete}
-            className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground/50 hover:text-destructive text-[10px] flex items-center gap-1 px-1"
-          >
-            <Trash2 className="h-2.5 w-2.5" />
-            Delete
-          </button>
-        )}
+        {actions}
       </div>
     </div>
   );
@@ -204,26 +258,21 @@ function ConvItem({
   onClick: () => void;
   onDelete: () => void;
 }) {
-  const [hover, setHover] = useState(false);
   return (
     <div
       className={`group flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer text-sm transition-colors ${
         active ? "bg-primary/10 text-primary" : "hover:bg-muted/60 text-foreground"
       }`}
       onClick={onClick}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
     >
       <MessageSquare className="h-3.5 w-3.5 shrink-0 opacity-60" />
       <span className="flex-1 truncate text-xs">{conv.title}</span>
-      {hover && (
-        <button
-          onClick={(e) => { e.stopPropagation(); onDelete(); }}
-          className="text-muted-foreground hover:text-destructive shrink-0"
-        >
-          <Trash2 className="h-3 w-3" />
-        </button>
-      )}
+      <button
+        onClick={(e) => { e.stopPropagation(); onDelete(); }}
+        className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive shrink-0"
+      >
+        <Trash2 className="h-3 w-3" />
+      </button>
     </div>
   );
 }
@@ -243,15 +292,15 @@ function ContextTurnsControl({
       <button
         onClick={() => setOpen((p) => !p)}
         className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded border border-transparent hover:border-border transition-colors"
-        title="Context turns"
+        title="上下文轮数"
       >
         <Settings2 className="h-3 w-3" />
-        {value} turns
+        {value} 轮
         {open ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
       </button>
       {open && (
         <div className="absolute right-0 top-full mt-1 z-10 bg-popover border border-border rounded-lg shadow-md p-3 w-44">
-          <Label className="text-xs mb-1.5 block">Context turns (1–50)</Label>
+          <Label className="text-xs mb-1.5 block">上下文轮数 (1–50)</Label>
           <Input
             type="number"
             min={1}
@@ -266,7 +315,7 @@ function ContextTurnsControl({
             autoFocus
           />
           <p className="text-[10px] text-muted-foreground mt-1.5">
-            How many recent exchange pairs to include as history.
+            每轮携带多少组最近对话作为历史。
           </p>
         </div>
       )}
@@ -289,10 +338,10 @@ function CopyLinkButton({ scriptId }: { scriptId: string }) {
     <button
       onClick={copy}
       className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded border border-transparent hover:border-border transition-colors"
-      title="Copy standalone chat link (no navigation)"
+      title="复制独立聊天链接"
     >
       {copied ? <Check className="h-3 w-3 text-green-500" /> : <Link2 className="h-3 w-3" />}
-      {copied ? "Copied" : "Copy link"}
+      {copied ? "已复制" : "复制链接"}
     </button>
   );
 }
@@ -320,7 +369,7 @@ function EmbedHistoryDropdown({
         className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded border border-transparent hover:border-border transition-colors max-w-[140px]"
       >
         <MessageSquare className="h-3 w-3 shrink-0" />
-        <span className="truncate">{active?.title ?? "History"}</span>
+        <span className="truncate">{active?.title ?? "历史"}</span>
         <ChevronDown className="h-3 w-3 shrink-0" />
       </button>
       {open && (
@@ -378,9 +427,14 @@ function ConverseInner() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [animatingId, setAnimatingId] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [search, setSearch] = useState("");
+  const [showScrollBtn, setShowScrollBtn] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const currentExecIdRef = useRef<string | null>(null);
+  const atBottomRef = useRef(true);
   // Track whether any streaming tokens arrived for the current assistant turn.
   // Used to decide whether to run the typewriter animation after confirm —
   // if tokens already streamed in, the content is already visible so we skip it.
@@ -397,7 +451,7 @@ function ConverseInner() {
         setAllScripts(list);
         if (!scriptId && list.length > 0) setScriptId(list[0].id);
       })
-      .catch(() => toast.error("Failed to load scripts"));
+      .catch(() => toast.error("加载脚本失败"));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -430,7 +484,7 @@ function ConverseInner() {
           setActiveConvId(list[0].id);
         }
       })
-      .catch(() => toast.error("Failed to load conversations"));
+      .catch(() => toast.error("加载会话失败"));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scriptId]);
 
@@ -479,15 +533,33 @@ function ConverseInner() {
           ...(tracesByMsg.has(m.id) ? { traces: tracesByMsg.get(m.id) } : {}),
         })));
       }
-    }).catch(() => toast.error("Failed to load conversation"));
+    }).catch(() => toast.error("加载对话失败"));
   }, [activeConvId]);
 
-  // Auto-scroll
+  // Auto-scroll — only when the user is already near the bottom.
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    if (atBottomRef.current) {
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    }
   }, [messages]);
 
+  function onScroll() {
+    const el = scrollRef.current;
+    if (!el) return;
+    const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
+    atBottomRef.current = dist < 80;
+    setShowScrollBtn(dist > 200);
+  }
+
+  function scrollToBottom() {
+    atBottomRef.current = true;
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }
+
   const currentScript = allScripts.find((s) => s.id === scriptId);
+  const filteredConvs = search.trim()
+    ? convList.filter((c) => c.title.toLowerCase().includes(search.trim().toLowerCase()))
+    : convList;
 
   async function createNewConversation() {
     if (!scriptId) return;
@@ -497,7 +569,7 @@ function ConverseInner() {
       setActiveConvId(conv.id);
       setMessages([]);
     } catch {
-      toast.error("Failed to create conversation");
+      toast.error("创建会话失败");
     }
   }
 
@@ -510,7 +582,7 @@ function ConverseInner() {
         setMessages([]);
       }
     } catch {
-      toast.error("Failed to delete conversation");
+      toast.error("删除会话失败");
     }
   }
 
@@ -524,6 +596,7 @@ function ConverseInner() {
   const openWebSocket = useCallback((executionId: string, assistantMsgId: string, convId: string) => {
     if (wsRef.current) wsRef.current.close();
     tokenReceivedRef.current = false;
+    currentExecIdRef.current = executionId;
 
     const proto = window.location.protocol === "https:" ? "wss" : "ws";
     const ws = new WebSocket(`${proto}://${window.location.host}/ws/executions/${executionId}`);
@@ -563,6 +636,7 @@ function ConverseInner() {
         if (done) {
           ws.close();
           wsRef.current = null;
+          currentExecIdRef.current = null;
           convsApi.confirm(convId, executionId).then((saved) => {
             const wasStreamed = tokenReceivedRef.current;
             const shouldAnimate = !wasStreamed && !saved.error && !!saved.content;
@@ -588,7 +662,7 @@ function ConverseInner() {
             );
           }).catch(() => {
             setSending(false);
-            toast.error("Failed to save reply");
+            toast.error("保存回复失败");
           });
         }
       }
@@ -596,7 +670,7 @@ function ConverseInner() {
 
     ws.onerror = () => {
       setSending(false);
-      toast.error("WebSocket error");
+      toast.error("WebSocket 连接错误");
     };
   }, []);
 
@@ -614,13 +688,14 @@ function ConverseInner() {
         setActiveConvId(conv.id);
         convId = conv.id;
       } catch {
-        toast.error("Failed to create conversation");
+        toast.error("创建会话失败");
         return;
       }
     }
 
     setInput("");
     setSending(true);
+    atBottomRef.current = true;
 
     // Optimistic user message (temp id)
     const tempUserId = `tmp-user-${Date.now()}`;
@@ -659,6 +734,17 @@ function ConverseInner() {
     }
   }
 
+  async function stopGeneration() {
+    const id = currentExecIdRef.current;
+    if (!id) return;
+    try {
+      await executionsApi.stop(id);
+      // The WS will deliver a `cancelled` status which runs confirm + cleanup.
+    } catch {
+      toast.error("停止失败");
+    }
+  }
+
   function handleAnimDone(msgId: string) {
     setAnimatingId(null);
     setMessages((prev) => prev.map((m) =>
@@ -672,60 +758,89 @@ function ConverseInner() {
       await convsApi.deleteMessage(activeConvId, msgId);
       setMessages((prev) => prev.filter((m) => m.id !== msgId));
     } catch {
-      toast.error("Failed to delete message");
+      toast.error("删除消息失败");
     }
   }
 
-  // ── Shared message area + input ──────────────────────────────────────────────
+  // ── Shared message area + composer ───────────────────────────────────────────
 
   const messageArea = (
-    <div ref={scrollRef} className="flex-1 overflow-y-auto">
-      <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
-        {messages.length === 0 && !activeConvId && (
-          <EmptyState scriptName={currentScript?.name} onNew={createNewConversation} hasScript={!!scriptId} />
-        )}
-        {messages.map((m) => (
-          <MessageRow
-            key={m.id}
-            msg={m}
-            onAnimDone={m.id === animatingId ? () => handleAnimDone(m.id) : undefined}
-            onDelete={() => deleteMessage(m.id)}
-          />
-        ))}
+    <div className="relative flex-1 min-h-0">
+      <div ref={scrollRef} onScroll={onScroll} className="absolute inset-0 overflow-y-auto">
+        <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
+          {messages.length === 0 && !activeConvId && (
+            <EmptyState scriptName={currentScript?.name} onNew={createNewConversation} hasScript={!!scriptId} />
+          )}
+          {messages.map((m) => (
+            <MessageRow
+              key={m.id}
+              msg={m}
+              onAnimDone={m.id === animatingId ? () => handleAnimDone(m.id) : undefined}
+              onDelete={() => deleteMessage(m.id)}
+            />
+          ))}
+        </div>
       </div>
+      {showScrollBtn && (
+        <button
+          onClick={scrollToBottom}
+          className="absolute bottom-4 left-1/2 -translate-x-1/2 h-8 w-8 rounded-full bg-popover border border-border shadow-md flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+          title="回到底部"
+        >
+          <ArrowDown className="h-4 w-4" />
+        </button>
+      )}
     </div>
   );
 
-  const inputArea = (
-    <div className="border-t border-border p-3 shrink-0">
-      <div className="max-w-3xl mx-auto flex gap-2 items-end">
-        <Textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              send();
+  const composer = (
+    <div className="px-4 pb-4 pt-2 shrink-0">
+      <div className="max-w-3xl mx-auto">
+        <div className="flex items-end gap-2 rounded-2xl border border-border bg-secondary/30 px-3 py-2 focus-within:border-primary/50 transition-colors">
+          <Textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                send();
+              }
+            }}
+            placeholder={
+              !scriptId
+                ? "请先选择脚本"
+                : !activeConvId
+                ? "发送消息开始对话…"
+                : "输入消息…（Enter 发送，Shift+Enter 换行）"
             }
-          }}
-          placeholder={
-            !scriptId
-              ? "Select a script first"
-              : !activeConvId
-              ? "Send a message to start…"
-              : "Message… (Enter to send, Shift+Enter for newline)"
-          }
-          className="min-h-[44px] max-h-40 text-sm resize-none"
-          disabled={!scriptId || (sending && animatingId !== null)}
-        />
-        <Button
-          onClick={send}
-          disabled={!input.trim() || !scriptId || sending}
-          size="icon"
-          className="h-11 w-11 shrink-0"
-        >
-          {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-        </Button>
+            className="min-h-[40px] max-h-48 text-sm resize-none border-0 bg-transparent focus-visible:ring-0 px-1 py-1.5 shadow-none"
+            disabled={!scriptId || sending}
+          />
+          {sending ? (
+            <Button
+              onClick={stopGeneration}
+              size="icon"
+              variant="secondary"
+              className="h-9 w-9 shrink-0 rounded-xl"
+              title="停止生成"
+            >
+              <Square className="h-3.5 w-3.5 fill-current" />
+            </Button>
+          ) : (
+            <Button
+              onClick={send}
+              disabled={!input.trim() || !scriptId}
+              size="icon"
+              className="h-9 w-9 shrink-0 rounded-xl"
+              title="发送"
+            >
+              <Send className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+        <p className="text-[10px] text-muted-foreground/50 text-center mt-1.5">
+          内容由脚本生成，请自行甄别。
+        </p>
       </div>
     </div>
   );
@@ -751,73 +866,95 @@ function ConverseInner() {
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded hover:bg-muted/60 transition-colors disabled:opacity-40"
           >
             <Plus className="h-3.5 w-3.5" />
-            New
+            新建
           </button>
           <ContextTurnsControl value={contextTurns} onChange={updateContextTurns} />
         </header>
         {messageArea}
-        {inputArea}
+        {composer}
       </div>
     );
   }
 
-  // ── Full layout (with sidebar) ────────────────────────────────────────────────
+  // ── Full layout (with collapsible sidebar) ───────────────────────────────────
 
   return (
     <div className="h-screen flex overflow-hidden">
-      <aside className="w-64 border-r border-border flex flex-col shrink-0 bg-background">
-        <div className="p-3 border-b border-border space-y-2">
-          <Link href="/">
-            <Button variant="ghost" size="sm" className="w-full justify-start gap-2 h-8 text-xs">
-              <ArrowLeft className="h-3.5 w-3.5" />
-              Home
+      {sidebarOpen && (
+        <aside className="w-64 border-r border-border flex flex-col shrink-0 bg-background">
+          <div className="p-3 border-b border-border space-y-2">
+            <Link href="/">
+              <Button variant="ghost" size="sm" className="w-full justify-start gap-2 h-8 text-xs">
+                <ArrowLeft className="h-3.5 w-3.5" />
+                返回首页
+              </Button>
+            </Link>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">脚本</Label>
+              <Select value={scriptId} onValueChange={(v) => { setScriptId(v); }}>
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue placeholder="选择脚本" />
+                </SelectTrigger>
+                <SelectContent>
+                  {allScripts.map((s) => (
+                    <SelectItem key={s.id} value={s.id} className="text-xs">{s.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              size="sm"
+              className="w-full h-8 text-xs gap-1.5"
+              onClick={createNewConversation}
+              disabled={!scriptId}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              新建对话
             </Button>
-          </Link>
-          <div>
-            <Label className="text-xs text-muted-foreground mb-1 block">Script</Label>
-            <Select value={scriptId} onValueChange={(v) => { setScriptId(v); }}>
-              <SelectTrigger className="h-8 text-xs">
-                <SelectValue placeholder="Select script" />
-              </SelectTrigger>
-              <SelectContent>
-                {allScripts.map((s) => (
-                  <SelectItem key={s.id} value={s.id} className="text-xs">{s.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/50" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="搜索对话"
+                className="h-7 text-xs pl-7"
+              />
+            </div>
           </div>
-          <Button
-            size="sm"
-            className="w-full h-8 text-xs gap-1.5"
-            onClick={createNewConversation}
-            disabled={!scriptId}
-          >
-            <Plus className="h-3.5 w-3.5" />
-            New conversation
-          </Button>
-        </div>
 
-        <ScrollArea className="flex-1 p-2">
-          {convList.length === 0 && (
-            <p className="text-xs text-muted-foreground text-center py-6">No conversations yet</p>
-          )}
-          {convList.map((conv) => (
-            <ConvItem
-              key={conv.id}
-              conv={conv}
-              active={conv.id === activeConvId}
-              onClick={() => setActiveConvId(conv.id)}
-              onDelete={() => deleteConversation(conv.id)}
-            />
-          ))}
-        </ScrollArea>
-      </aside>
+          <ScrollArea className="flex-1 p-2">
+            {filteredConvs.length === 0 && (
+              <p className="text-xs text-muted-foreground text-center py-6">
+                {search.trim() ? "无匹配对话" : "还没有对话"}
+              </p>
+            )}
+            {filteredConvs.map((conv) => (
+              <ConvItem
+                key={conv.id}
+                conv={conv}
+                active={conv.id === activeConvId}
+                onClick={() => setActiveConvId(conv.id)}
+                onDelete={() => deleteConversation(conv.id)}
+              />
+            ))}
+          </ScrollArea>
+        </aside>
+      )}
 
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="border-b border-border px-4 py-2 flex items-center gap-3 shrink-0">
+        <header className="border-b border-border px-4 py-2 flex items-center gap-2 shrink-0">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 shrink-0"
+            onClick={() => setSidebarOpen((o) => !o)}
+            title={sidebarOpen ? "收起侧栏" : "展开侧栏"}
+          >
+            {sidebarOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
+          </Button>
           <MessageSquare className="h-4 w-4 text-primary shrink-0" />
           <span className="text-sm font-medium truncate">
-            {currentScript?.name ?? "Converse"}
+            {currentScript?.name ?? "对话"}
           </span>
           <div className="ml-auto flex items-center gap-2">
             <ContextTurnsControl value={contextTurns} onChange={updateContextTurns} />
@@ -828,7 +965,7 @@ function ConverseInner() {
                 className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
               >
                 <ExternalLink className="h-3 w-3" />
-                Edit script
+                编辑脚本
               </Link>
             )}
             {activeConvId && (
@@ -839,13 +976,13 @@ function ConverseInner() {
                 onClick={() => deleteConversation(activeConvId)}
               >
                 <Trash2 className="h-3 w-3" />
-                Delete
+                删除
               </Button>
             )}
           </div>
         </header>
         {messageArea}
-        {inputArea}
+        {composer}
       </div>
     </div>
   );
@@ -862,22 +999,24 @@ function EmptyState({
 }) {
   return (
     <div className="flex flex-col items-center justify-center text-center py-20 text-muted-foreground">
-      <MessageSquare className="h-12 w-12 text-muted-foreground/30 mb-4" />
+      <div className="h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
+        <MessageSquare className="h-7 w-7 text-primary/60" />
+      </div>
       {hasScript ? (
         <>
-          <p className="text-sm mb-1">
-            {scriptName ? `Start chatting with "${scriptName}"` : "Select a script to start"}
+          <p className="text-sm mb-1 text-foreground">
+            {scriptName ? `开始与「${scriptName}」对话` : "选择脚本以开始"}
           </p>
           <p className="text-xs mb-4 max-w-sm">
-            Conversations are saved and history is sent to the script on each turn.
+            对话会被保存，每轮都会把历史发送给脚本。
           </p>
           <Button size="sm" onClick={onNew} className="gap-1.5">
             <Plus className="h-3.5 w-3.5" />
-            New Conversation
+            新建对话
           </Button>
         </>
       ) : (
-        <p className="text-sm">Pick a script from the sidebar to get started.</p>
+        <p className="text-sm">从侧栏选择一个脚本开始。</p>
       )}
     </div>
   );

@@ -217,6 +217,32 @@ class UploadedFile(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class AdminUser(Base):
+    """The platform operator account. A single row in normal use; auth is a
+    gate for the whole management UI/API, not multi-tenant user management."""
+    __tablename__ = "admin_users"
+
+    id = Column(String, primary_key=True, default=_id)
+    username = Column(String(255), nullable=False, unique=True)
+    password_hash = Column(String(255), nullable=False)  # pbkdf2_sha256$...
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ApiKey(Base):
+    """An issued API key for external callers of the run endpoint. Only the
+    SHA-256 hash is stored — the plaintext key is shown exactly once at creation."""
+    __tablename__ = "api_keys"
+
+    id = Column(String, primary_key=True, default=_id)
+    name = Column(String(255), nullable=False, default="API Key")
+    prefix = Column(String(16), nullable=False)        # first chars, for display
+    key_hash = Column(String(128), nullable=False, index=True)
+    last_used_at = Column(DateTime, nullable=True)
+    revoked = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class CronJob(Base):
     __tablename__ = "cron_jobs"
 

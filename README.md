@@ -16,6 +16,7 @@
 - **💬 内置聊天页** — 选脚本直接聊，自动维护对话历史
 - **🌐 HTTP API** — 同步 / 异步 / WebSocket 三种调用方式，外部服务直接 invoke
 - **🔧 MCP 工具接入** — 配置外部 MCP server，按脚本选择后注入到 `get_tools()` / `get_agent()`
+- **🔐 鉴权** — 管理后台整站登录保护（首次访问设置管理员）；对外运行接口用签发的 API Key 鉴权
 - **🗄️ 多数据库** — SQLite（本地）/ Postgres / MySQL，切 `DATABASE_URL` 即可
 - **🐳 Docker 化** — 单镜像（前端 baked-in） + docker-compose 一键起
 
@@ -131,26 +132,48 @@ def run(input):
 
 ---
 
-## HTTP API
+## 鉴权与安全
 
-详细文档在平台内置的 `/docs` 页面。常用：
+整个管理后台（所有 UI 页面 + `/api/*` 管理接口）都在**管理员登录**之后。
+
+- **首次启动** 访问站点会自动进入 `/setup` 创建管理员（用户名 + 密码，密码经 PBKDF2 哈希存库）。之后用 `/login` 登录，会话用 httpOnly Cookie 维持。
+- **修改密码 / 签发 API Key** 在导航栏 🛡️ → **安全设置**（`/security`）。
+- **API Key 仅显示一次**，请创建后立即保存；服务端只存 SHA-256 哈希，丢失只能重新签发，可随时吊销。
+- 生产环境用 HTTPS 时设 `COOKIE_SECURE=true`；多副本部署时显式设置 `SECRET_KEY`（否则各副本各自生成、会话不互通）。
+
+**外部系统调用脚本**用 API Key 走同步运行接口（无需登录）：
 
 ```bash
-# 同步执行（等结果）
 curl -X POST 'http://localhost:8000/api/executions/run?timeout=120' \
+  -H 'X-API-Key: af_xxxxxxxx' \
+  -H 'Content-Type: application/json' \
+  -d '{"script_id":"<UUID>","input_data":{"message":"hi"}}'
+```
+
+---
+
+## HTTP API
+
+详细文档在平台内置的 `/docs` 页面。除对外的 `/api/executions/run`（用 API Key）外，下列管理接口都需要管理员登录态（浏览器里自动带 Cookie；脚本里加 `Authorization: Bearer <登录返回的 token>`）：
+
+```bash
+# 同步执行（等结果）— 对外接口，用 API Key 鉴权
+curl -X POST 'http://localhost:8000/api/executions/run?timeout=120' \
+  -H 'X-API-Key: af_xxxxxxxx' \
   -H 'Content-Type: application/json' \
   -d '{"script_id":"<UUID>","input_data":{"message":"hi"}}'
 
-# 异步触发 + 轮询
+# 异步触发 + 轮询（管理接口，需登录态）
 curl -X POST http://localhost:8000/api/executions \
+  -H 'Authorization: Bearer <TOKEN>' \
   -d '{"script_id":"<UUID>","input_data":{}}'
-curl http://localhost:8000/api/executions/<EXECUTION_ID>
+curl http://localhost:8000/api/executions/<EXECUTION_ID> -H 'Authorization: Bearer <TOKEN>'
 
-# 实时日志（WebSocket）
+# 实时日志（WebSocket）— 浏览器同源握手自动带 Cookie
 ws://localhost:8000/ws/executions/<EXECUTION_ID>
 ```
 
-`script_id` 从编辑器顶栏 📋 复制按钮获取。
+`script_id` 从编辑器顶栏 📋 复制按钮获取。`<TOKEN>` 来自 `POST /api/auth/login` 的返回。
 
 ---
 
@@ -274,6 +297,9 @@ DATABASE_URL=mysql+pymysql://user:pass@host/dbname
 | `CORS_ORIGINS` | `http://localhost:3000` | 逗号分隔 |
 | `APP_ENV` | `development` | 标识用 |
 | `APP_PORT` | `8000` | 仅 docker-compose 用 |
+| `SECRET_KEY` | 自动生成并存 `data/.secret_key` | 签发管理员会话 Cookie 的密钥；多副本部署需显式设置 |
+| `SESSION_TTL_HOURS` | `168` | 登录有效期（小时） |
+| `COOKIE_SECURE` | `false` | HTTPS 部署设 `true`，会话 Cookie 标记为 Secure |
 
 ---
 

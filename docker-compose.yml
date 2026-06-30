@@ -18,6 +18,10 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
       DATA_DIR: /app/backend/data/scripts
       APP_ENV: ${APP_ENV:-production}
+      # Admin auth — signing secret persists in the data volume if left blank.
+      SECRET_KEY: ${SECRET_KEY:-}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-168}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
     ports:
       - "${APP_PORT:-8000}:8000"
     volumes:

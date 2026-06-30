@@ -401,3 +401,52 @@ class ConverseChatStartRequest(BaseModel):
 
 class ConverseConfirmRequest(BaseModel):
     execution_id: str
+
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
+
+class AdminSetup(BaseModel):
+    username: str = Field(min_length=3, max_length=64)
+    password: str = Field(min_length=6, max_length=128)
+
+
+class AdminLogin(BaseModel):
+    username: str
+    password: str
+
+
+class ChangePassword(BaseModel):
+    old_password: str
+    new_password: str = Field(min_length=6, max_length=128)
+
+
+class AuthStatus(BaseModel):
+    initialized: bool          # has an admin account been created yet?
+    authenticated: bool        # is the caller logged in?
+    username: Optional[str] = None
+
+
+class AuthResult(BaseModel):
+    username: str
+    token: str                 # also set as an httpOnly cookie
+
+
+# ── API keys ──────────────────────────────────────────────────────────────────
+
+class ApiKeyCreate(BaseModel):
+    name: str = Field(default="API Key", max_length=128)
+
+
+class ApiKeyOut(BaseModel):
+    id: str
+    name: str
+    prefix: str
+    last_used_at: Optional[datetime] = None
+    revoked: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ApiKeyCreated(ApiKeyOut):
+    key: str                   # full plaintext key — returned exactly once

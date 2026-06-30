@@ -9,16 +9,31 @@ import type {
   ScriptRevision, ScriptRevisionDetail,
   ScriptInputPreset,
   UploadedFile,
+  AuthStatus, AuthResult, ApiKey, ApiKeyCreated,
 } from "./types";
 
 const BASE = "/api";
 
+/** On a 401 (session expired / not logged in), bounce to the login page —
+ *  except for the auth endpoints themselves, whose 401s are handled inline. */
+function handleUnauthorized(path: string) {
+  if (typeof window === "undefined") return;
+  if (path.startsWith("/auth/")) return;
+  // trailingSlash:true → pathname is "/login/"; normalize before comparing.
+  const p = window.location.pathname.replace(/\/$/, "");
+  if (p !== "/login" && p !== "/setup") {
+    window.location.href = "/login";
+  }
+}
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(BASE + path, {
     headers: { "Content-Type": "application/json" },
+    credentials: "same-origin", // send the admin session cookie
     ...init,
   });
   if (!res.ok) {
+    if (res.status === 401) handleUnauthorized(path);
     const detail = await res.text().catch(() => res.statusText);
     throw new Error(detail || `HTTP ${res.status}`);
   }
@@ -279,6 +294,41 @@ export const files = {
   delete: (id: string) => req<void>(`/files/${id}`, { method: "DELETE" }),
 
   downloadUrl: (id: string) => `${BASE}/files/${id}`,
+};
+
+// ── Auth ───────────────────────────────────────────────────────────────────────
+
+export const auth = {
+  /** Public — used by the auth gate to decide setup vs login vs through. */
+  status: () => req<AuthStatus>("/auth/status"),
+
+  /** First-run only: create the admin account. */
+  setup: (username: string, password: string) =>
+    req<AuthResult>("/auth/setup", { method: "POST", body: JSON.stringify({ username, password }) }),
+
+  login: (username: string, password: string) =>
+    req<AuthResult>("/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),
+
+  logout: () => req<{ ok: boolean }>("/auth/logout", { method: "POST" }),
+
+  changePassword: (old_password: string, new_password: string) =>
+    req<{ ok: boolean }>("/auth/change-password", {
+      method: "POST", body: JSON.stringify({ old_password, new_password }),
+    }),
+
+  me: () => req<{ username: string }>("/auth/me"),
+};
+
+// ── API Keys ───────────────────────────────────────────────────────────────────
+
+export const apiKeys = {
+  list: () => req<ApiKey[]>("/api-keys"),
+
+  /** Returns the full plaintext key once — store it immediately. */
+  create: (name: string) =>
+    req<ApiKeyCreated>("/api-keys", { method: "POST", body: JSON.stringify({ name }) }),
+
+  delete: (id: string) => req<void>(`/api-keys/${id}`, { method: "DELETE" }),
 };
 
 // ── Cron Jobs ──────────────────────────────────────────────────────────────────

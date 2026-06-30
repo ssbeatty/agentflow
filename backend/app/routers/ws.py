@@ -8,13 +8,31 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from services.execution_engine import ws_manager
 from services.venv_manager import venv_exists, stream_create_venv, stream_install
 from app.database import SessionLocal
-from app.models import Script
+from app.models import Script, AdminUser
+from app.security import verify_session_token
+from app.auth_deps import COOKIE_NAME
 
 router = APIRouter()
 
 
+def _ws_authenticated(ws: WebSocket) -> bool:
+    """Validate the admin session cookie carried on the WS handshake. The cookie
+    is auto-sent by the browser on same-origin WebSocket connections."""
+    payload = verify_session_token(ws.cookies.get(COOKIE_NAME))
+    if not payload:
+        return False
+    db = SessionLocal()
+    try:
+        return db.query(AdminUser).filter_by(username=payload.get("sub")).first() is not None
+    finally:
+        db.close()
+
+
 @router.websocket("/executions/{execution_id}")
 async def execution_ws(execution_id: str, ws: WebSocket):
+    if not _ws_authenticated(ws):
+        await ws.close(code=4401)  # 4401: application-level "unauthorized"
+        return
     await ws.accept()
     await ws_manager.connect(execution_id, ws)
     try:
@@ -29,6 +47,9 @@ async def execution_ws(execution_id: str, ws: WebSocket):
 
 @router.websocket("/install/{script_id}")
 async def install_ws(script_id: str, action: str = "install", ws: WebSocket = None):
+    if not _ws_authenticated(ws):
+        await ws.close(code=4401)
+        return
     await ws.accept()
     db = SessionLocal()
     try:

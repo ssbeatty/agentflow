@@ -9,15 +9,16 @@ from pathlib import Path
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from app.config import settings
 from app.database import engine, Base, SessionLocal
+from app.auth_deps import require_admin
 from app.routers import (
     scripts, executions, llm_configs, cron_jobs, ws, mcp_servers,
-    conversations, files, channels,
+    conversations, files, channels, auth, api_keys,
 )
 from services.scheduler import scheduler_service
 
@@ -60,15 +61,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(scripts.router,     prefix="/api/scripts",     tags=["scripts"])
+# ── Public auth endpoints (login/setup/status) — no admin gate ────────────────
+app.include_router(auth.router,        prefix="/api/auth",        tags=["auth"])
+
+# ── Admin-gated management API ────────────────────────────────────────────────
+# Every router below requires a logged-in operator. The executions router is the
+# exception: it gates per-endpoint internally so POST /api/executions/run can
+# accept an external API key instead of an admin session.
+_admin = [Depends(require_admin)]
+app.include_router(scripts.router,     prefix="/api/scripts",     tags=["scripts"],     dependencies=_admin)
 app.include_router(executions.router,  prefix="/api/executions",  tags=["executions"])
-app.include_router(llm_configs.router, prefix="/api/llm-configs", tags=["llm-configs"])
-app.include_router(channels.router,    prefix="/api/channels",    tags=["channels"])
-app.include_router(cron_jobs.router,   prefix="/api/cron-jobs",   tags=["cron-jobs"])
+app.include_router(llm_configs.router, prefix="/api/llm-configs", tags=["llm-configs"], dependencies=_admin)
+app.include_router(channels.router,    prefix="/api/channels",    tags=["channels"],    dependencies=_admin)
+app.include_router(cron_jobs.router,   prefix="/api/cron-jobs",   tags=["cron-jobs"],   dependencies=_admin)
 app.include_router(ws.router,          prefix="/ws",              tags=["websocket"])
-app.include_router(mcp_servers.router,    prefix="/api/mcp-servers",    tags=["mcp-servers"])
-app.include_router(conversations.router,  prefix="/api/conversations",  tags=["conversations"])
-app.include_router(files.router,          prefix="/api/files",          tags=["files"])
+app.include_router(api_keys.router,    prefix="/api/api-keys",    tags=["api-keys"])
+app.include_router(mcp_servers.router,    prefix="/api/mcp-servers",    tags=["mcp-servers"],    dependencies=_admin)
+app.include_router(conversations.router,  prefix="/api/conversations",  tags=["conversations"],  dependencies=_admin)
+app.include_router(files.router,          prefix="/api/files",          tags=["files"],          dependencies=_admin)
 
 @app.get("/health")
 def health():

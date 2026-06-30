@@ -20,6 +20,16 @@ class Settings(BaseSettings):
     # Where per-script .venv directories live. Override in docker via env.
     data_dir: str = str(DEFAULT_DATA_DIR / "scripts")
 
+    # ── Auth ──────────────────────────────────────────────────────────────────
+    # Secret used to sign admin session tokens. If blank, a random key is
+    # generated once and persisted to data/.secret_key so tokens survive restart.
+    # Set SECRET_KEY in production (e.g. behind multiple replicas) for stability.
+    secret_key: str = ""
+    # How long an admin login stays valid (hours).
+    session_ttl_hours: int = 168  # 7 days
+    # Mark the session cookie Secure (https-only). Enable in production over TLS.
+    cookie_secure: bool = False
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
     @property
