@@ -55,7 +55,7 @@ export default function Dashboard() {
             </Button>
           </Link>
           <Link href="/secrets">
-            <Button variant="ghost" size="icon" title="凭据 / Secrets">
+            <Button variant="ghost" size="icon" title="Secrets">
               <Lock className="h-4 w-4" />
             </Button>
           </Link>
