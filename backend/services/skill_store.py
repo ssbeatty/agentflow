@@ -401,6 +401,25 @@ def create_dir(dir_name: str, relpath: str) -> None:
     _safe_path(d, rel).mkdir(parents=True, exist_ok=True)
 
 
+def delete_dir(dir_name: str, relpath: str) -> None:
+    """Delete a folder and everything under it inside a skill. The skill root and
+    its metadata are protected; SKILL.md lives at the root so it's never inside a
+    deletable subfolder."""
+    d = skill_dir(dir_name)
+    if not _is_skill_dir(d):
+        raise FileNotFoundError(dir_name)
+    rel = normalize_script_filename(relpath)
+    if _is_hidden(rel):
+        raise ValueError("cannot delete AgentFlow skill metadata")
+    target = _safe_path(d, rel)
+    if target.resolve() == d.resolve():
+        raise ValueError("cannot delete the skill root")
+    if not target.is_dir():
+        raise FileNotFoundError(rel)
+    shutil.rmtree(target)
+    _prune_empty(target.parent, d)
+
+
 def _prune_empty(start: Path, stop: Path) -> None:
     """Remove now-empty parent dirs up to (but not including) the skill root."""
     cur = start.resolve()

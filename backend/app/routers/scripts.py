@@ -96,7 +96,7 @@ def upsert_file(script_id: str, body: ScriptFileUpsert, db: Session = Depends(ge
     return f
 
 
-@router.delete("/{script_id}/files/{filename}", status_code=204)
+@router.delete("/{script_id}/files/{filename:path}", status_code=204)
 def delete_file(script_id: str, filename: str, db: Session = Depends(get_db)):
     try:
         filename = normalize_script_filename(filename)

@@ -31,6 +31,9 @@ interface Props {
   /** Persist a real (possibly empty) folder. When provided, "New folder" creates
    *  the folder immediately instead of chaining into naming its first file. */
   onNewFolder?: (path: string) => Promise<void>;
+  /** Delete a folder and everything under it. When provided, dir rows / the dir
+   *  context menu offer a "Delete folder" action. */
+  onDeleteDir?: (path: string) => Promise<void>;
 }
 
 const REQ = "requirements.txt";
@@ -137,7 +140,7 @@ async function walkDirEntry(dirEntry: any, base: string, out: Entry[]) {
 export default function FileTree({
   files, activeFile, onSelect, onNewFile, onDeleteFile, onRenameFile,
   onUploadFiles, onDownloadFile, showRequirements = true,
-  emptyDirs = [], onNewFolder,
+  emptyDirs = [], onNewFolder, onDeleteDir,
 }: Props) {
   const [renamingFile, setRenamingFile] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -146,6 +149,7 @@ export default function FileTree({
   const [addingFolderIn, setAddingFolderIn] = useState<string | null>(null); // dir path prefix while adding a folder, or null
   const [newFolderName, setNewFolderName] = useState("");
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const [pendingDeleteDir, setPendingDeleteDir] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenu>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -259,6 +263,13 @@ export default function FileTree({
     } else {
       startAddNew(folder); // no persistence → name the first file inside it
     }
+  }
+
+  async function commitDeleteDir(path: string) {
+    if (!onDeleteDir || !path) { setPendingDeleteDir(null); return; }
+    try { await onDeleteDir(path); }
+    catch (e) { toast.error(String(e)); }
+    finally { setPendingDeleteDir(null); }
   }
 
   /* ── Upload: individual files (basename) ── */
@@ -436,6 +447,28 @@ export default function FileTree({
     const pad = 8 + depth * 12;
     const Chevron = open ? ChevronDown : ChevronRight;
     const FolderIcon = open ? FolderOpen : Folder;
+    const isDeleting = pendingDeleteDir === node.path;
+
+    if (isDeleting) {
+      return (
+        <div key={`dir:${node.path}`}>
+          <div className="flex items-center gap-1 pr-2 h-[22px] bg-destructive/15" style={{ paddingLeft: pad }}>
+            <Folder className="h-3.5 w-3.5 shrink-0 text-sky-400/80" />
+            <span className="flex-1 text-xs font-mono truncate min-w-0 text-muted-foreground">{node.name}</span>
+            <span className="text-[10px] text-muted-foreground mr-1 shrink-0">Delete folder?</span>
+            <button onClick={() => commitDeleteDir(node.path)}
+              className="h-4 w-4 rounded flex items-center justify-center text-destructive hover:bg-destructive/20 shrink-0" title="Confirm">
+              <Check className="h-3 w-3" />
+            </button>
+            <button onClick={() => setPendingDeleteDir(null)}
+              className="h-4 w-4 rounded flex items-center justify-center text-muted-foreground hover:bg-white/10 shrink-0" title="Cancel">
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div key={`dir:${node.path}`}>
         <div
@@ -448,10 +481,18 @@ export default function FileTree({
           <Chevron className="h-3 w-3 shrink-0 text-muted-foreground/70" />
           <FolderIcon className="h-3.5 w-3.5 shrink-0 text-sky-400/80" />
           <span className="flex-1 text-xs font-mono truncate min-w-0">{node.name}</span>
-          <button onClick={e => { e.stopPropagation(); startAddNew(node.path); }}
-            className="hidden group-hover:flex h-5 w-5 rounded items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors shrink-0" title="New file in folder">
-            <Plus className="h-3 w-3" />
-          </button>
+          <div className="hidden group-hover:flex items-center gap-0.5 shrink-0">
+            <button onClick={e => { e.stopPropagation(); startAddNew(node.path); }}
+              className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors" title="New file in folder">
+              <Plus className="h-3 w-3" />
+            </button>
+            {onDeleteDir && (
+              <button onClick={e => { e.stopPropagation(); setPendingDeleteDir(node.path); }}
+                className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-white/10 transition-colors" title="Delete folder">
+                <Trash2 className="h-3 w-3" />
+              </button>
+            )}
+          </div>
         </div>
         {open && (
           <>
@@ -605,6 +646,7 @@ export default function FileTree({
           onNewFile={() => { const p = contextMenu.path; setContextMenu(null); startAddNew(p); }}
           onNewFolder={() => { const p = contextMenu.path; setContextMenu(null); startAddFolder(p); }}
           onUpload={() => { setContextMenu(null); uploadRef.current?.click(); }}
+          onDelete={onDeleteDir ? () => { const p = contextMenu.path; setContextMenu(null); setPendingDeleteDir(p); } : undefined}
         />
       )}
       {contextMenu?.type === "blank" && (
@@ -623,10 +665,11 @@ export default function FileTree({
 
 /* ── Directory / blank-area context menu ─────────────────────────────────────── */
 
-function DirContextMenu({ x, y, onNewFile, onNewFolder, onUpload, onUploadFolder }: {
-  x: number; y: number; onNewFile: () => void; onNewFolder?: () => void; onUpload: () => void; onUploadFolder?: () => void;
+function DirContextMenu({ x, y, onNewFile, onNewFolder, onUpload, onUploadFolder, onDelete }: {
+  x: number; y: number; onNewFile: () => void; onNewFolder?: () => void;
+  onUpload: () => void; onUploadFolder?: () => void; onDelete?: () => void;
 }) {
-  const rows = 2 + (onNewFolder ? 1 : 0) + (onUploadFolder ? 1 : 0);
+  const rows = 2 + (onNewFolder ? 1 : 0) + (onUploadFolder ? 1 : 0) + (onDelete ? 1 : 0);
   const menuW = 170, menuH = 12 + rows * 28;
   const adjX = x + menuW > window.innerWidth ? x - menuW : x;
   const adjY = y + menuH > window.innerHeight ? y - menuH : y;
@@ -660,6 +703,16 @@ function DirContextMenu({ x, y, onNewFile, onNewFolder, onUpload, onUploadFolder
           <FolderUp className="h-3 w-3 text-muted-foreground" />
           Upload folder
         </button>
+      )}
+      {onDelete && (
+        <>
+          <div className="h-px bg-border/60 my-1" />
+          <button onClick={onDelete}
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-destructive/10 text-destructive transition-colors text-left">
+            <Trash2 className="h-3 w-3" />
+            Delete folder
+          </button>
+        </>
       )}
     </div>
   );

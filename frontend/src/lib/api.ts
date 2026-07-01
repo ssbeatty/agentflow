@@ -269,6 +269,17 @@ export const skills = {
     req<{ ok: boolean; path: string }>(`/skills/${id}/dirs`, {
       method: "POST", body: JSON.stringify({ path }),
     }),
+
+  deleteDir: (id: string, path: string) => {
+    // Strip leading/trailing slashes so the URL never degenerates to `/dirs/`
+    // (a trailing slash triggers a 307 redirect that turns into 405 on the POST
+    // route) or `/dirs` (empty path). Refuse an empty path outright.
+    const clean = (path || "").replace(/^\/+|\/+$/g, "");
+    if (!clean) return Promise.reject(new Error("folder path is required"));
+    return req<void>(`/skills/${id}/dirs/${clean.split("/").map(encodeURIComponent).join("/")}`, {
+      method: "DELETE",
+    });
+  },
 };
 
 // ── Skill marketplace (browse official repo + community registry, install) ──────

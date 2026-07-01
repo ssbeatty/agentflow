@@ -112,6 +112,28 @@ function SkillPage() {
     setDirs(prev => Array.from(new Set([...prev, path])));
   }
 
+  async function handleDeleteDir(path: string) {
+    await skills.deleteDir(id, path);
+    const prefix = path + "/";
+    const under = (fn: string) => fn === path || fn.startsWith(prefix);
+    setSkillFiles(prev => prev.filter(f => !under(f.filename)));
+    setFileContents(prev => {
+      const m = new Map(prev);
+      for (const k of Array.from(m.keys())) if (under(k)) m.delete(k);
+      return m;
+    });
+    setDirtyFiles(prev => {
+      const s = new Set(prev);
+      for (const k of Array.from(s)) if (under(k)) s.delete(k);
+      return s;
+    });
+    setDirs(prev => prev.filter(d => d !== path && !d.startsWith(prefix)));
+    if (activeFile === path || activeFile.startsWith(prefix)) {
+      const remaining = skillFiles.filter(f => !under(f.filename));
+      setActiveFile(remaining[0]?.filename ?? MAIN_FILE);
+    }
+  }
+
   async function handleDeleteFile(filename: string) {
     await skills.deleteFile(id, filename);
     setSkillFiles(prev => prev.filter(f => f.filename !== filename));
@@ -301,6 +323,7 @@ function SkillPage() {
               showRequirements={false}
               emptyDirs={dirs}
               onNewFolder={handleNewFolder}
+              onDeleteDir={handleDeleteDir}
             />
           </div>
         </div>

@@ -345,6 +345,23 @@ function ScriptPage() {
     }
   }
 
+  // Scripts have no on-disk folders — a folder is virtual, derived from file
+  // paths. Deleting one deletes every (non-main) file under its prefix; the
+  // folder then vanishes from the tree because nothing references it anymore.
+  async function handleDeleteDir(path: string) {
+    const prefix = path + "/";
+    const victims = scriptFiles.filter(f => f.filename.startsWith(prefix) && !f.is_main);
+    for (const f of victims) await scripts.deleteFile(id, f.filename);
+    const names = new Set(victims.map(f => f.filename));
+    setScriptFiles(prev => prev.filter(f => !names.has(f.filename)));
+    setFileContents(prev => { const m = new Map(prev); for (const n of names) m.delete(n); return m; });
+    setDirtyFiles(prev => { const s = new Set(prev); for (const n of names) s.delete(n); return s; });
+    if (names.has(activeFile)) {
+      const remaining = scriptFiles.filter(f => !names.has(f.filename));
+      setActiveFile(remaining[0]?.filename ?? "main.py");
+    }
+  }
+
   async function handleRenameFile(oldName: string, newName: string) {
     const content = fileContents.get(oldName) ?? "";
     const oldFile = scriptFiles.find(f => f.filename === oldName);
@@ -498,6 +515,7 @@ function ScriptPage() {
               onSelect={setActiveFile}
               onNewFile={handleNewFile}
               onDeleteFile={handleDeleteFile}
+              onDeleteDir={handleDeleteDir}
               onRenameFile={handleRenameFile}
               onUploadFiles={handleUploadFiles}
               onDownloadFile={handleDownloadFile}

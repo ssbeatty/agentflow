@@ -98,6 +98,18 @@ def create_dir(skill_id: str, body: SkillDirCreate):
     return {"ok": True, "path": body.path}
 
 
+@router.delete("/{skill_id}/dirs/{path:path}", status_code=204)
+def delete_dir(skill_id: str, path: str):
+    """Delete a folder (and everything under it) inside a skill."""
+    _get_or_404(skill_id)
+    try:
+        skill_store.delete_dir(skill_id, path)
+    except FileNotFoundError:
+        raise HTTPException(404, "Folder not found")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 def _get_or_404(skill_id: str) -> dict:

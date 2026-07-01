@@ -828,23 +828,37 @@ def get_deep_agent(
         elif accepts_kwargs:
             call.setdefault("system_prompt", system_prompt)
 
-    if tools is not None and _supports("tools"):
-        call.setdefault("tools", tools)
+    # Always expose the same `read_skill` tool as get_agent() — a reliable,
+    # cross-platform way to load a skill's SKILL.md (plain file read). This is the
+    # unified skill entry point across both agent modes; the deepagents filesystem
+    # mount below additionally lets the agent browse a skill's *other* files.
+    skill_tool = _make_skill_tool()
+    merged_tools = list(tools) if tools else []
+    if skill_tool is not None:
+        merged_tools.append(skill_tool)
+    if merged_tools and _supports("tools"):
+        call.setdefault("tools", merged_tools)
 
-    # Mount the run dir so the agent's filesystem tools + skills load from it, and
-    # point `skills` at run_dir/skills (absolute path — the documented pattern).
-    # Both degrade gracefully when absent. `virtual_mode=False` matches deepagents'
-    # skills docs and silences its deprecation warning; escaping run_dir isn't a
-    # new privilege boundary here (the script already has full filesystem access).
+    # Mount the run dir so the agent's filesystem tools + skills load from it.
+    # The backend runs in **virtual mode**: the agent addresses files by POSIX
+    # virtual paths (/skills/...) anchored at run_dir, not real OS paths. This is
+    # REQUIRED on Windows — deepagents' path validator rejects drive-letter
+    # absolute paths (e.g. D:\...\SKILL.md), so a non-virtual backend crashes the
+    # moment the skills loader hands the agent a skill-file path. Virtual paths
+    # behave identically on every platform. Skills are materialized to
+    # run_dir/skills → the virtual source "/skills".
     run_dir = os.environ.get("AGENTFLOW_RUN_DIR")
+    virtual = False
     if run_dir and _supports("backend"):
         be_params = inspect.signature(FilesystemBackend).parameters
         be_kwargs = {"root_dir": str(run_dir)}
         if "virtual_mode" in be_params:
-            be_kwargs["virtual_mode"] = False
+            be_kwargs["virtual_mode"] = True
+            virtual = True
         call.setdefault("backend", FilesystemBackend(**be_kwargs))
-    skills_root = _skills_root()
-    if skills_root is not None and _supports("skills"):
-        call.setdefault("skills", [str(skills_root)])
+    if run_dir and _supports("skills") and (Path(run_dir) / "skills").is_dir():
+        # Virtual backend → virtual source path; otherwise the real path (POSIX).
+        src = "/skills" if virtual else str(Path(run_dir) / "skills")
+        call.setdefault("skills", [src])
 
     return create_deep_agent(**call)
