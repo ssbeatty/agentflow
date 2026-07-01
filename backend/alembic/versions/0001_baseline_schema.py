@@ -96,10 +96,10 @@ def upgrade() -> None:
     sa.Column('requirements', sa.Text(), nullable=True),
     sa.Column('mcp_server_ids', sa.JSON(), nullable=True),
     sa.Column('skill_ids', sa.JSON(), nullable=True),
-    # NOTE: max_executions is intentionally added in revision 0002, not here.
-    # 0001 represents the schema every already-running deployment has (pre-
-    # retention feature), so such DBs can be `stamp`ed at 0001 and then have
-    # 0002 applied to gain the column. Do not add it back to this baseline.
+    # NOTE: max_executions is intentionally added in revision 0002, not here, so
+    # this baseline matches a complete pre-retention deployment. Fresh DBs run
+    # 0001 then 0002; pre-Alembic DBs are reconciled to the models and stamped
+    # head instead (see app/migrate.py). Do not add later columns to this file.
     sa.Column('created_at', sa.DateTime(), nullable=True),
     sa.Column('updated_at', sa.DateTime(), nullable=True),
     sa.PrimaryKeyConstraint('id')
