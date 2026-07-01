@@ -69,6 +69,8 @@ BASELINE_PACKAGES = [
     "langchain-mcp-adapters",
     # allows nested asyncio.run() when sync LangGraph calls tools inside our async runner
     "nest-asyncio",
+    # deep agents (planning + subagents + filesystem-backed skills); powers get_deep_agent()
+    "deepagents",
 ]
 
 

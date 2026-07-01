@@ -283,6 +283,7 @@ function SkillPage() {
               onRenameFile={handleRenameFile}
               onUploadFiles={handleUploadFiles}
               onDownloadFile={handleDownloadFile}
+              showRequirements={false}
             />
           </div>
         </div>

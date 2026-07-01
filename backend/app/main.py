@@ -27,7 +27,27 @@ FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend" / "out"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Detect a brand-new DB *before* create_all builds everything: if the core
+    # `scripts` table is absent the DB is fresh, so migrations get baselined
+    # (recorded, not executed) instead of re-run against a create_all schema.
+    from sqlalchemy import inspect as _sa_inspect
+    try:
+        _fresh_db = "scripts" not in set(_sa_inspect(engine).get_table_names())
+    except Exception:
+        _fresh_db = True
+
+    # create_all builds brand-new databases + any newly-added models on existing
+    # ones. It does NOT add columns to existing tables — that's what the SQL
+    # migrations under backend/migrations are for.
     Base.metadata.create_all(bind=engine)
+
+    # Auto-apply schema migrations so a deploy never leaves the DB half-upgraded
+    # (e.g. a new column missing on an existing table). Fresh DB -> stamp all as
+    # applied; existing DB -> run pending. Fail-fast: a migration error stops
+    # startup rather than running behind a broken schema.
+    from app.db_migrate import run_startup_migrations
+    run_startup_migrations(engine, fresh_db=_fresh_db)
+
     # Fold any legacy llm_configs rows into the new channels model (idempotent).
     db = SessionLocal()
     try:

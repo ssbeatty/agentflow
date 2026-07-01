@@ -222,7 +222,7 @@ export interface ScriptRevisionDetail extends ScriptRevision {
 
 export interface TraceEvent {
   type: "trace";
-  kind: "node" | "tool" | "agent_action" | "agent_finish" | "llm";
+  kind: "node" | "tool" | "skill" | "agent_action" | "agent_finish" | "llm";
   phase: "start" | "end" | "error" | "event";
   name: string;
   run_id: string;

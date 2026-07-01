@@ -440,6 +440,34 @@ def run(input: dict) -> dict:
             </div>
           ))}
         </div>
+
+        {/* Skills usage hint */}
+        {skillList.length > 0 && (
+          <div className="mt-6 rounded-lg border border-border bg-secondary/20 p-4 text-xs text-muted-foreground space-y-2">
+            <p className="font-medium text-foreground">Script usage</p>
+            <p>Bind skills to a script in its right panel, then:</p>
+            <pre className="font-mono text-xs overflow-x-auto">{`from agentflow import get_agent, get_deep_agent
+
+# Lightweight — agent loads a skill's SKILL.md via the built-in read_skill tool
+def run(input: dict) -> dict:
+    agent = get_agent(system_prompt="Use the available skills.")
+    result = agent.invoke({"messages": [("user", input["message"])]})
+    return {"reply": result["messages"][-1].content}
+
+# Deep agent — mounts skills/ so the agent reads every skill file itself
+async def run(input: dict) -> dict:
+    agent = get_deep_agent(system_prompt="Use the available skills.")
+    result = await agent.ainvoke({"messages": [("user", input["message"])]})
+    return {"reply": result["messages"][-1].content}`}</pre>
+            <p>
+              Full examples:{" "}
+              <code className="font-mono bg-muted px-1 rounded">examples/skill_agent.py</code>{" "}
+              &{" "}
+              <code className="font-mono bg-muted px-1 rounded">examples/skill_deep_agent.py</code>.
+              When a skill loads you&apos;ll see a <span className="font-medium">Loaded skill: …</span> line in the run log.
+            </p>
+          </div>
+        )}
       </main>
 
       {/* Add / Edit dialog */}

@@ -554,7 +554,13 @@ def _make_skill_tool():
         body = get_skill(name)
         if body is None:
             avail = ", ".join(s.get("name", "") for s in _skill_manifest()) or "none"
+            # Surface misses in the log panel so authors can see the agent tried.
+            log(f"read_skill: no skill named {name!r} (available: {avail})",
+                level="warning", step="skill")
             return f"No skill named {name!r}. Available skills: {avail}."
+        # Surface skill loads in the log panel — otherwise it's invisible whether
+        # the agent actually used a skill.
+        log(f"Loaded skill: {name}", data={"chars": len(body)}, step="skill")
         return body
 
     return read_skill
@@ -736,3 +742,109 @@ def get_agent(
         file=sys.stderr,
     )
     return create_react_agent(llm, agent_tools)
+
+
+def _skills_root() -> "Path | None":
+    """The directory holding this run's materialized skills (run_dir/skills)."""
+    run_dir = os.environ.get("AGENTFLOW_RUN_DIR")
+    if run_dir:
+        root = Path(run_dir) / "skills"
+        if root.is_dir():
+            return root
+    # Fallback: derive from the manifest (parent of any skill dir).
+    for s in _skill_manifest():
+        d = s.get("dir")
+        if d and Path(d).parent.is_dir():
+            return Path(d).parent
+    return None
+
+
+def get_deep_agent(
+    system_prompt: str | None = None,
+    llm_name: str = "default",
+    tools: list | None = None,
+    **kwargs,
+):
+    """
+    Return a LangChain **Deep Agent** (``deepagents.create_deep_agent``) with the
+    skills bound to this run mounted from disk.
+
+    Where ``get_agent()`` exposes a single ``read_skill`` tool over each skill's
+    SKILL.md, a deep agent mounts ``run_dir/skills/`` through a
+    ``FilesystemBackend`` — so the agent can browse and read *every* file in a
+    skill itself (SKILL.md + supporting files + nested folders) via built-in
+    filesystem tools, and additionally gets deepagents' planning + sub-agent
+    machinery. Skill selection is the same: bind skills to the script
+    (``script.skill_ids``); they're materialized to ``run_dir/skills/<name>/``.
+
+    Requires the ``deepagents`` package (installed in the baseline venv). Extra
+    keyword args (``subagents=``, ``middleware=``, ``checkpointer=``, …) pass
+    straight through to ``create_deep_agent``.
+
+    Example:
+        async def run(input: dict) -> dict:
+            agent = get_deep_agent(system_prompt="Use the available skills.")
+            result = await agent.ainvoke({"messages": [("user", input["message"])]})
+            return {"reply": result["messages"][-1].content}
+    """
+    import inspect
+    try:
+        from deepagents import create_deep_agent
+        from deepagents.backends.filesystem import FilesystemBackend
+    except ImportError as e:
+        raise RuntimeError(
+            "get_deep_agent() needs the 'deepagents' package. It ships in the "
+            "baseline venv; if it's missing, add 'deepagents' to requirements.txt."
+        ) from e
+
+    llm = get_llm(llm_name)
+    if llm is None:
+        raise RuntimeError(
+            "No LLM configured. Add one in AgentFlow Settings before calling get_deep_agent()."
+        )
+
+    # Advertise bound skills (name + description) in the prompt; the agent reads
+    # the full files itself through the filesystem tools.
+    preamble = _skill_preamble()
+    if preamble:
+        system_prompt = f"{system_prompt}\n\n{preamble}" if system_prompt else preamble
+
+    # create_deep_agent's parameter names vary across versions; introspect and
+    # only pass what this build actually accepts (it may also take **kwargs).
+    params = inspect.signature(create_deep_agent).parameters
+    accepts_kwargs = any(p.kind == p.VAR_KEYWORD for p in params.values())
+
+    def _supports(key: str) -> bool:
+        return accepts_kwargs or key in params
+
+    call: dict = {"model": llm, **kwargs}
+
+    if system_prompt:
+        # newer deepagents: `system_prompt`; classic: `instructions`.
+        if "system_prompt" in params:
+            call.setdefault("system_prompt", system_prompt)
+        elif "instructions" in params:
+            call.setdefault("instructions", system_prompt)
+        elif accepts_kwargs:
+            call.setdefault("system_prompt", system_prompt)
+
+    if tools is not None and _supports("tools"):
+        call.setdefault("tools", tools)
+
+    # Mount the run dir so the agent's filesystem tools + skills load from it, and
+    # point `skills` at run_dir/skills (absolute path — the documented pattern).
+    # Both degrade gracefully when absent. `virtual_mode=False` matches deepagents'
+    # skills docs and silences its deprecation warning; escaping run_dir isn't a
+    # new privilege boundary here (the script already has full filesystem access).
+    run_dir = os.environ.get("AGENTFLOW_RUN_DIR")
+    if run_dir and _supports("backend"):
+        be_params = inspect.signature(FilesystemBackend).parameters
+        be_kwargs = {"root_dir": str(run_dir)}
+        if "virtual_mode" in be_params:
+            be_kwargs["virtual_mode"] = False
+        call.setdefault("backend", FilesystemBackend(**be_kwargs))
+    skills_root = _skills_root()
+    if skills_root is not None and _supports("skills"):
+        call.setdefault("skills", [str(skills_root)])
+
+    return create_deep_agent(**call)
