@@ -59,13 +59,14 @@ export default function DocsPage() {
 
         <Section
           title="Run synchronously"
-          desc="Blocks until the script finishes and returns the final output_data. Best for external service-to-service calls."
+          desc="Blocks until the script finishes and returns the final output_data. Best for external service-to-service calls — this is the one endpoint you can call with an X-API-Key (default timeout 300s)."
         >
           <Endpoint method="POST" path="/api/executions/run?timeout=120" />
           <Code
             label="curl"
             code={`curl -X POST '${origin}/api/executions/run?timeout=120' \\
   -H 'Content-Type: application/json' \\
+  -H 'X-API-Key: af_…' \\
   -d '{
     "script_id": "${scriptId}",
     "input_data": {"message": "hello"}
@@ -86,7 +87,7 @@ export default function DocsPage() {
 
         <Section
           title="Upload a file"
-          desc="Upload arbitrary binaries (PDFs, CSVs, images, etc.) that scripts can read by reference. Files persist until you delete them. Optionally tag with script_id for filtering."
+          desc="Admin only. Upload arbitrary binaries (PDFs, CSVs, images, etc.) that scripts can read by reference. Files persist until you delete them. Optionally tag with script_id for filtering."
         >
           <Endpoint method="POST" path="/api/files/upload" />
           <Code
@@ -139,7 +140,7 @@ def run(input):
 
         <Section
           title="List / delete files"
-          desc="Filter by script_id to show files tagged to a script plus untagged globals."
+          desc="Admin only. Filter by script_id to show files tagged to a script plus untagged globals."
         >
           <Endpoint method="GET" path="/api/files?script_id=..." />
           <Endpoint method="GET" path="/api/files/{file_id}" />
@@ -155,7 +156,7 @@ curl -X DELETE ${origin}/api/files/<FILE_ID>`}
 
         <Section
           title="Run asynchronously"
-          desc="Returns immediately with an execution id; poll GET /executions/{id} or subscribe via WebSocket for logs. Better for long jobs and fan-out."
+          desc="Admin only. Returns immediately with an execution id; poll GET /executions/{id} or subscribe via WebSocket for logs. Better for long jobs and fan-out."
         >
           <Endpoint method="POST" path="/api/executions" />
           <Code
@@ -169,14 +170,14 @@ curl -X DELETE ${origin}/api/files/<FILE_ID>`}
 # poll
 curl ${origin}/api/executions/<EXECUTION_ID>
 
-# live logs (WebSocket)
-# ws://${origin.replace(/^https?:\/\//, "")}/ws/executions/<EXECUTION_ID>`}
+# live logs (WebSocket — sends the admin session cookie on same-origin)
+# ${origin.replace(/^http/, "ws")}/ws/executions/<EXECUTION_ID>`}
           />
         </Section>
 
         <Section
           title="Stop a running execution"
-          desc="Force-stops the subprocess and marks the execution as cancelled. Always returns 200."
+          desc="Admin only. Force-stops the subprocess and marks the execution as cancelled. Always returns 200."
         >
           <Endpoint method="POST" path="/api/executions/{id}/stop" />
           <Code
@@ -188,7 +189,7 @@ curl ${origin}/api/executions/<EXECUTION_ID>
 
         <Section
           title="List executions"
-          desc="Optionally filtered by script_id. Newest first."
+          desc="Admin only. Optionally filtered by script_id. Newest first."
         >
           <Endpoint method="GET" path="/api/executions?script_id=...&limit=50" />
           <Code
@@ -215,6 +216,7 @@ while True:
     r = requests.post(
         f"{BASE}/api/executions/run",
         params={"timeout": 120},
+        headers={"X-API-Key": "af_…"},   # create on the /security page
         json={"script_id": SCRIPT_ID, "input_data": {"message": msg, "history": history}},
         timeout=130,
     ).json()
@@ -247,10 +249,20 @@ while True:
               and then to a JSON dump.
             </li>
             <li>
-              <b className="text-foreground">LLMs</b>: <code className="text-foreground">get_llm()</code>
-              returns the one with <code className="text-foreground">is_default=True</code>.
-              <code className="text-foreground"> get_llm(&quot;name&quot;)</code> picks by config name (case insensitive).
-              <code className="text-foreground"> list_llms()</code> enumerates available names.
+              <b className="text-foreground">LLMs</b>: configured as channels in Settings.
+              <code className="text-foreground"> get_llm()</code> returns the model flagged as default there;
+              <code className="text-foreground"> get_llm(&quot;model-id&quot;)</code> picks a model by its id (case-insensitive);
+              <code className="text-foreground"> list_llms()</code> enumerates the available model ids.
+            </li>
+            <li>
+              <b className="text-foreground">Tools and agents</b>:
+              <code className="text-foreground"> get_tools()</code> returns the built-in
+              <code className="text-foreground"> web_search</code> /
+              <code className="text-foreground"> web_fetch</code> plus the MCP-server tools this
+              script selects; <code className="text-foreground">get_agent()</code> builds a ready
+              agent over them (and any bound skills, reachable via a
+              <code className="text-foreground"> read_skill</code> tool). Configure the search
+              provider and MCP servers on the <code className="text-foreground">/tools</code> page.
             </li>
             <li>
               <b className="text-foreground">Logging</b>: use
@@ -307,6 +319,18 @@ function Intro({ origin }: { origin: string }) {
         HTTP endpoints are served from
         <code className="font-mono text-foreground mx-1 px-1 py-0.5 rounded bg-secondary/40">{origin}</code>.
         Pick a script in the top-right to substitute its real id into the examples below.
+      </p>
+      <p className="text-sm text-muted-foreground mt-3">
+        <b className="text-foreground">Authentication.</b> Everything sits behind a single admin
+        login. Management endpoints (files, async executions, listing, stop) require an admin
+        session — the logged-in UI attaches it as a cookie automatically, or send
+        <code className="font-mono text-foreground mx-1 px-1 py-0.5 rounded bg-secondary/40">Authorization: Bearer &lt;admin-token&gt;</code>.
+        The one endpoint meant for external systems,
+        <code className="font-mono text-foreground mx-1 px-1 py-0.5 rounded bg-secondary/40">POST /api/executions/run</code>,
+        also accepts an issued API key via
+        <code className="font-mono text-foreground mx-1 px-1 py-0.5 rounded bg-secondary/40">X-API-Key: af_…</code> —
+        create and manage keys on the
+        <code className="font-mono text-foreground mx-1 px-1 py-0.5 rounded bg-secondary/40">/security</code> page.
       </p>
     </section>
   );

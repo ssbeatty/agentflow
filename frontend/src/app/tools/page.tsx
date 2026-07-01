@@ -5,11 +5,11 @@ import { useRouter } from "next/navigation";
 import {
   ArrowLeft, Plus, Trash2, ToggleLeft, ToggleRight, Globe, Terminal, Radio,
   Activity, Plug, Unplug, Loader2, ShieldCheck, ShieldAlert, XCircle,
-  Sparkles, Pencil, Store,
+  Sparkles, Pencil, Store, Search, Save,
 } from "lucide-react";
 import { toast } from "sonner";
-import { mcpServers, skills } from "@/lib/api";
-import type { MCPServerConfig, MCPProbeResult, SkillSummary } from "@/lib/types";
+import { mcpServers, skills, searchConfig } from "@/lib/api";
+import type { MCPServerConfig, MCPProbeResult, SkillSummary, SearchConfig } from "@/lib/types";
 import SkillMarketplaceDialog from "@/components/SkillMarketplaceDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -76,7 +76,68 @@ export default function ToolsPage() {
   const [creatingSkill, setCreatingSkill] = useState(false);
   const [marketplaceOpen, setMarketplaceOpen] = useState(false);
 
-  useEffect(() => { load(); loadSkills(); }, []);
+  // ── Web search provider ───────────────────────────────────────────────────
+  const [search, setSearch] = useState<SearchConfig | null>(null);
+  const [searchProvider, setSearchProvider] = useState<"tavily" | "duckduckgo">("tavily");
+  const [tavilyKey, setTavilyKey] = useState("");        // "" = leave stored key untouched
+  const [savingSearch, setSavingSearch] = useState(false);
+  const [testingSearch, setTestingSearch] = useState(false);
+
+  useEffect(() => { load(); loadSkills(); loadSearch(); }, []);
+
+  async function loadSearch() {
+    try {
+      const cfg = await searchConfig.get();
+      setSearch(cfg);
+      setSearchProvider(cfg.provider);
+    } catch { toast.error("Failed to load search config"); }
+  }
+
+  async function saveSearch() {
+    setSavingSearch(true);
+    try {
+      const payload: { provider: string; tavily_api_key?: string } = { provider: searchProvider };
+      // Only send the key when the operator typed a new one (blank leaves it as-is).
+      if (tavilyKey.trim()) payload.tavily_api_key = tavilyKey.trim();
+      const cfg = await searchConfig.update(payload);
+      setSearch(cfg);
+      setSearchProvider(cfg.provider);
+      setTavilyKey("");
+      toast.success("Search settings saved");
+    } catch (e: unknown) {
+      toast.error(String(e));
+    } finally {
+      setSavingSearch(false);
+    }
+  }
+
+  async function clearTavilyKey() {
+    setSavingSearch(true);
+    try {
+      const cfg = await searchConfig.update({ tavily_api_key: "" });
+      setSearch(cfg);
+      setTavilyKey("");
+      toast.success("Tavily key removed");
+    } catch (e: unknown) {
+      toast.error(String(e));
+    } finally {
+      setSavingSearch(false);
+    }
+  }
+
+  async function testTavily() {
+    setTestingSearch(true);
+    try {
+      // Test the freshly typed key if present, else the stored one.
+      const res = await searchConfig.test(tavilyKey.trim() ? { tavily_api_key: tavilyKey.trim() } : {});
+      if (res.ok) toast.success(`Tavily OK (${res.results ?? 0} result${res.results === 1 ? "" : "s"})`);
+      else toast.error(`Tavily: ${res.error ?? "failed"}`);
+    } catch (e: unknown) {
+      toast.error(String(e));
+    } finally {
+      setTestingSearch(false);
+    }
+  }
 
   async function loadSkills() {
     try { setSkillList(await skills.list()); }
@@ -269,12 +330,23 @@ export default function ToolsPage() {
         <div className="mb-8 rounded-lg border border-border bg-secondary/20 p-4">
           <h2 className="font-medium text-sm mb-1">Built-in tools (always available)</h2>
           <p className="text-xs text-muted-foreground mb-3">
-            These are injected automatically — no configuration needed.
+            Injected into every run automatically — no per-script setup. The{" "}
+            <code className="font-mono bg-muted px-1 rounded">web_search</code> /{" "}
+            <code className="font-mono bg-muted px-1 rounded">web_fetch</code> provider is
+            configured below.
           </p>
           <div className="flex gap-2 flex-wrap">
             {[
-              { name: "web_fetch", desc: "Fetch webpage text" },
-              { name: "web_search", desc: "DuckDuckGo search" },
+              {
+                name: "web_fetch",
+                desc: search?.tavily_connected ? "Fetch webpage text (Tavily → HTTP)" : "Fetch webpage text",
+              },
+              {
+                name: "web_search",
+                desc: searchProvider === "tavily" && search?.tavily_connected
+                  ? "Tavily search (DuckDuckGo fallback)"
+                  : "DuckDuckGo search",
+              },
             ].map(t => (
               <div key={t.name} className="rounded-md border border-border bg-background px-3 py-1.5">
                 <code className="text-xs font-mono text-primary">{t.name}</code>
@@ -288,13 +360,86 @@ export default function ToolsPage() {
           </p>
         </div>
 
+        {/* Web search provider */}
+        <div className="mb-8 rounded-lg border border-border p-4">
+          <div className="flex items-center gap-2 mb-1">
+            <Search className="h-4 w-4 text-muted-foreground" />
+            <h2 className="font-medium text-sm">Web search provider</h2>
+          </div>
+          <p className="text-xs text-muted-foreground mb-3">
+            Which provider <code className="font-mono bg-muted px-1 rounded">web_search</code> /{" "}
+            <code className="font-mono bg-muted px-1 rounded">web_fetch</code> use. DuckDuckGo (no key)
+            is always the fallback, so this is optional.
+          </p>
+
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <Label className="text-xs w-20 shrink-0">Provider</Label>
+              <Select value={searchProvider} onValueChange={(v) => setSearchProvider(v as "tavily" | "duckduckgo")}>
+                <SelectTrigger className="h-8 w-56"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="tavily">Tavily (needs API key)</SelectItem>
+                  <SelectItem value="duckduckgo">DuckDuckGo (no key)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {searchProvider === "tavily" && (
+              <div className="flex items-center gap-3">
+                <Label className="text-xs w-20 shrink-0">Tavily key</Label>
+                <div className="flex-1 flex items-center gap-2">
+                  <Input
+                    type="password"
+                    value={tavilyKey}
+                    onChange={(e) => setTavilyKey(e.target.value)}
+                    placeholder={
+                      search?.tavily_connected
+                        ? `saved (${search.tavily_key_preview}) — type to replace`
+                        : "tvly-…"
+                    }
+                    className="h-8 font-mono text-xs"
+                  />
+                  {search?.tavily_connected && (
+                    <Badge variant="outline" className="gap-1 border-green-600/40 text-green-600 shrink-0">
+                      <ShieldCheck className="h-3 w-3" />set
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 pt-1">
+              <Button size="sm" onClick={saveSearch} disabled={savingSearch}>
+                {savingSearch ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                <span className="ml-1">Save</span>
+              </Button>
+              {searchProvider === "tavily" && (
+                <Button size="sm" variant="ghost" onClick={testTavily}
+                  disabled={testingSearch || (!tavilyKey.trim() && !search?.tavily_connected)}>
+                  {testingSearch ? <Loader2 className="h-4 w-4 animate-spin" /> : <Activity className="h-4 w-4" />}
+                  <span className="ml-1 text-xs">Test</span>
+                </Button>
+              )}
+              {searchProvider === "tavily" && search?.tavily_connected && (
+                <Button size="sm" variant="ghost" onClick={clearTavilyKey} disabled={savingSearch}
+                  className="text-muted-foreground">
+                  <Trash2 className="h-4 w-4" />
+                  <span className="ml-1 text-xs">Remove key</span>
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+
         {/* MCP Servers */}
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="font-medium">MCP Servers</h2>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Tools from enabled servers are injected into every script run via{" "}
-              <code className="font-mono bg-muted px-1 rounded">get_tools()</code>
+              Enable a server here, then select it per script (its right panel). Tools are injected via{" "}
+              <code className="font-mono bg-muted px-1 rounded">get_tools()</code> /{" "}
+              <code className="font-mono bg-muted px-1 rounded">get_agent()</code> only for the servers a
+              script selects (and that are enabled) — not globally.
             </p>
           </div>
           <Button size="sm" onClick={openCreate}>
@@ -377,7 +522,7 @@ export default function ToolsPage() {
             <p className="font-medium text-foreground">Script usage</p>
             <pre className="font-mono text-xs overflow-x-auto">{`from agentflow import get_agent, get_tools
 
-# Zero-config: get_agent() uses all enabled tools
+# Zero-config: built-ins + this script's selected MCP servers + bound skills
 def run(input: dict) -> dict:
     agent = get_agent()
     result = agent.invoke({"messages": [("user", input["message"])]})
@@ -385,7 +530,7 @@ def run(input: dict) -> dict:
 
 # Explicit: compose your own tool list
 def run(input: dict) -> dict:
-    tools = get_tools()          # built-ins + all MCP servers
+    tools = get_tools()          # built-ins + this script's selected MCP servers
     llm = get_llm().bind_tools(tools)
     ...`}</pre>
           </div>

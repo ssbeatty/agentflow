@@ -11,6 +11,7 @@ import type {
   UploadedFile,
   AuthStatus, AuthResult, ApiKey, ApiKeyCreated,
   Secret,
+  SearchConfig,
   Skill, SkillSummary, SkillFile,
   MarketplaceSkill, RegistrySkill,
 } from "./types";
@@ -430,6 +431,20 @@ export const secrets = {
     req<Secret>(`/secrets/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
 
   delete: (id: string) => req<void>(`/secrets/${id}`, { method: "DELETE" }),
+};
+
+// ── Web search provider config (built-in web_search / web_fetch tools) ─────────
+
+export const searchConfig = {
+  get: () => req<SearchConfig>("/search-config"),
+
+  update: (data: { provider?: string; tavily_api_key?: string }) =>
+    req<SearchConfig>("/search-config", { method: "PUT", body: JSON.stringify(data) }),
+
+  test: (data: { tavily_api_key?: string }) =>
+    req<{ ok: boolean; error?: string; results?: number }>(
+      "/search-config/test", { method: "POST", body: JSON.stringify(data) },
+    ),
 };
 
 // ── Cron Jobs ──────────────────────────────────────────────────────────────────

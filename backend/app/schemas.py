@@ -426,6 +426,55 @@ class SecretOut(BaseModel):
         return "••••" + v[-2:]
 
 
+# ── SearchConfig (built-in web_search / web_fetch provider) ────────────────────
+
+_SEARCH_PROVIDERS = {"tavily", "duckduckgo"}
+
+
+class SearchConfigUpdate(BaseModel):
+    # Only fields that are not None are applied. For the key, an empty string
+    # clears it (removes the stored credential); None leaves it untouched.
+    provider: Optional[str] = None
+    tavily_api_key: Optional[str] = None
+
+    @field_validator("provider")
+    @classmethod
+    def _valid_provider(cls, v):
+        if v is not None and v not in _SEARCH_PROVIDERS:
+            raise ValueError(f"provider must be one of {sorted(_SEARCH_PROVIDERS)}")
+        return v
+
+
+class SearchConfigOut(BaseModel):
+    provider: str = "tavily"
+    updated_at: Optional[datetime] = None
+
+    # Read from the ORM for derivation only — the key itself is never serialized.
+    tavily_api_key: Optional[str] = Field(default=None, exclude=True, repr=False)
+
+    model_config = {"from_attributes": True}
+
+    @computed_field
+    @property
+    def tavily_connected(self) -> bool:
+        return bool(self.tavily_api_key)
+
+    @computed_field
+    @property
+    def tavily_key_preview(self) -> str:
+        v = self.tavily_api_key or ""
+        if not v:
+            return ""
+        if len(v) <= 4:
+            return "•" * len(v)
+        return "••••" + v[-2:]
+
+
+class SearchConfigTest(BaseModel):
+    # Optional key to validate before saving; falls back to the stored one.
+    tavily_api_key: Optional[str] = None
+
+
 # ── CronJob ───────────────────────────────────────────────────────────────────
 
 class CronJobCreate(BaseModel):

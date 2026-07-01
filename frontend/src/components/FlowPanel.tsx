@@ -126,6 +126,32 @@ function annotateVisitCounts(src: string, counts: Map<string, number>): string {
   return lines.join("\n");
 }
 
+// LangGraph's `draw_mermaid()` bakes in its own light classDefs
+// (`classDef default fill:#f2f0ff`, `last fill:#bfb6fc`, `first fill-opacity:0`).
+// Those near-white fills collide with our dark theme's light node text
+// (`#e5e7eb` → light-on-near-white = invisible). Rewrite each to a high-contrast
+// dark fill so un-visited nodes read clearly regardless of panel background.
+const _NODE_CLASSDEFS: Record<string, string> = {
+  default: "classDef default fill:#1e293b,stroke:#64748b,color:#e5e7eb,line-height:1.2;",
+  first:   "classDef first fill:#0f172a,stroke:#64748b,color:#e5e7eb;",
+  last:    "classDef last fill:#334155,stroke:#94a3b8,color:#f8fafc;",
+};
+
+function themeMermaid(src: string): string {
+  if (!src) return src;
+  let lines = src.split("\n");
+  for (const [name, repl] of Object.entries(_NODE_CLASSDEFS)) {
+    const re = new RegExp(`^\\s*classDef\\s+${name}\\b.*$`);
+    let replaced = false;
+    lines = lines.map(l => {
+      if (!replaced && re.test(l)) { replaced = true; return repl; }
+      return l;
+    });
+    if (!replaced) lines.push(repl);
+  }
+  return lines.join("\n");
+}
+
 // Append `:::visited` class assignments so traversed nodes are highlighted,
 // then layer the count annotations on top.
 function highlightMermaid(src: string, counts: Map<string, number>): string {
@@ -148,7 +174,7 @@ export default function FlowPanel({ trace, topology }: Props) {
     <div className="h-full flex flex-col">
       {topology && (
         <div className="border-b border-border shrink-0 max-h-[40%] overflow-auto">
-          <MermaidView source={highlightMermaid(topology.mermaid, counts)} />
+          <MermaidView source={highlightMermaid(themeMermaid(topology.mermaid), counts)} />
         </div>
       )}
       <ScrollArea className="flex-1">

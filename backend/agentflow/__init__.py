@@ -495,6 +495,103 @@ def get_llm(name: str = "default"):
 
 
 # ── Built-in tools ─────────────────────────────────────────────────────────────
+#
+# `web_search` / `web_fetch` pick a provider from AGENTFLOW_SEARCH_CONFIG (set by
+# the engine from the Tools-page "Web search provider" config). Currently:
+#   - Tavily (needs an API key) — best quality for agents; used when configured.
+#   - DuckDuckGo (via `ddgs`, no key) — the always-on fallback.
+# Any Tavily error / empty result transparently falls back to DuckDuckGo, so an
+# unconfigured deployment still searches.
+
+_TAVILY_SEARCH_URL = "https://api.tavily.com/search"
+_TAVILY_EXTRACT_URL = "https://api.tavily.com/extract"
+_FETCH_LIMIT = 8000
+
+
+def _search_config() -> dict:
+    raw = os.environ.get("AGENTFLOW_SEARCH_CONFIG")
+    if raw:
+        try:
+            data = json.loads(raw)
+            if isinstance(data, dict):
+                return data
+        except Exception:
+            pass
+    return {}
+
+
+def _tavily_key() -> str | None:
+    key = (_search_config().get("tavily_api_key") or "").strip()
+    return key or None
+
+
+def _tavily_search(query: str, max_results: int, key: str) -> str:
+    import httpx
+    resp = httpx.post(
+        _TAVILY_SEARCH_URL,
+        headers={"Authorization": f"Bearer {key}"},
+        json={"query": query, "max_results": max_results, "search_depth": "basic"},
+        timeout=20,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    results = data.get("results") or []
+    if not results:
+        return ""
+    parts = []
+    answer = (data.get("answer") or "").strip()
+    if answer:
+        parts.append(f"**Answer**\n{answer}")
+    for r in results:
+        parts.append(
+            f"**{r.get('title', '')}**\n{r.get('url', '')}\n{(r.get('content') or '').strip()}"
+        )
+    return "\n\n".join(parts)
+
+
+def _ddg_search(query: str, max_results: int) -> str:
+    from ddgs import DDGS
+    with DDGS() as ddgs:
+        results = list(ddgs.text(query, max_results=max_results))
+    if not results:
+        return "No results found."
+    return "\n\n".join(
+        f"**{r['title']}**\n{r['href']}\n{r['body']}"
+        for r in results
+    )
+
+
+def _tavily_extract(url: str, key: str) -> str:
+    import httpx
+    resp = httpx.post(
+        _TAVILY_EXTRACT_URL,
+        headers={"Authorization": f"Bearer {key}"},
+        json={"urls": [url]},
+        timeout=20,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    results = data.get("results") or []
+    if results:
+        content = (results[0].get("raw_content") or "").strip()
+        if content:
+            return content[:_FETCH_LIMIT]
+    return ""
+
+
+def _httpx_fetch(url: str) -> str:
+    import httpx
+    resp = httpx.get(
+        url, timeout=15, follow_redirects=True,
+        headers={"User-Agent": "Mozilla/5.0 AgentFlow/1.0"},
+    )
+    resp.raise_for_status()
+    try:
+        from bs4 import BeautifulSoup
+        return BeautifulSoup(resp.text, "html.parser").get_text(separator="\n", strip=True)[:_FETCH_LIMIT]
+    except ImportError:
+        return resp.text[:_FETCH_LIMIT]
+
 
 def _make_builtin_tools() -> list:
     """Create the built-in tool instances. Called lazily on first get_tools() call."""
@@ -503,34 +600,39 @@ def _make_builtin_tools() -> list:
     @tool
     def web_fetch(url: str) -> str:
         """Fetch the text content of a web page. Returns plain text (up to 8000 chars)."""
-        try:
-            import httpx
-            resp = httpx.get(
-                url, timeout=15, follow_redirects=True,
-                headers={"User-Agent": "Mozilla/5.0 AgentFlow/1.0"},
-            )
-            resp.raise_for_status()
+        key = _tavily_key()
+        if key:
+            # Tavily's extractor returns clean article text; fall back to a raw
+            # httpx fetch on any failure so a bad key / unsupported page still works.
             try:
-                from bs4 import BeautifulSoup
-                return BeautifulSoup(resp.text, "html.parser").get_text(separator="\n", strip=True)[:8000]
-            except ImportError:
-                return resp.text[:8000]
+                content = _tavily_extract(url, key)
+                if content:
+                    return content
+            except Exception:
+                pass
+        try:
+            return _httpx_fetch(url)
         except Exception as e:
             return f"Error fetching {url}: {e}"
 
     @tool
     def web_search(query: str, max_results: int = 5) -> str:
-        """Search the web using DuckDuckGo. Returns titles, URLs, and snippets."""
+        """Search the web and return titles, URLs, and snippets.
+
+        Uses the provider configured in AgentFlow (Tavily when a key is set),
+        falling back to DuckDuckGo otherwise."""
+        cfg = _search_config()
+        key = _tavily_key()
+        if cfg.get("provider", "tavily") == "tavily" and key:
+            try:
+                out = _tavily_search(query, max_results, key)
+                if out:
+                    return out
+                # empty Tavily result → try DuckDuckGo before giving up
+            except Exception:
+                pass  # fall through to DuckDuckGo
         try:
-            from ddgs import DDGS
-            with DDGS() as ddgs:
-                results = list(ddgs.text(query, max_results=max_results))
-            if not results:
-                return "No results found."
-            return "\n\n".join(
-                f"**{r['title']}**\n{r['href']}\n{r['body']}"
-                for r in results
-            )
+            return _ddg_search(query, max_results)
         except Exception as e:
             return f"Search error: {e}"
 

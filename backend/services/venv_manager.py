@@ -65,6 +65,8 @@ BASELINE_PACKAGES = [
     # agentflow built-in tool support
     "httpx",
     "ddgs",
+    # web_fetch clean-text extraction (falls back to raw HTML if missing)
+    "beautifulsoup4",
     # MCP client (optional at runtime, gracefully skipped if unused)
     "langchain-mcp-adapters",
     # allows nested asyncio.run() when sync LangGraph calls tools inside our async runner

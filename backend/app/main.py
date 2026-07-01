@@ -19,6 +19,7 @@ from app.auth_deps import require_admin
 from app.routers import (
     scripts, executions, llm_configs, cron_jobs, ws, mcp_servers,
     conversations, files, channels, auth, api_keys, secrets, skills, marketplace,
+    search_config,
 )
 from services.scheduler import scheduler_service
 
@@ -101,6 +102,7 @@ app.include_router(files.router,          prefix="/api/files",          tags=["f
 app.include_router(secrets.router,        prefix="/api/secrets",        tags=["secrets"],        dependencies=_admin)
 app.include_router(skills.router,         prefix="/api/skills",         tags=["skills"],         dependencies=_admin)
 app.include_router(marketplace.router,     prefix="/api/marketplace",     tags=["marketplace"],     dependencies=_admin)
+app.include_router(search_config.router,   prefix="/api/search-config",   tags=["search-config"],   dependencies=_admin)
 
 @app.get("/health")
 def health():

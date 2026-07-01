@@ -233,6 +233,28 @@ class Secret(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class SearchConfig(Base):
+    """Singleton config for the built-in `web_search` / `web_fetch` tools.
+
+    Picks the preferred web-search provider and holds its credentials. Only one
+    row ever exists (id == "default"). DuckDuckGo (via `ddgs`, no key) is always
+    the fallback, so an unconfigured deployment still searches.
+
+    The `tavily_api_key` follows the same "never serialized to the frontend"
+    contract as channel api_keys / secrets (see `SearchConfigOut`). At run time
+    the engine folds this into `AGENTFLOW_SEARCH_CONFIG` (subprocess env only —
+    never baked into the on-disk runner) which `agentflow._make_builtin_tools()`
+    reads. Global by design (single-admin model)."""
+    __tablename__ = "search_config"
+
+    # Singleton: always the "default" row (String pk matches the id convention).
+    id = Column(String, primary_key=True, default="default")
+    # Preferred provider: "tavily" | "duckduckgo". DuckDuckGo is always fallback.
+    provider = Column(String(32), nullable=False, default="tavily", server_default="tavily")
+    tavily_api_key = Column(Text, nullable=True)  # plaintext at rest (like channels.api_key)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class Conversation(Base):
     __tablename__ = "conversations"
 

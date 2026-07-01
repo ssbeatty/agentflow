@@ -136,6 +136,16 @@ export interface Secret {
   updated_at: string;
 }
 
+/** Config for the built-in web_search / web_fetch tools. */
+export interface SearchConfig {
+  provider: "tavily" | "duckduckgo";
+  /** read-only: whether a Tavily key is stored (the key itself is never returned) */
+  tavily_connected: boolean;
+  /** read-only: masked hint, e.g. "••••ab" */
+  tavily_key_preview: string;
+  updated_at: string | null;
+}
+
 // ── Skill (Agent Skills: SKILL.md + supporting files) ─────────────────────────
 
 export interface SkillFile {

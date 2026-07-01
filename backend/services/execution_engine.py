@@ -324,7 +324,7 @@ async def start_execution(execution_id: str) -> None:
         # enabled channels serve the same model, the highest-priority one wins
         # (ties → earliest created). The default model (get_llm() with no name)
         # is whichever channel was flagged is_default.
-        from app.models import Channel, MCPServerConfig, Secret
+        from app.models import Channel, MCPServerConfig, Secret, SearchConfig
         import re
         def _norm(name: str) -> str:
             return re.sub(r"[^A-Z0-9]+", "_", (name or "").upper()).strip("_") or "UNNAMED"
@@ -417,6 +417,18 @@ async def start_execution(execution_id: str) -> None:
             secret_envs[f"AGENTFLOW_SECRET_{_norm(sec.key)}"] = sec.value or ""
         secret_envs["AGENTFLOW_SECRET_NAMES"] = json.dumps([s.key for s in secret_rows])
 
+        # ── build web-search provider config ──────────────────────────────────
+        # Read by agentflow._make_builtin_tools() (web_search / web_fetch). Goes
+        # into secret_envs (subprocess-only) so the Tavily key is never baked
+        # into the on-disk _runner.py. DuckDuckGo is the always-on fallback, so
+        # an unconfigured deployment still works.
+        search_cfg = db.query(SearchConfig).filter_by(id="default").first()
+        search_provider = (search_cfg.provider if search_cfg else "tavily") or "tavily"
+        search_blob = {"provider": search_provider}
+        if search_cfg and search_cfg.tavily_api_key:
+            search_blob["tavily_api_key"] = search_cfg.tavily_api_key
+        secret_envs["AGENTFLOW_SEARCH_CONFIG"] = json.dumps(search_blob)
+
         # expose paths to user scripts via env (read by agentflow.paths)
         llm_envs["AGENTFLOW_RUN_DIR"] = str(run_dir)
         llm_envs["AGENTFLOW_WORKSPACE_DIR"] = str(workspace_dir)
@@ -442,7 +454,9 @@ async def start_execution(execution_id: str) -> None:
             f"default={default_model or 'none'}; "
             f"MCP servers: {list(mcp_configs.keys()) or 'none'}; "
             f"skills: {[s['name'] for s in skill_manifest] or 'none'}; "
-            f"secrets: {[s.key for s in secret_rows] or 'none'}"
+            f"secrets: {[s.key for s in secret_rows] or 'none'}; "
+            f"search: {search_provider}"
+            + (" (tavily key set)" if search_blob.get("tavily_api_key") else "")
         )
         _persist_log(db, execution_id, {"level": "debug", "message": diag_msg, "step": "_engine"})
         await ws_manager.send(execution_id, {
