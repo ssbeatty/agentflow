@@ -12,6 +12,8 @@ Execution engine:
 import asyncio
 import json
 import os
+import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -142,6 +144,12 @@ def _resolve_file_refs(value: Any, db) -> Any:
 
 
 # ── Wrapper generation ─────────────────────────────────────────────────────────
+
+def _safe_skill_dirname(name: str) -> str:
+    """Turn a skill's display name into a filesystem-safe directory name."""
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", (name or "").strip()).strip("-.")
+    return slug or "skill"
+
 
 def _write_runner(
     script_dir: Path,
@@ -285,6 +293,22 @@ async def start_execution(execution_id: str) -> None:
         workspace_dir = script_dir / "workspace"
         workspace_dir.mkdir(parents=True, exist_ok=True)
 
+        # Mirror the user's own files into the run dir (which is the cwd), so the
+        # intuitive `open("data.txt")` works: the file tree the user sees in the
+        # editor is materialized right next to their running code. run_dir is
+        # per-execution, so every run gets a clean isolated copy and anything the
+        # script writes stays out of the source tree (script_dir). The runtime
+        # files written afterwards (_runner.py / _input.json / skills/) win on any
+        # name clash. (Files are also written to script_dir above for imports /
+        # venv / persistence; this is the read-from-cwd copy.)
+        for f in script.files:
+            try:
+                dest = script_file_path(run_dir, f.filename)
+            except ValueError:
+                continue  # skip names that would escape the run dir
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(f.content, encoding="utf-8")
+
         # ── resolve {"$file": "<id>"} refs in input_data before persisting ────
         try:
             resolved_input = _resolve_file_refs(exc_row.input_data or {}, db)
@@ -350,6 +374,38 @@ async def start_execution(execution_id: str) -> None:
                 mcp_configs[srv.name] = build_connection(srv, db)
         llm_envs["AGENTFLOW_MCP_CONFIGS"] = json.dumps(mcp_configs)
 
+        # ── materialize bound skills + build the skill manifest ───────────────
+        # Skills live on disk at backend/data/skills/<dir>/ (services/skill_store).
+        # Each enabled skill the script opts into (script.skill_ids holds the skill
+        # *directory names*) is copied into run_dir/skills/<safe-name>/ and advertised
+        # to the agent via AGENTFLOW_SKILLS (name+description+dir). get_agent() folds
+        # the manifest into the system prompt and reads a skill's SKILL.md on demand
+        # via read_skill; get_deep_agent() browses the copied files directly. We copy
+        # (rather than point at the canonical folder) so both agent modes see skills
+        # under run_dir and the agent can't mutate the stored skill.
+        from services import skill_store
+        skill_ids: list[str] = script.skill_ids or []
+        skills_root = run_dir / "skills"
+        skill_manifest: list[dict] = []
+        for dir_name in skill_ids:
+            entry = skill_store.manifest_entry(dir_name)
+            if not entry:
+                continue  # unknown / disabled skill — skip silently
+            safe = _safe_skill_dirname(dir_name)
+            sk_dir = skills_root / safe
+            shutil.copytree(
+                entry["dir"], sk_dir,
+                ignore=shutil.ignore_patterns(skill_store.SIDECAR, ".git", "__pycache__"),
+                dirs_exist_ok=True,
+            )
+            skill_manifest.append({
+                "name": entry["name"],
+                "description": entry["description"],
+                "dir": str(sk_dir),
+                "main": entry["main"],
+            })
+        llm_envs["AGENTFLOW_SKILLS"] = json.dumps(skill_manifest)
+
         # ── build externally-managed secret env vars ──────────────────────────
         # Read by agentflow.get_secret("<key>") as AGENTFLOW_SECRET_<NORM(key)>.
         # These go ONLY into the subprocess env below — deliberately NOT passed to
@@ -385,6 +441,7 @@ async def start_execution(execution_id: str) -> None:
             f"LLM models: {list(chosen.keys()) or 'none'}; "
             f"default={default_model or 'none'}; "
             f"MCP servers: {list(mcp_configs.keys()) or 'none'}; "
+            f"skills: {[s['name'] for s in skill_manifest] or 'none'}; "
             f"secrets: {[s.key for s in secret_rows] or 'none'}"
         )
         _persist_log(db, execution_id, {"level": "debug", "message": diag_msg, "step": "_engine"})
@@ -503,6 +560,18 @@ async def start_execution(execution_id: str) -> None:
                         result_data = payload.get("data")
                     elif t == "error":
                         error_data = payload
+                        # Persist the crash as a log too, so it shows in the Logs
+                        # panel (live + on reload) — not only in execution.error /
+                        # a transient toast. The full traceback goes in the message
+                        # (whitespace-preserved), the short message in step.
+                        err_msg = payload.get("traceback") or payload.get("message") or "Execution failed"
+                        _persist_log(db, execution_id, {
+                            "level": "error", "message": err_msg, "step": "error",
+                        })
+                        await ws_manager.send(execution_id, {
+                            "type": "log", "level": "error", "message": err_msg,
+                            "step": "error", "timestamp": datetime.utcnow().isoformat(),
+                        })
                 else:
                     level = "error" if is_stderr else "raw"
                     _persist_log(db, execution_id, {"level": level, "message": line})
@@ -551,6 +620,25 @@ async def start_execution(execution_id: str) -> None:
             exc_row.status = "failed"
             if error_data:
                 exc_row.error = error_data.get("traceback") or error_data.get("message")
+            else:
+                # Process died without emitting a structured error (e.g. sys.exit(),
+                # SIGKILL/OOM, or a native crash). Without this the run would be
+                # marked failed with a completely empty error — nothing in Logs,
+                # Output or Flow. Synthesize a message from the exit code so the
+                # failure is at least visible and traceable.
+                synth = (
+                    f"Process exited with code {proc.returncode} without reporting an "
+                    f"error (possibly sys.exit(), a killed/out-of-memory process, or a "
+                    f"native crash). Check the raw output above for details."
+                )
+                exc_row.error = synth
+                _persist_log(db, execution_id, {
+                    "level": "error", "message": synth, "step": "_engine",
+                })
+                await ws_manager.send(execution_id, {
+                    "type": "log", "level": "error", "message": synth,
+                    "step": "_engine", "timestamp": datetime.utcnow().isoformat(),
+                })
         db.commit()
 
         await ws_manager.send(execution_id, {
@@ -572,6 +660,11 @@ async def start_execution(execution_id: str) -> None:
             pass
         try:
             _prune_old_runs(script_dir, keep=20)
+        except Exception:
+            pass
+        # prune old execution *rows* (DB) per the script's retention setting
+        try:
+            prune_executions(db, script.id, script.max_executions)
         except Exception:
             pass
 
@@ -681,3 +774,50 @@ def _mark_failed(db, execution_id: str, error: str) -> None:
         row.error = error
         row.finished_at = datetime.utcnow()
         db.commit()
+    # Persist the engine-level failure as a log so it surfaces in the Logs panel
+    # (on reload) instead of being buried only in execution.error.
+    try:
+        _persist_log(db, execution_id, {
+            "level": "error", "message": error or "Execution failed", "step": "_engine",
+        })
+    except Exception:
+        pass
+
+
+# ── Execution-record retention ───────────────────────────────────────────────
+
+def delete_run_dir(script_id: str, execution_id: str) -> None:
+    """Remove the per-execution working dir (best-effort)."""
+    try:
+        run_dir = get_script_dir(script_id) / "runs" / execution_id
+        shutil.rmtree(run_dir, ignore_errors=True)
+    except Exception:
+        pass
+
+
+def prune_executions(db, script_id: str, keep: int | None) -> int:
+    """Delete the oldest execution rows for a script beyond `keep`, keeping the
+    `keep` most recent. In-flight runs (running/queued/pending) are never deleted
+    and don't count against the limit. Returns how many rows were removed.
+
+    keep <= 0 (or None) means unlimited — nothing is pruned.
+    """
+    if not keep or keep <= 0:
+        return 0
+    rows = (
+        db.query(Execution)
+        .filter(Execution.script_id == script_id)
+        .order_by(Execution.created_at.desc())
+        .all()
+    )
+    # Only terminal runs are candidates for deletion; keep the newest `keep` of them.
+    terminal = [r for r in rows if r.status in ("completed", "failed", "cancelled")]
+    stale = terminal[keep:]
+    removed = 0
+    for r in stale:
+        delete_run_dir(script_id, r.id)
+        db.delete(r)  # cascade removes ExecutionLog rows
+        removed += 1
+    if removed:
+        db.commit()
+    return removed

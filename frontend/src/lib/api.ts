@@ -11,6 +11,8 @@ import type {
   UploadedFile,
   AuthStatus, AuthResult, ApiKey, ApiKeyCreated,
   Secret,
+  Skill, SkillSummary, SkillFile,
+  MarketplaceSkill, RegistrySkill,
 } from "./types";
 
 const BASE = "/api";
@@ -52,7 +54,7 @@ export const scripts = {
   create: (data: { name: string; description?: string; entry_function?: string }) =>
     req<Script>("/scripts", { method: "POST", body: JSON.stringify(data) }),
 
-  update: (id: string, data: Partial<Pick<Script, "name" | "description" | "entry_function" | "requirements" | "mcp_server_ids">>) =>
+  update: (id: string, data: Partial<Pick<Script, "name" | "description" | "entry_function" | "requirements" | "mcp_server_ids" | "skill_ids" | "max_executions">>) =>
     req<Script>(`/scripts/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
 
   delete: (id: string) => req<void>(`/scripts/${id}`, { method: "DELETE" }),
@@ -149,6 +151,11 @@ export const executions = {
     }),
 
   stop: (id: string) => req<{ stopped: boolean; status: string }>(`/executions/${id}/stop`, { method: "POST" }),
+
+  delete: (id: string) => req<void>(`/executions/${id}`, { method: "DELETE" }),
+
+  clear: (scriptId: string) =>
+    req<{ deleted: number }>(`/executions?script_id=${encodeURIComponent(scriptId)}`, { method: "DELETE" }),
 };
 
 // ── LLM Configs ────────────────────────────────────────────────────────────────
@@ -240,6 +247,85 @@ export const mcpServers = {
   /** Clear the stored OAuth token. */
   oauthDisconnect: (id: string) =>
     req<MCPServerConfig>(`/mcp-servers/${id}/oauth/disconnect`, { method: "POST" }),
+};
+
+// ── Skills (Agent Skills: SKILL.md + supporting files) ──────────────────────────
+
+export const skills = {
+  list: () => req<SkillSummary[]>("/skills"),
+
+  get: (id: string) => req<Skill>(`/skills/${id}`),
+
+  create: (data: { name: string; description?: string; enabled?: boolean }) =>
+    req<Skill>("/skills", { method: "POST", body: JSON.stringify(data) }),
+
+  update: (id: string, data: Partial<Pick<Skill, "name" | "description" | "enabled">>) =>
+    req<Skill>(`/skills/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+
+  delete: (id: string) => req<void>(`/skills/${id}`, { method: "DELETE" }),
+
+  upsertFile: (id: string, file: { filename: string; content: string; is_main?: boolean }) =>
+    req<SkillFile>(`/skills/${id}/files`, { method: "PUT", body: JSON.stringify(file) }),
+
+  deleteFile: (id: string, filename: string) =>
+    req<void>(`/skills/${id}/files/${encodeURIComponent(filename)}`, { method: "DELETE" }),
+
+  createDir: (id: string, path: string) =>
+    req<{ ok: boolean; path: string }>(`/skills/${id}/dirs`, {
+      method: "POST", body: JSON.stringify({ path }),
+    }),
+
+  deleteDir: (id: string, path: string) => {
+    // Strip leading/trailing slashes so the URL never degenerates to `/dirs/`
+    // (a trailing slash triggers a 307 redirect that turns into 405 on the POST
+    // route) or `/dirs` (empty path). Refuse an empty path outright.
+    const clean = (path || "").replace(/^\/+|\/+$/g, "");
+    if (!clean) return Promise.reject(new Error("folder path is required"));
+    return req<void>(`/skills/${id}/dirs/${clean.split("/").map(encodeURIComponent).join("/")}`, {
+      method: "DELETE",
+    });
+  },
+};
+
+// ── Skill marketplace (browse official repo + community registry, install) ──────
+
+export const marketplace = {
+  sources: () =>
+    req<{
+      official: { owner: string; repo: string; has_token: boolean };
+      registries: { provider: string; has_key: boolean }[];
+    }>("/marketplace/sources"),
+
+  official: (refresh = false) =>
+    req<{ skills: MarketplaceSkill[]; has_token: boolean }>(
+      `/marketplace/official${refresh ? "?refresh=true" : ""}`,
+    ),
+
+  // provider: "skillsmp" (anon-friendly) | "skillssh" (needs SKILLS_SH_TOKEN)
+  search: (q: string, provider = "skillsmp", page = 1, sort = "stars") =>
+    req<{
+      provider?: string;
+      skills: RegistrySkill[];
+      pagination: { page?: number; total?: number; totalPages?: number };
+      rate_remaining: number | null;
+      has_key: boolean;
+      auth_required?: boolean;
+    }>(`/marketplace/registry/search?q=${encodeURIComponent(q)}&provider=${provider}&page=${page}&sort=${sort}`),
+
+  install: (body: {
+    owner?: string; repo?: string; ref?: string | null;
+    subpath?: string; githubUrl?: string; refresh?: boolean;
+  }) =>
+    req<{
+      installed?: boolean;
+      already_installed?: boolean;
+      skill?: SkillSummary;
+      needs_choice?: boolean;
+      owner?: string;
+      repo?: string;
+      ref?: string | null;
+      skills?: MarketplaceSkill[];
+    }>("/marketplace/install", { method: "POST", body: JSON.stringify(body) }),
 };
 
 // ── Conversations ──────────────────────────────────────────────────────────────

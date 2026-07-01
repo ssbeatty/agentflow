@@ -2,7 +2,7 @@
 import { useState } from "react";
 import {
   Wrench, Brain, Box, Bot, Flag, ChevronRight, ChevronDown,
-  Loader2, Check, AlertCircle, Sparkles,
+  Loader2, Check, AlertCircle, Sparkles, BookOpen,
 } from "lucide-react";
 import type { TraceEvent } from "@/lib/types";
 import { buildRows, type TraceRow } from "@/components/FlowPanel";
@@ -17,10 +17,11 @@ import { cn } from "@/lib/utils";
 // expands to its input/output. Order comes from buildRows() (same start/end
 // folding the Flow tab uses), so it reads top-to-bottom as it happened.
 
-const ICONS = { node: Box, tool: Wrench, agent_action: Bot, agent_finish: Flag, llm: Brain } as const;
+const ICONS = { node: Box, tool: Wrench, skill: BookOpen, agent_action: Bot, agent_finish: Flag, llm: Brain } as const;
 const COLORS = {
   node: "text-violet-400",
   tool: "text-emerald-400",
+  skill: "text-fuchsia-400",
   agent_action: "text-amber-400",
   agent_finish: "text-blue-400",
   llm: "text-sky-400",
@@ -66,7 +67,7 @@ function Row({ row }: { row: TraceRow }) {
   const Icon = ICONS[row.kind] ?? Box;
   const color = COLORS[row.kind] ?? "text-foreground";
   const hasDetails = row.input !== undefined || row.output !== undefined || !!row.error;
-  const isTool = row.kind === "tool" || row.kind === "agent_action";
+  const isTool = row.kind === "tool" || row.kind === "skill" || row.kind === "agent_action";
 
   return (
     <div className="rounded-lg border border-border/40 bg-secondary/15">

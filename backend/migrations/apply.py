@@ -1,76 +1,35 @@
 """
-Migration runner — apply pending V*.sql files in version order.
+Migration runner CLI — apply pending V*.sql files in version order.
 
 Usage (from the backend/ directory):
     python migrations/apply.py               # apply all pending
     python migrations/apply.py --dry-run     # show what would run, don't apply
     python migrations/apply.py --status      # list applied/pending versions
 
-Migration files must be named  V<N>__<description>.sql  where N is an integer.
-They are applied in ascending N order. Each file is applied in a single
-transaction; if it fails the transaction is rolled back and the script exits.
+The migration logic lives in ``app.db_migrate`` and is *shared* with app
+startup — the FastAPI lifespan auto-applies pending migrations, so this CLI is
+only needed for inspection (--status/--dry-run) or manual/out-of-band runs.
 
-A `schema_migrations` table tracks which versions have been applied:
-    version    TEXT PRIMARY KEY   e.g. "V1"
-    applied_at TEXT               ISO-8601 UTC timestamp
+Migration files must be named  V<N>__<description>.sql  where N is an integer;
+they are applied in ascending N order, each in a single transaction. A
+``schema_migrations`` table tracks which versions have been applied.
 """
-import re
 import sys
 import argparse
-from datetime import datetime, timezone
 from pathlib import Path
 
-# Allow running from anywhere — resolve paths relative to this file
-MIGRATIONS_DIR = Path(__file__).parent
-BACKEND_DIR = MIGRATIONS_DIR.parent
-
-# Add backend to sys.path so app.config / app.database are importable
+# Add backend/ to sys.path so `app.*` is importable when run as a script
+BACKEND_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BACKEND_DIR))
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 from app.config import settings
-
-
-def _parse_version(filename: str) -> int | None:
-    m = re.match(r"V(\d+)__", filename)
-    return int(m.group(1)) if m else None
-
-
-def _load_migration_files() -> list[tuple[str, Path]]:
-    files = []
-    for p in MIGRATIONS_DIR.glob("V*.sql"):
-        n = _parse_version(p.name)
-        if n is not None:
-            files.append((n, p))
-    files.sort(key=lambda x: x[0])
-    return [(f"V{n}", p) for n, p in files]
-
-
-def _ensure_tracking_table(conn) -> None:
-    conn.execute(text("""
-        CREATE TABLE IF NOT EXISTS schema_migrations (
-            version    TEXT PRIMARY KEY,
-            applied_at TEXT NOT NULL
-        )
-    """))
-    conn.commit()
-
-
-def _applied_versions(conn) -> set[str]:
-    rows = conn.execute(text("SELECT version FROM schema_migrations")).fetchall()
-    return {r[0] for r in rows}
-
-
-def _apply(conn, version: str, path: Path) -> None:
-    sql = path.read_text(encoding="utf-8")
-    statements = [s.strip() for s in sql.split(";") if s.strip() and not s.strip().startswith("--")]
-    for stmt in statements:
-        conn.execute(text(stmt))
-    conn.execute(
-        text("INSERT INTO schema_migrations (version, applied_at) VALUES (:v, :t)"),
-        {"v": version, "t": datetime.now(timezone.utc).isoformat()},
-    )
-    conn.commit()
+from app.db_migrate import (
+    load_migration_files,
+    ensure_tracking_table,
+    applied_versions,
+    apply_one,
+)
 
 
 def main() -> None:
@@ -80,11 +39,11 @@ def main() -> None:
     args = parser.parse_args()
 
     engine = create_engine(settings.database_url)
-    migrations = _load_migration_files()
+    migrations = load_migration_files()
 
     with engine.connect() as conn:
-        _ensure_tracking_table(conn)
-        applied = _applied_versions(conn)
+        ensure_tracking_table(conn)
+        applied = applied_versions(conn)
 
         if args.status:
             print(f"{'VERSION':<12} {'STATUS':<10} FILE")
@@ -102,8 +61,8 @@ def main() -> None:
             print(f"{'[dry-run] ' if args.dry_run else ''}Applying {version}: {path.name}")
             if not args.dry_run:
                 try:
-                    _apply(conn, version, path)
-                    print(f"  OK")
+                    apply_one(conn, version, path)
+                    print("  OK")
                 except Exception as e:
                     print(f"  FAILED: {e}")
                     sys.exit(1)

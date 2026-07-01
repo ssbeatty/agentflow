@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import {
-  Wrench, ChevronRight, ChevronDown, Loader2, Check, AlertCircle, Sparkles,
+  Wrench, ChevronRight, ChevronDown, Loader2, Check, AlertCircle, Sparkles, BookOpen,
 } from "lucide-react";
 import type { TraceEvent } from "@/lib/types";
 import { buildRows, type TraceRow } from "@/components/FlowPanel";
@@ -55,15 +55,21 @@ function DetailBlock({ label, value, error }: { label: string; value: unknown; e
 
 function ToolCallBox({ row }: { row: TraceRow }) {
   const [open, setOpen] = useState(false);
+  const isSkill = row.kind === "skill";
+  const a = isSkill
+    ? { border: "border-fuchsia-500/25", bg: "bg-fuchsia-500/[0.04]", divider: "border-fuchsia-500/15",
+        icon: "text-fuchsia-400", Icon: BookOpen, label: "技能加载" }
+    : { border: "border-emerald-500/25", bg: "bg-emerald-500/[0.04]", divider: "border-emerald-500/15",
+        icon: "text-emerald-400", Icon: Wrench, label: "工具调用" };
   return (
-    <div className="rounded-lg border border-emerald-500/25 bg-emerald-500/[0.04]">
+    <div className={cn("rounded-lg border", a.border, a.bg)}>
       <button
         onClick={() => setOpen((o) => !o)}
         className="w-full flex items-center gap-2 px-3 py-2 text-xs text-left"
       >
-        <Wrench className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
+        <a.Icon className={cn("h-3.5 w-3.5 shrink-0", a.icon)} />
         <span className="font-mono font-medium text-foreground/90 truncate">{row.name}</span>
-        <span className="text-[10px] text-muted-foreground/50 shrink-0">工具调用</span>
+        <span className="text-[10px] text-muted-foreground/50 shrink-0">{a.label}</span>
         <span className="ml-auto flex items-center gap-1.5 shrink-0">
           {row.durationMs != null && (
             <span className="text-[10px] text-muted-foreground/50 tabular-nums">{durationLabel(row.durationMs)}</span>
@@ -72,12 +78,12 @@ function ToolCallBox({ row }: { row: TraceRow }) {
             ? <Loader2 className="h-3 w-3 text-blue-400 animate-spin" />
             : row.error
               ? <AlertCircle className="h-3 w-3 text-destructive" />
-              : <Check className="h-3 w-3 text-emerald-500/80" />}
+              : <Check className={cn("h-3 w-3", isSkill ? "text-fuchsia-500/80" : "text-emerald-500/80")} />}
           {open ? <ChevronDown className="h-3 w-3 text-muted-foreground" /> : <ChevronRight className="h-3 w-3 text-muted-foreground" />}
         </span>
       </button>
       {open && (
-        <div className="px-3 pb-2.5 pt-2 space-y-1.5 border-t border-emerald-500/15">
+        <div className={cn("px-3 pb-2.5 pt-2 space-y-1.5 border-t", a.divider)}>
           <DetailBlock label="调用参数" value={row.input} />
           <DetailBlock label="返回结果" value={row.output} />
           {row.error && <DetailBlock label="错误" value={row.error} error />}
@@ -103,7 +109,7 @@ export default function AgentNarrative({
 
   const segments: React.ReactNode[] = [];
   rows.forEach((row, i) => {
-    if (row.kind === "tool" || row.kind === "agent_action") {
+    if (row.kind === "tool" || row.kind === "skill" || row.kind === "agent_action") {
       segments.push(<ToolCallBox key={row.key} row={row} />);
     } else if (row.kind === "llm") {
       if (excludeLastLlmText && i === lastLlm) return;
@@ -122,6 +128,7 @@ export default function AgentNarrative({
   if (segments.length === 0) return null;
 
   const toolCount = rows.filter((r) => r.kind === "tool" || r.kind === "agent_action").length;
+  const skillCount = rows.filter((r) => r.kind === "skill").length;
   const thinkCount = rows.filter((r) => r.kind === "llm").length;
   const running = rows.some((r) => r.isOpen);
 
@@ -136,6 +143,7 @@ export default function AgentNarrative({
           : <Sparkles className="h-3.5 w-3.5 text-primary/70" />}
         <span className="font-medium text-foreground/80">{running ? "正在执行…" : "Agent 过程"}</span>
         <span className="text-muted-foreground/60">
+          {skillCount > 0 && <> · {skillCount} 个技能</>}
           {toolCount > 0 && <> · {toolCount} 个工具调用</>}
           {thinkCount > 0 && <> · {thinkCount} 次思考</>}
         </span>

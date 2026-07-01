@@ -1,13 +1,16 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ArrowLeft, Plus, Trash2, ToggleLeft, ToggleRight, Globe, Terminal, Radio,
   Activity, Plug, Unplug, Loader2, ShieldCheck, ShieldAlert, XCircle,
+  Sparkles, Pencil, Store,
 } from "lucide-react";
 import { toast } from "sonner";
-import { mcpServers } from "@/lib/api";
-import type { MCPServerConfig, MCPProbeResult } from "@/lib/types";
+import { mcpServers, skills } from "@/lib/api";
+import type { MCPServerConfig, MCPProbeResult, SkillSummary } from "@/lib/types";
+import SkillMarketplaceDialog from "@/components/SkillMarketplaceDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -56,6 +59,7 @@ function fmtJson(v: Record<string, string> | undefined): string {
 }
 
 export default function ToolsPage() {
+  const router = useRouter();
   const [servers, setServers] = useState<MCPServerConfig[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -65,7 +69,53 @@ export default function ToolsPage() {
   const [connecting, setConnecting] = useState<string | null>(null);
   const [probeResult, setProbeResult] = useState<{ srv: MCPServerConfig; result: MCPProbeResult } | null>(null);
 
-  useEffect(() => { load(); }, []);
+  // ── Skills ──────────────────────────────────────────────────────────────
+  const [skillList, setSkillList] = useState<SkillSummary[]>([]);
+  const [skillDialogOpen, setSkillDialogOpen] = useState(false);
+  const [skillForm, setSkillForm] = useState({ name: "", description: "" });
+  const [creatingSkill, setCreatingSkill] = useState(false);
+  const [marketplaceOpen, setMarketplaceOpen] = useState(false);
+
+  useEffect(() => { load(); loadSkills(); }, []);
+
+  async function loadSkills() {
+    try { setSkillList(await skills.list()); }
+    catch { toast.error("Failed to load skills"); }
+  }
+
+  async function createSkill() {
+    if (!skillForm.name.trim()) return toast.error("Name is required");
+    setCreatingSkill(true);
+    try {
+      const created = await skills.create({
+        name: skillForm.name.trim(),
+        description: skillForm.description.trim(),
+      });
+      setSkillDialogOpen(false);
+      setSkillForm({ name: "", description: "" });
+      router.push(`/skill?id=${created.id}`);
+    } catch (e: unknown) {
+      toast.error(String(e));
+    } finally {
+      setCreatingSkill(false);
+    }
+  }
+
+  async function toggleSkillEnabled(sk: SkillSummary) {
+    try {
+      const updated = await skills.update(sk.id, { enabled: !sk.enabled });
+      setSkillList(prev => prev.map(s => s.id === sk.id ? { ...s, enabled: updated.enabled } : s));
+    } catch { toast.error("Failed to update"); }
+  }
+
+  async function removeSkill(id: string) {
+    if (!confirm("Delete this skill?")) return;
+    try {
+      await skills.delete(id);
+      setSkillList(prev => prev.filter(s => s.id !== id));
+      toast.success("Deleted");
+    } catch { toast.error("Failed to delete"); }
+  }
 
   // The OAuth callback window posts back here when sign-in completes.
   useEffect(() => {
@@ -340,7 +390,100 @@ def run(input: dict) -> dict:
     ...`}</pre>
           </div>
         )}
+
+        {/* Skills */}
+        <Separator className="my-8" />
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="font-medium flex items-center gap-1.5">
+              <Sparkles className="h-4 w-4 text-primary" /> Skills
+            </h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Reusable instructions (SKILL.md + files) an agent loads on demand.
+              Bind them per script; <code className="font-mono bg-muted px-1 rounded">get_agent()</code> exposes them via a <code className="font-mono bg-muted px-1 rounded">read_skill</code> tool.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => setMarketplaceOpen(true)}>
+              <Store className="h-4 w-4" />
+              浏览市场
+            </Button>
+            <Button size="sm" onClick={() => { setSkillForm({ name: "", description: "" }); setSkillDialogOpen(true); }}>
+              <Plus className="h-4 w-4" />
+              New skill
+            </Button>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          {skillList.length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-8">
+              No skills yet. Create one to package reusable agent instructions and files.
+            </p>
+          )}
+          {skillList.map(sk => (
+            <div key={sk.id} className="border border-border rounded-lg p-4 flex items-center justify-between gap-3">
+              <Link href={`/skill?id=${sk.id}`} className="min-w-0 flex-1 group">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-medium text-sm group-hover:text-primary">{sk.name}</span>
+                  {!sk.enabled && <Badge variant="outline">disabled</Badge>}
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                  {sk.description || "No description"}
+                </p>
+              </Link>
+              <div className="flex items-center gap-1 shrink-0">
+                <Button variant="ghost" size="icon" onClick={() => toggleSkillEnabled(sk)} title={sk.enabled ? "Disable" : "Enable"}>
+                  {sk.enabled
+                    ? <ToggleRight className="h-4 w-4 text-primary" />
+                    : <ToggleLeft className="h-4 w-4 text-muted-foreground" />}
+                </Button>
+                <Button variant="ghost" size="icon" onClick={() => router.push(`/skill?id=${sk.id}`)} title="Edit">
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                <Button variant="ghost" size="icon" onClick={() => removeSkill(sk.id)}>
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Skills usage hint */}
+        {skillList.length > 0 && (
+          <div className="mt-6 rounded-lg border border-border bg-secondary/20 p-4 text-xs text-muted-foreground space-y-2">
+            <p className="font-medium text-foreground">Script usage</p>
+            <p>Bind skills to a script in its right panel, then:</p>
+            <pre className="font-mono text-xs overflow-x-auto">{`from agentflow import get_agent, get_deep_agent
+
+# Lightweight — agent loads a skill's SKILL.md via the built-in read_skill tool
+def run(input: dict) -> dict:
+    agent = get_agent(system_prompt="Use the available skills.")
+    result = agent.invoke({"messages": [("user", input["message"])]})
+    return {"reply": result["messages"][-1].content}
+
+# Deep agent — mounts skills/ so the agent reads every skill file itself
+async def run(input: dict) -> dict:
+    agent = get_deep_agent(system_prompt="Use the available skills.")
+    result = await agent.ainvoke({"messages": [("user", input["message"])]})
+    return {"reply": result["messages"][-1].content}`}</pre>
+            <p>
+              Full examples:{" "}
+              <code className="font-mono bg-muted px-1 rounded">examples/skill_agent.py</code>{" "}
+              &{" "}
+              <code className="font-mono bg-muted px-1 rounded">examples/skill_deep_agent.py</code>.
+              When a skill loads you&apos;ll see a <span className="font-medium">Loaded skill: …</span> line in the run log.
+            </p>
+          </div>
+        )}
       </main>
+
+      {/* Skill marketplace */}
+      <SkillMarketplaceDialog
+        open={marketplaceOpen}
+        onOpenChange={setMarketplaceOpen}
+        onInstalled={loadSkills}
+      />
 
       {/* Add / Edit dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -534,6 +677,44 @@ def run(input: dict) -> dict:
           ))}
           <DialogFooter>
             <Button variant="outline" onClick={() => setProbeResult(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create skill dialog */}
+      <Dialog open={skillDialogOpen} onOpenChange={setSkillDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>New skill</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Name</Label>
+              <Input
+                value={skillForm.name}
+                onChange={e => setSkillForm(p => ({ ...p, name: e.target.value }))}
+                placeholder="pdf-processing"
+                onKeyDown={e => { if (e.key === "Enter") createSkill(); }}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Description <span className="text-muted-foreground">(shown to the agent)</span></Label>
+              <Textarea
+                value={skillForm.description}
+                onChange={e => setSkillForm(p => ({ ...p, description: e.target.value }))}
+                placeholder="What this skill does and when to use it"
+                rows={3}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              A starter <code className="font-mono bg-muted px-1 rounded">SKILL.md</code> is created — edit it and add files next.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSkillDialogOpen(false)}>Cancel</Button>
+            <Button onClick={createSkill} disabled={creatingSkill}>
+              {creatingSkill ? "Creating…" : "Create & edit"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

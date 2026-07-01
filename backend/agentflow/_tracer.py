@@ -12,7 +12,10 @@ Events emitted (each prefixed with __AGENTFLOW__ on stdout):
      "name":"agent","run_id":"...","parent_run_id":"...","step":3,
      "input":{...},"output":{...},"error":"...","ts":1234567890.123}
 
-    {"type":"trace","kind":"tool"|"agent_action"|"agent_finish", ...}
+    {"type":"trace","kind":"tool"|"skill"|"agent_action"|"agent_finish", ...}
+
+    (`kind:"skill"` is a `tool` event whose call is a skill interaction — the
+    built-in `read_skill` tool, or a deep-agent filesystem read under `skills/`.)
 
     {"type":"graph","mermaid":"graph TD; ..."}     # emitted once per graph
 """
@@ -118,6 +121,25 @@ def _is_langgraph_node(metadata: dict | None) -> bool:
     return bool(metadata and metadata.get("langgraph_node"))
 
 
+# Filesystem-style tools a deep agent uses to read a skill's files.
+_SKILL_FS_TOOLS = {"read_file", "read_files", "ls", "list_files", "list_dir", "glob", "grep", "view_file"}
+
+
+def _is_skill_interaction(name: str, payload: Any) -> bool:
+    """True when a tool call is really a skill being loaded — the built-in
+    `read_skill` tool, or a deep-agent filesystem read whose path is under a
+    `skills/` directory. Purely additive: a non-match stays a plain `tool`."""
+    if name == "read_skill":
+        return True
+    if name in _SKILL_FS_TOOLS:
+        try:
+            blob = payload if isinstance(payload, str) else json.dumps(payload, default=str)
+        except Exception:
+            blob = str(payload)
+        return "skills/" in blob or "/skills" in blob
+    return False
+
+
 def _node_name(metadata: dict | None, serialized: dict | None, default: str = "chain") -> str:
     if metadata and metadata.get("langgraph_node"):
         return str(metadata["langgraph_node"])
@@ -144,6 +166,8 @@ class AgentflowTracer(BaseCallbackHandler):
     def __init__(self) -> None:
         self._starts: dict[str, float] = {}
         self._step = 0
+        # run_id → "tool" | "skill", so on_tool_end pairs the same kind it started
+        self._tool_kind: dict[str, str] = {}
         # (langgraph_step, node_name) → run_id that "owns" this slot. LangGraph
         # tags the conditional-edge routing function with the SOURCE node's
         # `langgraph_node` metadata, so without dedupe each branch evaluation
@@ -271,17 +295,22 @@ class AgentflowTracer(BaseCallbackHandler):
     def on_tool_start(self, serialized, input_str, *, run_id, parent_run_id=None,
                       tags=None, metadata=None, inputs=None, **kwargs):
         name = (serialized or {}).get("name") or "tool"
+        payload = inputs if inputs is not None else input_str
+        kind = "skill" if _is_skill_interaction(name, payload) else "tool"
+        self._tool_kind[str(run_id)] = kind
         self._start(
-            "tool", name,
+            kind, name,
             run_id=run_id, parent_run_id=parent_run_id,
-            input_data=inputs if inputs is not None else input_str,
+            input_data=payload,
         )
 
     def on_tool_end(self, output, *, run_id, parent_run_id=None, **kwargs):
-        self._end("tool", "", run_id=run_id, parent_run_id=parent_run_id, output_data=output)
+        kind = self._tool_kind.pop(str(run_id), "tool")
+        self._end(kind, "", run_id=run_id, parent_run_id=parent_run_id, output_data=output)
 
     def on_tool_error(self, error, *, run_id, parent_run_id=None, **kwargs):
-        self._end("tool", "", run_id=run_id, parent_run_id=parent_run_id, error=str(error))
+        kind = self._tool_kind.pop(str(run_id), "tool")
+        self._end(kind, "", run_id=run_id, parent_run_id=parent_run_id, error=str(error))
 
     # ── legacy AgentExecutor (no langgraph_node metadata) ───────────────────
     def on_agent_action(self, action, *, run_id, parent_run_id=None, **kwargs):

@@ -18,7 +18,7 @@ from app.database import engine, Base, SessionLocal
 from app.auth_deps import require_admin
 from app.routers import (
     scripts, executions, llm_configs, cron_jobs, ws, mcp_servers,
-    conversations, files, channels, auth, api_keys, secrets,
+    conversations, files, channels, auth, api_keys, secrets, skills, marketplace,
 )
 from services.scheduler import scheduler_service
 
@@ -27,7 +27,27 @@ FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend" / "out"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Detect a brand-new DB *before* create_all builds everything: if the core
+    # `scripts` table is absent the DB is fresh, so migrations get baselined
+    # (recorded, not executed) instead of re-run against a create_all schema.
+    from sqlalchemy import inspect as _sa_inspect
+    try:
+        _fresh_db = "scripts" not in set(_sa_inspect(engine).get_table_names())
+    except Exception:
+        _fresh_db = True
+
+    # create_all builds brand-new databases + any newly-added models on existing
+    # ones. It does NOT add columns to existing tables — that's what the SQL
+    # migrations under backend/migrations are for.
     Base.metadata.create_all(bind=engine)
+
+    # Auto-apply schema migrations so a deploy never leaves the DB half-upgraded
+    # (e.g. a new column missing on an existing table). Fresh DB -> stamp all as
+    # applied; existing DB -> run pending. Fail-fast: a migration error stops
+    # startup rather than running behind a broken schema.
+    from app.db_migrate import run_startup_migrations
+    run_startup_migrations(engine, fresh_db=_fresh_db)
+
     # Fold any legacy llm_configs rows into the new channels model (idempotent).
     db = SessionLocal()
     try:
@@ -37,6 +57,18 @@ async def lifespan(app: FastAPI):
             print(f"[agentflow] migrated {n} LLM channel(s) from legacy configs")
     except Exception as exc:  # never let migration block startup
         print(f"[agentflow] LLM channel migration skipped: {exc}")
+    finally:
+        db.close()
+
+    # Move any DB-stored skills onto disk + rebind script.skill_ids (idempotent).
+    db = SessionLocal()
+    try:
+        from services.skill_migrate import migrate_skills_to_disk
+        n = migrate_skills_to_disk(db)
+        if n:
+            print(f"[agentflow] migrated {n} skill(s) from DB to disk")
+    except Exception as exc:  # never let migration block startup
+        print(f"[agentflow] skill disk migration skipped: {exc}")
     finally:
         db.close()
     scheduler_service.start()
@@ -80,6 +112,8 @@ app.include_router(mcp_servers.router,    prefix="/api/mcp-servers",    tags=["m
 app.include_router(conversations.router,  prefix="/api/conversations",  tags=["conversations"],  dependencies=_admin)
 app.include_router(files.router,          prefix="/api/files",          tags=["files"],          dependencies=_admin)
 app.include_router(secrets.router,        prefix="/api/secrets",        tags=["secrets"],        dependencies=_admin)
+app.include_router(skills.router,         prefix="/api/skills",         tags=["skills"],         dependencies=_admin)
+app.include_router(marketplace.router,     prefix="/api/marketplace",     tags=["marketplace"],     dependencies=_admin)
 
 @app.get("/health")
 def health():

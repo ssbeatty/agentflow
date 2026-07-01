@@ -10,7 +10,7 @@ from app.models import Execution, Script
 from app.schemas import ExecutionCreate, ExecutionDetail, ExecutionSummary
 from app.auth_deps import require_admin, require_api_key_or_admin
 from services.execution_engine import (
-    spawn_execution, stop_execution, queue_stats,
+    spawn_execution, stop_execution, queue_stats, delete_run_dir,
     MAX_CONCURRENT, EXECUTION_TIMEOUT,
 )
 from services.venv_manager import get_script_dir
@@ -115,12 +115,49 @@ async def run_sync(body: ExecutionCreate, timeout: float = 300.0):
         db.close()
 
 
+@router.delete("", status_code=200, dependencies=_admin)
+def clear_executions(script_id: str, db: Session = Depends(get_db)):
+    """Delete all finished (completed/failed/cancelled) execution records for a
+    script, plus their per-run working dirs. In-flight runs are left untouched."""
+    if not db.query(Script).filter_by(id=script_id).first():
+        raise HTTPException(404, "Script not found")
+    rows = (
+        db.query(Execution)
+        .filter(
+            Execution.script_id == script_id,
+            Execution.status.in_(["completed", "failed", "cancelled"]),
+        )
+        .all()
+    )
+    deleted = 0
+    for r in rows:
+        delete_run_dir(script_id, r.id)
+        db.delete(r)  # cascade removes ExecutionLog rows
+        deleted += 1
+    db.commit()
+    return {"deleted": deleted}
+
+
 @router.get("/{execution_id}", response_model=ExecutionDetail, dependencies=_admin)
 def get_execution(execution_id: str, db: Session = Depends(get_db)):
     exc = db.query(Execution).filter_by(id=execution_id).first()
     if not exc:
         raise HTTPException(404, "Execution not found")
     return exc
+
+
+@router.delete("/{execution_id}", status_code=204, dependencies=_admin)
+def delete_execution(execution_id: str, db: Session = Depends(get_db)):
+    """Delete a single execution record + its per-run working dir. An in-flight
+    run must be stopped first (409)."""
+    exc = db.query(Execution).filter_by(id=execution_id).first()
+    if not exc:
+        raise HTTPException(404, "Execution not found")
+    if exc.status in ("running", "queued", "pending"):
+        raise HTTPException(409, "Stop the run before deleting it")
+    delete_run_dir(exc.script_id, exc.id)
+    db.delete(exc)  # cascade removes ExecutionLog rows
+    db.commit()
 
 
 @router.post("/{execution_id}/stop", status_code=200, dependencies=_admin)

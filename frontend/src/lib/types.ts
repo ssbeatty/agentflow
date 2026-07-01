@@ -14,6 +14,8 @@ export interface Script {
   entry_function: string;
   requirements: string;
   mcp_server_ids: string[];
+  skill_ids: string[];
+  max_executions: number;
   created_at: string;
   updated_at: string;
   files: ScriptFile[];
@@ -25,6 +27,8 @@ export interface ScriptSummary {
   description: string;
   entry_function: string;
   mcp_server_ids: string[];
+  skill_ids: string[];
+  max_executions: number;
   created_at: string;
   updated_at: string;
 }
@@ -132,6 +136,59 @@ export interface Secret {
   updated_at: string;
 }
 
+// ── Skill (Agent Skills: SKILL.md + supporting files) ─────────────────────────
+
+export interface SkillFile {
+  id: string;
+  skill_id: string;
+  filename: string;
+  content: string;
+  is_main: boolean;
+  updated_at: string;
+}
+
+export interface SkillSummary {
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  source: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Skill extends SkillSummary {
+  files: SkillFile[];
+  /** all sub-directories (incl. empty ones), so the file tree can show them */
+  dirs?: string[];
+}
+
+// ── Skill marketplace ─────────────────────────────────────────────────────────
+
+/** A skill offered by the official GitHub repo (browse → install). */
+export interface MarketplaceSkill {
+  name: string;
+  description: string;
+  path: string;      // subpath within the repo to install
+  files: number;
+  owner?: string;
+  repo?: string;
+  upstream?: string;
+  installed?: boolean;
+}
+
+/** A skill returned by the SkillsMP community registry search. */
+export interface RegistrySkill {
+  id: string | number;
+  name: string;
+  author: string;
+  description: string;
+  githubUrl: string;
+  skillUrl: string;
+  stars: number;
+  updatedAt: string;
+}
+
 export interface MCPToolInfo {
   name: string;
   title?: string | null;
@@ -195,7 +252,7 @@ export interface ScriptRevisionDetail extends ScriptRevision {
 
 export interface TraceEvent {
   type: "trace";
-  kind: "node" | "tool" | "agent_action" | "agent_finish" | "llm";
+  kind: "node" | "tool" | "skill" | "agent_action" | "agent_finish" | "llm";
   phase: "start" | "end" | "error" | "event";
   name: string;
   run_id: string;

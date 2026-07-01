@@ -1,7 +1,7 @@
 "use client";
 import { useMemo, useState, type MouseEvent } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ChevronDown, ChevronRight, Wrench, Box, Bot, Flag, Brain, Copy, Check } from "lucide-react";
+import { ChevronDown, ChevronRight, Wrench, Box, Bot, Flag, Brain, Copy, Check, BookOpen } from "lucide-react";
 import type { TraceEvent, GraphTopology } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import MermaidView from "@/components/MermaidView";
@@ -347,6 +347,7 @@ function JsonBlock({ label, value }: { label: string; value: unknown }) {
 const ICONS = {
   node: Box,
   tool: Wrench,
+  skill: BookOpen,
   agent_action: Bot,
   agent_finish: Flag,
   llm: Brain,
@@ -355,6 +356,7 @@ const ICONS = {
 const COLORS = {
   node: "text-violet-400",
   tool: "text-emerald-400",
+  skill: "text-fuchsia-400",
   agent_action: "text-amber-400",
   agent_finish: "text-blue-400",
   llm: "text-sky-400",
@@ -363,6 +365,7 @@ const COLORS = {
 const KIND_LABEL = {
   node: "node",
   tool: "tool",
+  skill: "skill",
   agent_action: "agent",
   agent_finish: "finish",
   llm: "llm",

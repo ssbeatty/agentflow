@@ -30,6 +30,8 @@ class ScriptCreate(BaseModel):
     entry_function: str = "run"
     requirements: str = ""
     mcp_server_ids: list[str] = []
+    skill_ids: list[str] = []
+    max_executions: int = 50
 
 
 class ScriptUpdate(BaseModel):
@@ -38,6 +40,8 @@ class ScriptUpdate(BaseModel):
     entry_function: Optional[str] = None
     requirements: Optional[str] = None
     mcp_server_ids: Optional[list[str]] = None
+    skill_ids: Optional[list[str]] = None
+    max_executions: Optional[int] = Field(default=None, ge=0, le=10000)
 
 
 class ScriptSummary(BaseModel):
@@ -46,6 +50,8 @@ class ScriptSummary(BaseModel):
     description: str
     entry_function: str
     mcp_server_ids: list[str] = []
+    skill_ids: list[str] = []
+    max_executions: int = 50
     created_at: datetime
     updated_at: datetime
 
@@ -322,6 +328,54 @@ class MCPServerOut(BaseModel):
         return (self.oauth_config or {}).get("scope")
 
     model_config = {"from_attributes": True}
+
+
+# ── Skill (Agent Skills: SKILL.md + supporting files) ─────────────────────────
+
+class SkillFileUpsert(BaseModel):
+    filename: str
+    content: str = ""
+    is_main: bool = False
+
+
+class SkillFileOut(BaseModel):
+    id: str
+    skill_id: str
+    filename: str
+    content: str
+    is_main: bool
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class SkillCreate(BaseModel):
+    name: str
+    description: str = ""
+    enabled: bool = True
+
+
+class SkillUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    enabled: Optional[bool] = None
+
+
+class SkillSummary(BaseModel):
+    id: str
+    name: str
+    description: str
+    enabled: bool
+    source: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class SkillDetail(SkillSummary):
+    files: list[SkillFileOut] = []
+    dirs: list[str] = []   # all sub-directories (incl. empty ones) so the tree shows them
 
 
 # ── Secret (externally-managed credentials for user scripts) ───────────────────
