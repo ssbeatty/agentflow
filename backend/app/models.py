@@ -22,7 +22,9 @@ class Script(Base):
     skill_ids = Column(JSON, default=list)
     # Max execution records to keep for this script; older ones are auto-pruned
     # (oldest terminal runs first) after each run. 0 = keep unlimited.
-    max_executions = Column(Integer, default=50)
+    # server_default mirrors the Python default so Alembic autogenerate sees no
+    # drift and existing rows get 50 when the column is first added.
+    max_executions = Column(Integer, default=50, server_default="50")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

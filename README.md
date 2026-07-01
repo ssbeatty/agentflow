@@ -235,7 +235,7 @@ DATABASE_URL=postgresql+psycopg2://user:pass@host:5432/dbname
 DATABASE_URL=mysql+pymysql://user:pass@host/dbname
 ```
 
-表结构在应用启动时自动 `create_all`（仅建表，不补列）。Schema 变更通过 `backend/migrations/` 管理，运行 `python migrations/apply.py` 应用。
+表结构由 **Alembic** 管理，应用启动时自动 `upgrade head`（sqlite / postgres 通用）。首次接入的旧库（有表但没有 Alembic 版本记录）会被自动 `stamp` 到基线再增量升级,无需手工干预。变更 schema：改模型后 `cd backend && alembic revision --autogenerate -m "..."`,检查生成的迁移文件,重启即自动应用。
 
 ---
 
