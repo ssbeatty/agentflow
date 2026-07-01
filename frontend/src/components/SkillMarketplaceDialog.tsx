@@ -13,9 +13,9 @@ import { Input } from "@/components/ui/input";
 type Tab = "official" | "skillsmp" | "skillssh";
 
 const TAB_LABEL: Record<Tab, string> = {
-  official: "官方 anthropics/skills",
-  skillsmp: "社区 SkillsMP",
-  skillssh: "社区 skills.sh",
+  official: "Official anthropics/skills",
+  skillsmp: "Community SkillsMP",
+  skillssh: "Community skills.sh",
 };
 
 interface Choice {
@@ -212,7 +212,7 @@ export default function SkillMarketplaceDialog({
               <>
                 {!hasToken && (
                   <p className="text-[11px] text-amber-500/90 shrink-0">
-                    未设置 GITHUB_TOKEN — GitHub 匿名限流 60次/小时。设置后可提高上限。
+                    GITHUB_TOKEN not set — anonymous GitHub requests are rate-limited to 60/hour. Set it to raise the limit.
                   </p>
                 )}
                 <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-2">
@@ -249,23 +249,23 @@ export default function SkillMarketplaceDialog({
                       value={q}
                       onChange={e => setQ(e.target.value)}
                       onKeyDown={e => { if (e.key === "Enter") doSearch(); }}
-                      placeholder="搜索社区技能，如 pdf、web scraping…"
+                      placeholder="Search community skills, e.g. pdf, web scraping…"
                       className="pl-8"
                     />
                   </div>
                   <Button onClick={doSearch} disabled={searching || !q.trim()}>
-                    {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : "搜索"}
+                    {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : "Search"}
                   </Button>
                 </div>
                 {tab === "skillssh" && (authRequired || results == null) && (
                   <p className="text-[11px] text-amber-500/90 shrink-0">
-                    skills.sh 搜索需要 Vercel OIDC token — 设置环境变量 SKILLS_SH_TOKEN（或
-                    VERCEL_OIDC_TOKEN）后可用。SkillsMP 无需 token。
+                    skills.sh search requires a Vercel OIDC token — set the SKILLS_SH_TOKEN (or
+                    VERCEL_OIDC_TOKEN) env var to use it. SkillsMP needs no token.
                   </p>
                 )}
                 {rate != null && (
                   <p className="text-[11px] text-muted-foreground shrink-0">
-                    今日剩余额度 {rate}{tab === "skillsmp" && !hasKey && " — 设置 SKILLSMP_API_KEY 可提升至 500/天"}
+                    Remaining quota today: {rate}{tab === "skillsmp" && !hasKey && " — set SKILLSMP_API_KEY to raise it to 500/day"}
                   </p>
                 )}
                 <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-2">
@@ -291,7 +291,7 @@ export default function SkillMarketplaceDialog({
                   ))}
                   {results == null && !(tab === "skillssh") && (
                     <p className="text-sm text-muted-foreground text-center py-10">
-                      输入关键词搜索社区技能。安装时会从对应的 GitHub 仓库拉取。
+                      Search for community skills by keyword. Installing pulls the skill from its GitHub repo.
                     </p>
                   )}
                 </div>

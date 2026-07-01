@@ -66,7 +66,7 @@ function LogStrip({ logs }: { logs: WsEvent[] }) {
         className="flex items-center gap-1 text-[10px] text-muted-foreground/70 hover:text-foreground"
       >
         {open ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />}
-        {logEvents.length} 条日志
+        {logEvents.length} log{logEvents.length === 1 ? "" : "s"}
       </button>
       {open && (
         <div className="mt-1 rounded-lg border border-border/50 bg-muted/30 p-2 space-y-0.5 max-h-40 overflow-y-auto">
@@ -137,12 +137,12 @@ function MessageRow({
   const actions = (
     <div className={`flex gap-0.5 ${isUser ? "justify-end pr-1" : ""} opacity-0 group-hover:opacity-100 transition-opacity`}>
       {showActions && msg.content && (
-        <ActionButton onClick={copy} title="复制">
+        <ActionButton onClick={copy} title="Copy">
           {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
         </ActionButton>
       )}
       {canDelete && (
-        <ActionButton onClick={onDelete!} title="删除" danger>
+        <ActionButton onClick={onDelete!} title="Delete" danger>
           <Trash2 className="h-3.5 w-3.5" />
         </ActionButton>
       )}
@@ -180,7 +180,7 @@ function MessageRow({
           ) : msg.streaming && !msg.content ? (
             <span className="flex items-center gap-1.5 text-muted-foreground">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              <span className="text-xs">生成中…</span>
+              <span className="text-xs">Generating…</span>
             </span>
           ) : (
             <MarkdownContent text={msg.content} />
@@ -246,15 +246,15 @@ function ContextTurnsControl({
       <button
         onClick={() => setOpen((p) => !p)}
         className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded border border-transparent hover:border-border transition-colors"
-        title="上下文轮数"
+        title="Context turns"
       >
         <Settings2 className="h-3 w-3" />
-        {value} 轮
+        {value} turns
         {open ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
       </button>
       {open && (
         <div className="absolute right-0 top-full mt-1 z-10 bg-popover border border-border rounded-lg shadow-md p-3 w-44">
-          <Label className="text-xs mb-1.5 block">上下文轮数 (1–50)</Label>
+          <Label className="text-xs mb-1.5 block">Context turns (1–50)</Label>
           <Input
             type="number"
             min={1}
@@ -269,7 +269,7 @@ function ContextTurnsControl({
             autoFocus
           />
           <p className="text-[10px] text-muted-foreground mt-1.5">
-            每轮携带多少组最近对话作为历史。
+            How many recent turns are sent as history with each message.
           </p>
         </div>
       )}
@@ -292,10 +292,10 @@ function CopyLinkButton({ scriptId }: { scriptId: string }) {
     <button
       onClick={copy}
       className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded border border-transparent hover:border-border transition-colors"
-      title="复制独立聊天链接"
+      title="Copy standalone chat link"
     >
       {copied ? <Check className="h-3 w-3 text-green-500" /> : <Link2 className="h-3 w-3" />}
-      {copied ? "已复制" : "复制链接"}
+      {copied ? "Copied" : "Copy link"}
     </button>
   );
 }
@@ -323,7 +323,7 @@ function EmbedHistoryDropdown({
         className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded border border-transparent hover:border-border transition-colors max-w-[140px]"
       >
         <MessageSquare className="h-3 w-3 shrink-0" />
-        <span className="truncate">{active?.title ?? "历史"}</span>
+        <span className="truncate">{active?.title ?? "History"}</span>
         <ChevronDown className="h-3 w-3 shrink-0" />
       </button>
       {open && (
@@ -405,7 +405,7 @@ function ConverseInner() {
         setAllScripts(list);
         if (!scriptId && list.length > 0) setScriptId(list[0].id);
       })
-      .catch(() => toast.error("加载脚本失败"));
+      .catch(() => toast.error("Failed to load scripts"));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -438,7 +438,7 @@ function ConverseInner() {
           setActiveConvId(list[0].id);
         }
       })
-      .catch(() => toast.error("加载会话失败"));
+      .catch(() => toast.error("Failed to load conversations"));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scriptId]);
 
@@ -487,7 +487,7 @@ function ConverseInner() {
           ...(tracesByMsg.has(m.id) ? { traces: tracesByMsg.get(m.id) } : {}),
         })));
       }
-    }).catch(() => toast.error("加载对话失败"));
+    }).catch(() => toast.error("Failed to load conversation"));
   }, [activeConvId]);
 
   // Auto-scroll — only when the user is already near the bottom.
@@ -523,7 +523,7 @@ function ConverseInner() {
       setActiveConvId(conv.id);
       setMessages([]);
     } catch {
-      toast.error("创建会话失败");
+      toast.error("Failed to create conversation");
     }
   }
 
@@ -536,7 +536,7 @@ function ConverseInner() {
         setMessages([]);
       }
     } catch {
-      toast.error("删除会话失败");
+      toast.error("Failed to delete conversation");
     }
   }
 
@@ -616,7 +616,7 @@ function ConverseInner() {
             );
           }).catch(() => {
             setSending(false);
-            toast.error("保存回复失败");
+            toast.error("Failed to save reply");
           });
         }
       }
@@ -624,7 +624,7 @@ function ConverseInner() {
 
     ws.onerror = () => {
       setSending(false);
-      toast.error("WebSocket 连接错误");
+      toast.error("WebSocket connection error");
     };
   }, []);
 
@@ -642,7 +642,7 @@ function ConverseInner() {
         setActiveConvId(conv.id);
         convId = conv.id;
       } catch {
-        toast.error("创建会话失败");
+        toast.error("Failed to create conversation");
         return;
       }
     }
@@ -695,7 +695,7 @@ function ConverseInner() {
       await executionsApi.stop(id);
       // The WS will deliver a `cancelled` status which runs confirm + cleanup.
     } catch {
-      toast.error("停止失败");
+      toast.error("Failed to stop");
     }
   }
 
@@ -712,7 +712,7 @@ function ConverseInner() {
       await convsApi.deleteMessage(activeConvId, msgId);
       setMessages((prev) => prev.filter((m) => m.id !== msgId));
     } catch {
-      toast.error("删除消息失败");
+      toast.error("Failed to delete message");
     }
   }
 
@@ -739,7 +739,7 @@ function ConverseInner() {
         <button
           onClick={scrollToBottom}
           className="absolute bottom-4 left-1/2 -translate-x-1/2 h-8 w-8 rounded-full bg-popover border border-border shadow-md flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
-          title="回到底部"
+          title="Scroll to bottom"
         >
           <ArrowDown className="h-4 w-4" />
         </button>
@@ -762,10 +762,10 @@ function ConverseInner() {
             }}
             placeholder={
               !scriptId
-                ? "请先选择脚本"
+                ? "Select a script first"
                 : !activeConvId
-                ? "发送消息开始对话…"
-                : "输入消息…（Enter 发送，Shift+Enter 换行）"
+                ? "Send a message to start the conversation…"
+                : "Type a message… (Enter to send, Shift+Enter for a new line)"
             }
             className="min-h-[40px] max-h-48 text-sm resize-none border-0 bg-transparent focus-visible:ring-0 px-1 py-1.5 shadow-none"
             disabled={!scriptId || sending}
@@ -776,7 +776,7 @@ function ConverseInner() {
               size="icon"
               variant="secondary"
               className="h-9 w-9 shrink-0 rounded-xl"
-              title="停止生成"
+              title="Stop generating"
             >
               <Square className="h-3.5 w-3.5 fill-current" />
             </Button>
@@ -786,14 +786,14 @@ function ConverseInner() {
               disabled={!input.trim() || !scriptId}
               size="icon"
               className="h-9 w-9 shrink-0 rounded-xl"
-              title="发送"
+              title="Send"
             >
               <Send className="h-4 w-4" />
             </Button>
           )}
         </div>
         <p className="text-[10px] text-muted-foreground/50 text-center mt-1.5">
-          内容由脚本生成，请自行甄别。
+          Content is generated by the script — use your own judgment.
         </p>
       </div>
     </div>
@@ -820,7 +820,7 @@ function ConverseInner() {
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded hover:bg-muted/60 transition-colors disabled:opacity-40"
           >
             <Plus className="h-3.5 w-3.5" />
-            新建
+            New
           </button>
           <ContextTurnsControl value={contextTurns} onChange={updateContextTurns} />
         </header>
@@ -840,14 +840,14 @@ function ConverseInner() {
             <Link href="/">
               <Button variant="ghost" size="sm" className="w-full justify-start gap-2 h-8 text-xs">
                 <ArrowLeft className="h-3.5 w-3.5" />
-                返回首页
+                Back to Home
               </Button>
             </Link>
             <div>
-              <Label className="text-xs text-muted-foreground mb-1 block">脚本</Label>
+              <Label className="text-xs text-muted-foreground mb-1 block">Script</Label>
               <Select value={scriptId} onValueChange={(v) => { setScriptId(v); }}>
                 <SelectTrigger className="h-8 text-xs">
-                  <SelectValue placeholder="选择脚本" />
+                  <SelectValue placeholder="Select a script" />
                 </SelectTrigger>
                 <SelectContent>
                   {allScripts.map((s) => (
@@ -863,14 +863,14 @@ function ConverseInner() {
               disabled={!scriptId}
             >
               <Plus className="h-3.5 w-3.5" />
-              新建对话
+              New conversation
             </Button>
             <div className="relative">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/50" />
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="搜索对话"
+                placeholder="Search conversations"
                 className="h-7 text-xs pl-7"
               />
             </div>
@@ -879,7 +879,7 @@ function ConverseInner() {
           <ScrollArea className="flex-1 p-2">
             {filteredConvs.length === 0 && (
               <p className="text-xs text-muted-foreground text-center py-6">
-                {search.trim() ? "无匹配对话" : "还没有对话"}
+                {search.trim() ? "No matching conversations" : "No conversations yet"}
               </p>
             )}
             {filteredConvs.map((conv) => (
@@ -902,13 +902,13 @@ function ConverseInner() {
             size="icon"
             className="h-7 w-7 shrink-0"
             onClick={() => setSidebarOpen((o) => !o)}
-            title={sidebarOpen ? "收起侧栏" : "展开侧栏"}
+            title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
           >
             {sidebarOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
           </Button>
           <MessageSquare className="h-4 w-4 text-primary shrink-0" />
           <span className="text-sm font-medium truncate">
-            {currentScript?.name ?? "对话"}
+            {currentScript?.name ?? "Chat"}
           </span>
           <div className="ml-auto flex items-center gap-2">
             <ContextTurnsControl value={contextTurns} onChange={updateContextTurns} />
@@ -919,7 +919,7 @@ function ConverseInner() {
                 className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
               >
                 <ExternalLink className="h-3 w-3" />
-                编辑脚本
+                Edit script
               </Link>
             )}
             {activeConvId && (
@@ -930,7 +930,7 @@ function ConverseInner() {
                 onClick={() => deleteConversation(activeConvId)}
               >
                 <Trash2 className="h-3 w-3" />
-                删除
+                Delete
               </Button>
             )}
           </div>
@@ -959,18 +959,18 @@ function EmptyState({
       {hasScript ? (
         <>
           <p className="text-sm mb-1 text-foreground">
-            {scriptName ? `开始与「${scriptName}」对话` : "选择脚本以开始"}
+            {scriptName ? `Start a conversation with "${scriptName}"` : "Select a script to start"}
           </p>
           <p className="text-xs mb-4 max-w-sm">
-            对话会被保存，每轮都会把历史发送给脚本。
+            Conversations are saved; the history is sent to the script with each turn.
           </p>
           <Button size="sm" onClick={onNew} className="gap-1.5">
             <Plus className="h-3.5 w-3.5" />
-            新建对话
+            New conversation
           </Button>
         </>
       ) : (
-        <p className="text-sm">从侧栏选择一个脚本开始。</p>
+        <p className="text-sm">Select a script from the sidebar to get started.</p>
       )}
     </div>
   );

@@ -41,11 +41,11 @@ export default function SecurityPage() {
         </Link>
         <div className="flex items-center gap-2">
           <ShieldCheck className="h-4 w-4 text-primary" />
-          <span className="font-semibold text-sm">安全设置</span>
+          <span className="font-semibold text-sm">Security Settings</span>
         </div>
         <Button variant="ghost" size="sm" className="ml-auto gap-1.5 text-muted-foreground hover:text-destructive" onClick={logout}>
           <LogOut className="h-4 w-4" />
-          退出登录
+          Sign out
         </Button>
       </header>
 
@@ -73,10 +73,10 @@ function AccountCard({ username }: { username: string }) {
     setBusy(true);
     try {
       await auth.changePassword(oldPw, newPw);
-      toast.success("密码已更新");
+      toast.success("Password updated");
       setOldPw(""); setNewPw(""); setConfirm("");
     } catch (err) {
-      toast.error(String(err instanceof Error ? err.message : err) || "更新失败");
+      toast.error(String(err instanceof Error ? err.message : err) || "Update failed");
     } finally {
       setBusy(false);
     }
@@ -86,31 +86,31 @@ function AccountCard({ username }: { username: string }) {
     <section className="rounded-xl border border-border bg-secondary/20 p-6">
       <div className="flex items-center gap-2 mb-1">
         <User className="h-4 w-4 text-primary" />
-        <h2 className="font-medium text-sm">管理员账户</h2>
+        <h2 className="font-medium text-sm">Admin Account</h2>
       </div>
       <p className="text-xs text-muted-foreground mb-4">
-        当前登录：<span className="font-mono text-foreground">{username || "…"}</span>
+        Signed in as: <span className="font-mono text-foreground">{username || "…"}</span>
       </p>
 
       <form onSubmit={save} className="space-y-3 max-w-sm">
         <div className="space-y-1.5">
-          <Label htmlFor="oldpw" className="text-xs">当前密码</Label>
+          <Label htmlFor="oldpw" className="text-xs">Current password</Label>
           <Input id="oldpw" type="password" value={oldPw} onChange={(e) => setOldPw(e.target.value)} autoComplete="current-password" />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="newpw" className="text-xs">新密码（至少 6 位）</Label>
+          <Label htmlFor="newpw" className="text-xs">New password (at least 6 characters)</Label>
           <Input id="newpw" type="password" value={newPw} onChange={(e) => setNewPw(e.target.value)} autoComplete="new-password" />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="cfpw" className="text-xs">确认新密码</Label>
+          <Label htmlFor="cfpw" className="text-xs">Confirm new password</Label>
           <Input id="cfpw" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" />
           {confirm.length > 0 && confirm !== newPw && (
-            <p className="text-[11px] text-destructive">两次密码不一致</p>
+            <p className="text-[11px] text-destructive">Passwords do not match</p>
           )}
         </div>
         <Button type="submit" size="sm" disabled={!valid || busy} className="gap-1.5">
           {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <KeyRound className="h-3.5 w-3.5" />}
-          修改密码
+          Change password
         </Button>
       </form>
     </section>
@@ -146,7 +146,7 @@ function ApiKeysCard() {
       setNewName("");
       setCreateOpen(false);
     } catch (err) {
-      toast.error(String(err instanceof Error ? err.message : err) || "创建失败");
+      toast.error(String(err instanceof Error ? err.message : err) || "Creation failed");
     } finally {
       setCreating(false);
     }
@@ -156,9 +156,9 @@ function ApiKeysCard() {
     try {
       await apiKeysApi.delete(id);
       setKeys((prev) => prev.filter((k) => k.id !== id));
-      toast.success("已吊销");
+      toast.success("Revoked");
     } catch {
-      toast.error("吊销失败");
+      toast.error("Failed to revoke");
     }
   }
 
@@ -177,19 +177,19 @@ function ApiKeysCard() {
         <h2 className="font-medium text-sm">API Keys</h2>
         <Button size="sm" className="ml-auto gap-1.5" onClick={() => setCreateOpen(true)}>
           <Plus className="h-3.5 w-3.5" />
-          签发 Key
+          Issue Key
         </Button>
       </div>
       <p className="text-xs text-muted-foreground mb-4">
-        外部系统调用运行接口时用作鉴权。请求头携带{" "}
+        Used to authenticate external systems calling the run endpoint. Send the header{" "}
         <code className="bg-muted px-1 py-0.5 rounded font-mono">X-API-Key: af_…</code>{" "}
-        访问 <code className="bg-muted px-1 py-0.5 rounded font-mono">POST /api/executions/run</code>。
+        to <code className="bg-muted px-1 py-0.5 rounded font-mono">POST /api/executions/run</code>.
       </p>
 
       {loading ? (
         <div className="py-8 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
       ) : keys.length === 0 ? (
-        <p className="text-xs text-muted-foreground text-center py-8">还没有 API Key</p>
+        <p className="text-xs text-muted-foreground text-center py-8">No API keys yet</p>
       ) : (
         <div className="divide-y divide-border/60 rounded-lg border border-border/60 overflow-hidden">
           {keys.map((k) => (
@@ -197,15 +197,15 @@ function ApiKeysCard() {
               <div className="min-w-0 flex-1">
                 <div className="font-medium truncate">{k.name}</div>
                 <div className="text-[11px] text-muted-foreground font-mono mt-0.5">
-                  {k.prefix}••••••••  ·  建于 {formatDate(k.created_at)}
-                  {k.last_used_at && <>  ·  最近使用 {formatDate(k.last_used_at)}</>}
+                  {k.prefix}••••••••  ·  Created {formatDate(k.created_at)}
+                  {k.last_used_at && <>  ·  Last used {formatDate(k.last_used_at)}</>}
                 </div>
               </div>
               <Button
                 variant="ghost" size="icon"
                 className="h-7 w-7 text-muted-foreground hover:text-destructive shrink-0"
                 onClick={() => revoke(k.id)}
-                title="吊销"
+                title="Revoke"
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </Button>
@@ -218,25 +218,25 @@ function ApiKeysCard() {
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>签发新的 API Key</DialogTitle>
-            <DialogDescription>给 Key 起个名字，便于日后识别用途。</DialogDescription>
+            <DialogTitle>Issue a new API Key</DialogTitle>
+            <DialogDescription>Give the key a name so you can recognize its purpose later.</DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5 py-2">
-            <Label htmlFor="keyname" className="text-xs">名称</Label>
+            <Label htmlFor="keyname" className="text-xs">Name</Label>
             <Input
               id="keyname"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
-              placeholder="例如：生产环境 / n8n 调用"
+              placeholder="e.g. Production / n8n integration"
               autoFocus
               onKeyDown={(e) => { if (e.key === "Enter") create(); }}
             />
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setCreateOpen(false)}>取消</Button>
+            <Button variant="ghost" onClick={() => setCreateOpen(false)}>Cancel</Button>
             <Button onClick={create} disabled={creating} className="gap-1.5">
               {creating && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              签发
+              Issue
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -246,22 +246,22 @@ function ApiKeysCard() {
       <Dialog open={!!created} onOpenChange={(o) => { if (!o) setCreated(null); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>保存你的 API Key</DialogTitle>
+            <DialogTitle>Save your API Key</DialogTitle>
             <DialogDescription className="flex items-start gap-1.5 text-amber-500">
               <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-              这是唯一一次显示完整的 Key，关闭后无法再次查看，请立即复制保存。
+              This is the only time the full key is shown. It can&apos;t be viewed again once closed — copy and save it now.
             </DialogDescription>
           </DialogHeader>
           <div className="flex items-center gap-2 py-2">
             <code className="flex-1 min-w-0 break-all bg-muted rounded-lg px-3 py-2 text-xs font-mono">
               {created?.key}
             </code>
-            <Button size="icon" variant="outline" className="shrink-0" onClick={copyKey} title="复制">
+            <Button size="icon" variant="outline" className="shrink-0" onClick={copyKey} title="Copy">
               {copied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
             </Button>
           </div>
           <DialogFooter>
-            <Button onClick={() => setCreated(null)}>我已保存</Button>
+            <Button onClick={() => setCreated(null)}>I&apos;ve saved it</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

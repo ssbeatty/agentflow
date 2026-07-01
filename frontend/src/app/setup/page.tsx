@@ -27,10 +27,10 @@ export default function SetupPage() {
     setBusy(true);
     try {
       await auth.setup(username, password);
-      toast.success("管理员账户已创建");
+      toast.success("Admin account created");
       router.replace("/");
     } catch (err) {
-      toast.error(String(err instanceof Error ? err.message : err) || "创建失败");
+      toast.error(String(err instanceof Error ? err.message : err) || "Setup failed");
       setBusy(false);
     }
   }
@@ -42,15 +42,15 @@ export default function SetupPage() {
           <div className="h-12 w-12 rounded-2xl bg-primary/15 flex items-center justify-center mb-3">
             <Zap className="h-6 w-6 text-primary" />
           </div>
-          <h1 className="text-xl font-semibold">初始化 AgentFlow</h1>
+          <h1 className="text-xl font-semibold">Initialize AgentFlow</h1>
           <p className="text-sm text-muted-foreground mt-1 text-center">
-            创建管理员账户。此账户用于登录整个管理后台。
+            Create the admin account. It is used to sign in to the entire admin console.
           </p>
         </div>
 
         <form onSubmit={submit} className="rounded-xl border border-border bg-secondary/20 p-6 space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="username" className="text-xs">用户名</Label>
+            <Label htmlFor="username" className="text-xs">Username</Label>
             <Input
               id="username"
               value={username}
@@ -59,35 +59,35 @@ export default function SetupPage() {
               autoComplete="username"
               placeholder="admin"
             />
-            {tooShortUser && <p className="text-[11px] text-destructive">用户名至少 3 个字符</p>}
+            {tooShortUser && <p className="text-[11px] text-destructive">Username must be at least 3 characters</p>}
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="password" className="text-xs">密码</Label>
+            <Label htmlFor="password" className="text-xs">Password</Label>
             <Input
               id="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="new-password"
-              placeholder="至少 6 个字符"
+              placeholder="At least 6 characters"
             />
-            {tooShortPass && <p className="text-[11px] text-destructive">密码至少 6 个字符</p>}
+            {tooShortPass && <p className="text-[11px] text-destructive">Password must be at least 6 characters</p>}
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="confirm" className="text-xs">确认密码</Label>
+            <Label htmlFor="confirm" className="text-xs">Confirm Password</Label>
             <Input
               id="confirm"
               type="password"
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
               autoComplete="new-password"
-              placeholder="再次输入密码"
+              placeholder="Re-enter password"
             />
-            {mismatch && <p className="text-[11px] text-destructive">两次密码不一致</p>}
+            {mismatch && <p className="text-[11px] text-destructive">Passwords do not match</p>}
           </div>
           <Button type="submit" className="w-full gap-2" disabled={!valid || busy}>
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-            创建并登录
+            Create and sign in
           </Button>
         </form>
       </div>

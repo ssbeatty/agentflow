@@ -22,7 +22,7 @@ export default function LoginPage() {
       await auth.login(username, password);
       router.replace("/");
     } catch {
-      toast.error("用户名或密码错误");
+      toast.error("Invalid username or password");
       setBusy(false);
     }
   }
@@ -35,12 +35,12 @@ export default function LoginPage() {
             <Zap className="h-6 w-6 text-primary" />
           </div>
           <h1 className="text-xl font-semibold">AgentFlow</h1>
-          <p className="text-sm text-muted-foreground mt-1">登录管理后台</p>
+          <p className="text-sm text-muted-foreground mt-1">Sign in to the admin console</p>
         </div>
 
         <form onSubmit={submit} className="rounded-xl border border-border bg-secondary/20 p-6 space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="username" className="text-xs">用户名</Label>
+            <Label htmlFor="username" className="text-xs">Username</Label>
             <Input
               id="username"
               value={username}
@@ -51,7 +51,7 @@ export default function LoginPage() {
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="password" className="text-xs">密码</Label>
+            <Label htmlFor="password" className="text-xs">Password</Label>
             <Input
               id="password"
               type="password"
@@ -63,7 +63,7 @@ export default function LoginPage() {
           </div>
           <Button type="submit" className="w-full gap-2" disabled={busy || !username || !password}>
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
-            登录
+            Sign in
           </Button>
         </form>
       </div>

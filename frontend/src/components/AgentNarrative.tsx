@@ -8,7 +8,7 @@ import { buildRows, type TraceRow } from "@/components/FlowPanel";
 import { MarkdownContent } from "@/components/Markdown";
 import { cn } from "@/lib/utils";
 
-// One collapsible "Agent 过程" block under an assistant message. Collapsed by
+// One collapsible "Agent trace" block under an assistant message. Collapsed by
 // default to a single summary line; expanded it shows the readable story of the
 // turn, reconstructed from the trace in chronological order:
 //   * the agent's intermediate text returns → rendered as markdown
@@ -58,9 +58,9 @@ function ToolCallBox({ row }: { row: TraceRow }) {
   const isSkill = row.kind === "skill";
   const a = isSkill
     ? { border: "border-fuchsia-500/25", bg: "bg-fuchsia-500/[0.04]", divider: "border-fuchsia-500/15",
-        icon: "text-fuchsia-400", Icon: BookOpen, label: "技能加载" }
+        icon: "text-fuchsia-400", Icon: BookOpen, label: "Skill load" }
     : { border: "border-emerald-500/25", bg: "bg-emerald-500/[0.04]", divider: "border-emerald-500/15",
-        icon: "text-emerald-400", Icon: Wrench, label: "工具调用" };
+        icon: "text-emerald-400", Icon: Wrench, label: "Tool call" };
   return (
     <div className={cn("rounded-lg border", a.border, a.bg)}>
       <button
@@ -84,9 +84,9 @@ function ToolCallBox({ row }: { row: TraceRow }) {
       </button>
       {open && (
         <div className={cn("px-3 pb-2.5 pt-2 space-y-1.5 border-t", a.divider)}>
-          <DetailBlock label="调用参数" value={row.input} />
-          <DetailBlock label="返回结果" value={row.output} />
-          {row.error && <DetailBlock label="错误" value={row.error} error />}
+          <DetailBlock label="Arguments" value={row.input} />
+          <DetailBlock label="Result" value={row.output} />
+          {row.error && <DetailBlock label="Error" value={row.error} error />}
         </div>
       )}
     </div>
@@ -141,11 +141,11 @@ export default function AgentNarrative({
         {running
           ? <Loader2 className="h-3.5 w-3.5 text-blue-400 animate-spin" />
           : <Sparkles className="h-3.5 w-3.5 text-primary/70" />}
-        <span className="font-medium text-foreground/80">{running ? "正在执行…" : "Agent 过程"}</span>
+        <span className="font-medium text-foreground/80">{running ? "Running…" : "Agent trace"}</span>
         <span className="text-muted-foreground/60">
-          {skillCount > 0 && <> · {skillCount} 个技能</>}
-          {toolCount > 0 && <> · {toolCount} 个工具调用</>}
-          {thinkCount > 0 && <> · {thinkCount} 次思考</>}
+          {skillCount > 0 && <> · {skillCount} skill{skillCount === 1 ? "" : "s"}</>}
+          {toolCount > 0 && <> · {toolCount} tool call{toolCount === 1 ? "" : "s"}</>}
+          {thinkCount > 0 && <> · {thinkCount} thought{thinkCount === 1 ? "" : "s"}</>}
         </span>
         {expanded
           ? <ChevronDown className="h-3.5 w-3.5 ml-auto text-muted-foreground" />

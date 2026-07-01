@@ -11,9 +11,9 @@ import { cn } from "@/lib/utils";
 // Cherry-Studio-style inline timeline of an agent's internal steps.
 //
 // Instead of dumping every tool below the answer, we render one collapsible
-// block placed ABOVE the answer: a summary header (· N 工具 · M 思考) that folds
+// block placed ABOVE the answer: a summary header (· N tools · M thoughts) that folds
 // the whole thing, and a chronological list of cards — LLM turns shown as
-// "深度思考", tool/node calls shown by name with a status + duration. Each card
+// "Deep thinking", tool/node calls shown by name with a status + duration. Each card
 // expands to its input/output. Order comes from buildRows() (same start/end
 // folding the Flow tab uses), so it reads top-to-bottom as it happened.
 
@@ -40,11 +40,11 @@ function durationLabel(ms?: number | null): string {
 
 function titleFor(row: TraceRow): string {
   if (row.kind === "llm") {
-    if (row.isOpen) return "思考中…";
+    if (row.isOpen) return "Thinking…";
     const d = durationLabel(row.durationMs);
-    return d ? `深度思考 · 用时 ${d}` : "深度思考";
+    return d ? `Deep thinking · ${d}` : "Deep thinking";
   }
-  if (row.kind === "agent_finish") return row.name || "完成";
+  if (row.kind === "agent_finish") return row.name || "Done";
   return row.name;
 }
 
@@ -84,8 +84,8 @@ function Row({ row }: { row: TraceRow }) {
           : <span className="w-3 shrink-0" />}
         <Icon className={cn("h-3.5 w-3.5 shrink-0", color)} />
         <span className="truncate font-medium text-foreground/90">{titleFor(row)}</span>
-        {isTool && <span className="text-[10px] text-muted-foreground/50 shrink-0">工具</span>}
-        {row.kind === "node" && <span className="text-[10px] text-muted-foreground/50 shrink-0">节点</span>}
+        {isTool && <span className="text-[10px] text-muted-foreground/50 shrink-0">Tool</span>}
+        {row.kind === "node" && <span className="text-[10px] text-muted-foreground/50 shrink-0">Node</span>}
 
         <span className="ml-auto flex items-center gap-1.5 shrink-0">
           {row.durationMs != null && row.kind !== "llm" && (
@@ -94,7 +94,7 @@ function Row({ row }: { row: TraceRow }) {
           {row.isOpen
             ? <Loader2 className="h-3 w-3 text-blue-400 animate-spin" />
             : row.error
-              ? <span className="flex items-center gap-0.5 text-destructive text-[10px]"><AlertCircle className="h-3 w-3" />失败</span>
+              ? <span className="flex items-center gap-0.5 text-destructive text-[10px]"><AlertCircle className="h-3 w-3" />Failed</span>
               : <Check className="h-3 w-3 text-emerald-500/80" />}
         </span>
       </button>
@@ -128,10 +128,10 @@ export default function AgentTraceInline({ traces }: { traces: TraceEvent[] }) {
         {running
           ? <Loader2 className="h-3.5 w-3.5 text-blue-400 animate-spin" />
           : <Sparkles className="h-3.5 w-3.5 text-primary/70" />}
-        <span className="font-medium text-foreground/80">{running ? "正在思考…" : "Agent 过程"}</span>
+        <span className="font-medium text-foreground/80">{running ? "Thinking…" : "Agent trace"}</span>
         <span className="text-muted-foreground/60">
-          {toolCount > 0 && <> · {toolCount} 个工具调用</>}
-          {thinkCount > 0 && <> · {thinkCount} 次思考</>}
+          {toolCount > 0 && <> · {toolCount} tool call{toolCount === 1 ? "" : "s"}</>}
+          {thinkCount > 0 && <> · {thinkCount} thought{thinkCount === 1 ? "" : "s"}</>}
         </span>
         {collapsed
           ? <ChevronRight className="h-3.5 w-3.5 ml-auto text-muted-foreground" />

@@ -674,7 +674,7 @@ function ScriptPage() {
                 {/* Execution retention */}
                 <div className="space-y-1.5">
                   <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/70 flex items-center gap-1.5">
-                    <History className="h-3 w-3" />保留执行记录数
+                    <History className="h-3 w-3" />Kept Executions
                   </p>
                   <div className="relative">
                     <Input
@@ -692,7 +692,7 @@ function ScriptPage() {
                     />
                   </div>
                   <p className="text-[10px] text-muted-foreground/70 leading-snug">
-                    每次运行后自动删除超出数量的旧记录(按时间,最旧的先删)。0 = 不限。
+                    Oldest records beyond this count are auto-deleted after each run. 0 = unlimited.
                   </p>
                 </div>
 
@@ -1111,7 +1111,7 @@ function RunsTab({
     setConfirmClear(false);
     try {
       const r = await executions.clear(scriptId);
-      toast.success(`已清空 ${r.deleted} 条记录`);
+      toast.success(`Cleared ${r.deleted} records`);
       reload();
     } catch (e) { toast.error(String(e)); }
   }
@@ -1164,20 +1164,20 @@ function RunsTab({
       <div className="p-3 space-y-1">
         {items.length > 0 && (
           <div className="flex items-center justify-between pb-1">
-            <span className="text-[10px] text-muted-foreground/70 tabular-nums">{items.length} 条记录</span>
+            <span className="text-[10px] text-muted-foreground/70 tabular-nums">{items.length} records</span>
             {confirmClear ? (
               <span className="flex items-center gap-1 text-[10px]">
-                <span className="text-muted-foreground">清空全部?</span>
-                <button onClick={clearAll} className="text-destructive hover:underline">确认</button>
-                <button onClick={() => setConfirmClear(false)} className="text-muted-foreground hover:underline">取消</button>
+                <span className="text-muted-foreground">Clear all?</span>
+                <button onClick={clearAll} className="text-destructive hover:underline">Confirm</button>
+                <button onClick={() => setConfirmClear(false)} className="text-muted-foreground hover:underline">Cancel</button>
               </span>
             ) : (
               <button
                 onClick={() => setConfirmClear(true)}
                 className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-destructive transition-colors"
-                title="删除全部已结束的执行记录"
+                title="Delete all finished execution records"
               >
-                <Trash2 className="h-3 w-3" />清空
+                <Trash2 className="h-3 w-3" />Clear
               </button>
             )}
           </div>
@@ -1201,15 +1201,15 @@ function RunsTab({
               </button>
               {confirmDelId === e.id ? (
                 <span className="flex items-center gap-1 shrink-0">
-                  <button onClick={() => delOne(e.id)} className="text-destructive" title="确认删除"><Check className="h-3 w-3" /></button>
-                  <button onClick={() => setConfirmDelId(null)} className="text-muted-foreground" title="取消"><XCircle className="h-3 w-3" /></button>
+                  <button onClick={() => delOne(e.id)} className="text-destructive" title="Confirm delete"><Check className="h-3 w-3" /></button>
+                  <button onClick={() => setConfirmDelId(null)} className="text-muted-foreground" title="Cancel"><XCircle className="h-3 w-3" /></button>
                 </span>
               ) : (
                 !inFlight && (
                   <button
                     onClick={() => setConfirmDelId(e.id)}
                     className="shrink-0 text-muted-foreground/50 hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-                    title="删除这条记录"
+                    title="Delete this record"
                   >
                     <Trash2 className="h-3 w-3" />
                   </button>

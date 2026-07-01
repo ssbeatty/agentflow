@@ -60,7 +60,7 @@ export default function Dashboard() {
             </Button>
           </Link>
           <Link href="/security">
-            <Button variant="ghost" size="icon" title="安全设置 / API Keys">
+            <Button variant="ghost" size="icon" title="Security / API Keys">
               <ShieldCheck className="h-4 w-4" />
             </Button>
           </Link>

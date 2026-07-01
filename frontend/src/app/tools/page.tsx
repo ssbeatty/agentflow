@@ -406,7 +406,7 @@ def run(input: dict) -> dict:
           <div className="flex items-center gap-2">
             <Button size="sm" variant="outline" onClick={() => setMarketplaceOpen(true)}>
               <Store className="h-4 w-4" />
-              浏览市场
+              Browse Marketplace
             </Button>
             <Button size="sm" onClick={() => { setSkillForm({ name: "", description: "" }); setSkillDialogOpen(true); }}>
               <Plus className="h-4 w-4" />
