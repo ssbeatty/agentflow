@@ -18,7 +18,7 @@ from app.database import engine, Base, SessionLocal
 from app.auth_deps import require_admin
 from app.routers import (
     scripts, executions, llm_configs, cron_jobs, ws, mcp_servers,
-    conversations, files, channels, auth, api_keys, secrets, skills,
+    conversations, files, channels, auth, api_keys, secrets, skills, marketplace,
 )
 from services.scheduler import scheduler_service
 
@@ -57,6 +57,18 @@ async def lifespan(app: FastAPI):
             print(f"[agentflow] migrated {n} LLM channel(s) from legacy configs")
     except Exception as exc:  # never let migration block startup
         print(f"[agentflow] LLM channel migration skipped: {exc}")
+    finally:
+        db.close()
+
+    # Move any DB-stored skills onto disk + rebind script.skill_ids (idempotent).
+    db = SessionLocal()
+    try:
+        from services.skill_migrate import migrate_skills_to_disk
+        n = migrate_skills_to_disk(db)
+        if n:
+            print(f"[agentflow] migrated {n} skill(s) from DB to disk")
+    except Exception as exc:  # never let migration block startup
+        print(f"[agentflow] skill disk migration skipped: {exc}")
     finally:
         db.close()
     scheduler_service.start()
@@ -101,6 +113,7 @@ app.include_router(conversations.router,  prefix="/api/conversations",  tags=["c
 app.include_router(files.router,          prefix="/api/files",          tags=["files"],          dependencies=_admin)
 app.include_router(secrets.router,        prefix="/api/secrets",        tags=["secrets"],        dependencies=_admin)
 app.include_router(skills.router,         prefix="/api/skills",         tags=["skills"],         dependencies=_admin)
+app.include_router(marketplace.router,     prefix="/api/marketplace",     tags=["marketplace"],     dependencies=_admin)
 
 @app.get("/health")
 def health():

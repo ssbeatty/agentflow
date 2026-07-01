@@ -13,6 +13,7 @@ import asyncio
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -292,6 +293,22 @@ async def start_execution(execution_id: str) -> None:
         workspace_dir = script_dir / "workspace"
         workspace_dir.mkdir(parents=True, exist_ok=True)
 
+        # Mirror the user's own files into the run dir (which is the cwd), so the
+        # intuitive `open("data.txt")` works: the file tree the user sees in the
+        # editor is materialized right next to their running code. run_dir is
+        # per-execution, so every run gets a clean isolated copy and anything the
+        # script writes stays out of the source tree (script_dir). The runtime
+        # files written afterwards (_runner.py / _input.json / skills/) win on any
+        # name clash. (Files are also written to script_dir above for imports /
+        # venv / persistence; this is the read-from-cwd copy.)
+        for f in script.files:
+            try:
+                dest = script_file_path(run_dir, f.filename)
+            except ValueError:
+                continue  # skip names that would escape the run dir
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(f.content, encoding="utf-8")
+
         # ── resolve {"$file": "<id>"} refs in input_data before persisting ────
         try:
             resolved_input = _resolve_file_refs(exc_row.input_data or {}, db)
@@ -307,7 +324,7 @@ async def start_execution(execution_id: str) -> None:
         # enabled channels serve the same model, the highest-priority one wins
         # (ties → earliest created). The default model (get_llm() with no name)
         # is whichever channel was flagged is_default.
-        from app.models import Channel, MCPServerConfig, Secret, Skill
+        from app.models import Channel, MCPServerConfig, Secret
         import re
         def _norm(name: str) -> str:
             return re.sub(r"[^A-Z0-9]+", "_", (name or "").upper()).strip("_") or "UNNAMED"
@@ -358,42 +375,35 @@ async def start_execution(execution_id: str) -> None:
         llm_envs["AGENTFLOW_MCP_CONFIGS"] = json.dumps(mcp_configs)
 
         # ── materialize bound skills + build the skill manifest ───────────────
-        # Each enabled skill the script opts into (script.skill_ids) is written to
-        # run_dir/skills/<safe-name>/ and advertised to the agent via
-        # AGENTFLOW_SKILLS (name+description+dir). get_agent() folds the manifest
-        # into the system prompt; the agent reads a skill's SKILL.md on demand
-        # through the built-in read_skill tool (Agent Skills progressive disclosure).
-        from services.script_files import normalize_script_filename
+        # Skills live on disk at backend/data/skills/<dir>/ (services/skill_store).
+        # Each enabled skill the script opts into (script.skill_ids holds the skill
+        # *directory names*) is copied into run_dir/skills/<safe-name>/ and advertised
+        # to the agent via AGENTFLOW_SKILLS (name+description+dir). get_agent() folds
+        # the manifest into the system prompt and reads a skill's SKILL.md on demand
+        # via read_skill; get_deep_agent() browses the copied files directly. We copy
+        # (rather than point at the canonical folder) so both agent modes see skills
+        # under run_dir and the agent can't mutate the stored skill.
+        from services import skill_store
         skill_ids: list[str] = script.skill_ids or []
         skills_root = run_dir / "skills"
         skill_manifest: list[dict] = []
-        if skill_ids:
-            for sk in db.query(Skill).filter(
-                Skill.id.in_(skill_ids),
-                Skill.enabled == True,  # noqa: E712
-            ).all():
-                safe = _safe_skill_dirname(sk.name)
-                sk_dir = skills_root / safe
-                sk_dir.mkdir(parents=True, exist_ok=True)
-                main_name = "SKILL.md"
-                for sf in sk.files:
-                    try:
-                        rel = normalize_script_filename(sf.filename)
-                    except ValueError:
-                        continue
-                    target = (sk_dir / rel).resolve()
-                    if sk_dir.resolve() not in target.parents and target != sk_dir.resolve():
-                        continue
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    target.write_text(sf.content or "", encoding="utf-8")
-                    if sf.is_main:
-                        main_name = rel
-                skill_manifest.append({
-                    "name": sk.name,
-                    "description": sk.description or "",
-                    "dir": str(sk_dir),
-                    "main": main_name,
-                })
+        for dir_name in skill_ids:
+            entry = skill_store.manifest_entry(dir_name)
+            if not entry:
+                continue  # unknown / disabled skill — skip silently
+            safe = _safe_skill_dirname(dir_name)
+            sk_dir = skills_root / safe
+            shutil.copytree(
+                entry["dir"], sk_dir,
+                ignore=shutil.ignore_patterns(skill_store.SIDECAR, ".git", "__pycache__"),
+                dirs_exist_ok=True,
+            )
+            skill_manifest.append({
+                "name": entry["name"],
+                "description": entry["description"],
+                "dir": str(sk_dir),
+                "main": entry["main"],
+            })
         llm_envs["AGENTFLOW_SKILLS"] = json.dumps(skill_manifest)
 
         # ── build externally-managed secret env vars ──────────────────────────

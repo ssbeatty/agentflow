@@ -52,6 +52,7 @@ function SkillPage() {
   const [enabled, setEnabled] = useState(true);
 
   const [skillFiles, setSkillFiles] = useState<SkillFile[]>([]);
+  const [dirs, setDirs] = useState<string[]>([]);
   const [fileContents, setFileContents] = useState<Map<string, string>>(new Map());
   const [dirtyFiles, setDirtyFiles] = useState<Set<string>>(new Set());
   const [metaDirty, setMetaDirty] = useState(false);
@@ -75,6 +76,7 @@ function SkillPage() {
         setDescription(s.description);
         setEnabled(s.enabled);
         setSkillFiles(s.files);
+        setDirs(s.dirs ?? []);
         setFileContents(new Map(s.files.map(f => [f.filename, f.content])));
         const main = s.files.find(f => f.is_main)?.filename ?? s.files[0]?.filename ?? MAIN_FILE;
         setActiveFile(main);
@@ -103,6 +105,11 @@ function SkillPage() {
     }]);
     setFileContents(prev => new Map(prev).set(filename, content));
     setActiveFile(filename);
+  }
+
+  async function handleNewFolder(path: string) {
+    await skills.createDir(id, path);
+    setDirs(prev => Array.from(new Set([...prev, path])));
   }
 
   async function handleDeleteFile(filename: string) {
@@ -176,9 +183,8 @@ function SkillPage() {
     if (!name.trim()) return toast.error("Name is required");
     setSaving(true);
     try {
-      if (metaDirty) {
-        await skills.update(id, { name: name.trim(), description, enabled });
-      }
+      // Write file edits first, then apply name/description — the latter rewrites
+      // SKILL.md frontmatter, so it must win over a stale in-editor SKILL.md body.
       const isMain = (fn: string) => skillFiles.find(f => f.filename === fn)?.is_main ?? false;
       for (const fn of dirtyFiles) {
         await skills.upsertFile(id, {
@@ -186,6 +192,15 @@ function SkillPage() {
           content: fileContents.get(fn) ?? "",
           is_main: isMain(fn),
         });
+      }
+      if (metaDirty) {
+        const updated = await skills.update(id, { name: name.trim(), description, enabled });
+        // Re-sync the (frontmatter-rewritten) SKILL.md into the editor.
+        const mainFile = updated.files.find(f => f.is_main);
+        if (mainFile) {
+          setFileContents(prev => new Map(prev).set(mainFile.filename, mainFile.content));
+          setSkillFiles(prev => prev.map(f => f.filename === mainFile.filename ? { ...f, content: mainFile.content } : f));
+        }
       }
       setDirtyFiles(new Set());
       setMetaDirty(false);
@@ -284,6 +299,8 @@ function SkillPage() {
               onUploadFiles={handleUploadFiles}
               onDownloadFile={handleDownloadFile}
               showRequirements={false}
+              emptyDirs={dirs}
+              onNewFolder={handleNewFolder}
             />
           </div>
         </div>

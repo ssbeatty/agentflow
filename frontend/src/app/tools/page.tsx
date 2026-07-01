@@ -5,11 +5,12 @@ import { useRouter } from "next/navigation";
 import {
   ArrowLeft, Plus, Trash2, ToggleLeft, ToggleRight, Globe, Terminal, Radio,
   Activity, Plug, Unplug, Loader2, ShieldCheck, ShieldAlert, XCircle,
-  Sparkles, Pencil,
+  Sparkles, Pencil, Store,
 } from "lucide-react";
 import { toast } from "sonner";
 import { mcpServers, skills } from "@/lib/api";
 import type { MCPServerConfig, MCPProbeResult, SkillSummary } from "@/lib/types";
+import SkillMarketplaceDialog from "@/components/SkillMarketplaceDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -73,6 +74,7 @@ export default function ToolsPage() {
   const [skillDialogOpen, setSkillDialogOpen] = useState(false);
   const [skillForm, setSkillForm] = useState({ name: "", description: "" });
   const [creatingSkill, setCreatingSkill] = useState(false);
+  const [marketplaceOpen, setMarketplaceOpen] = useState(false);
 
   useEffect(() => { load(); loadSkills(); }, []);
 
@@ -401,10 +403,16 @@ def run(input: dict) -> dict:
               Bind them per script; <code className="font-mono bg-muted px-1 rounded">get_agent()</code> exposes them via a <code className="font-mono bg-muted px-1 rounded">read_skill</code> tool.
             </p>
           </div>
-          <Button size="sm" onClick={() => { setSkillForm({ name: "", description: "" }); setSkillDialogOpen(true); }}>
-            <Plus className="h-4 w-4" />
-            New skill
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => setMarketplaceOpen(true)}>
+              <Store className="h-4 w-4" />
+              浏览市场
+            </Button>
+            <Button size="sm" onClick={() => { setSkillForm({ name: "", description: "" }); setSkillDialogOpen(true); }}>
+              <Plus className="h-4 w-4" />
+              New skill
+            </Button>
+          </div>
         </div>
 
         <div className="space-y-3">
@@ -469,6 +477,13 @@ async def run(input: dict) -> dict:
           </div>
         )}
       </main>
+
+      {/* Skill marketplace */}
+      <SkillMarketplaceDialog
+        open={marketplaceOpen}
+        onOpenChange={setMarketplaceOpen}
+        onInstalled={loadSkills}
+      />
 
       {/* Add / Edit dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

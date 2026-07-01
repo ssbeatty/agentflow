@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback } from "react";
 import {
   FileCode2, FileText, File, Package, Braces, Terminal,
   Folder, FolderOpen, ChevronRight, ChevronDown,
@@ -26,6 +26,11 @@ interface Props {
   onDownloadFile: (filename: string) => void;
   /** Pin a requirements.txt row at the bottom (scripts). Off for skills. */
   showRequirements?: boolean;
+  /** Directories that exist on their own (incl. empty ones) — shown in the tree. */
+  emptyDirs?: string[];
+  /** Persist a real (possibly empty) folder. When provided, "New folder" creates
+   *  the folder immediately instead of chaining into naming its first file. */
+  onNewFolder?: (path: string) => Promise<void>;
 }
 
 const REQ = "requirements.txt";
@@ -41,7 +46,7 @@ type FileNode = { kind: "file"; name: string; path: string; file: TreeFile };
 type DirNode = { kind: "dir"; name: string; path: string; children: TreeNode[] };
 type TreeNode = FileNode | DirNode;
 
-function buildTree(files: TreeFile[]): TreeNode[] {
+function buildTree(files: TreeFile[], extraDirs: string[] = []): TreeNode[] {
   const root: DirNode = { kind: "dir", name: "", path: "", children: [] };
   const dirs = new Map<string, DirNode>([["", root]]);
 
@@ -58,6 +63,7 @@ function buildTree(files: TreeFile[]): TreeNode[] {
     return dir;
   }
 
+  for (const d of extraDirs) if (d) ensureDir(d);
   for (const f of files) {
     const parts = f.filename.split("/");
     const base = parts.pop() as string;
@@ -131,6 +137,7 @@ async function walkDirEntry(dirEntry: any, base: string, out: Entry[]) {
 export default function FileTree({
   files, activeFile, onSelect, onNewFile, onDeleteFile, onRenameFile,
   onUploadFiles, onDownloadFile, showRequirements = true,
+  emptyDirs = [], onNewFolder,
 }: Props) {
   const [renamingFile, setRenamingFile] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -149,26 +156,24 @@ export default function FileTree({
   const newFileInputRef = useRef<HTMLInputElement>(null);
   const newFolderInputRef = useRef<HTMLInputElement>(null);
 
-  // Close context menu on outside click
-  useEffect(() => {
-    if (!contextMenu) return;
-    const close = () => setContextMenu(null);
-    window.addEventListener("click", close, true);
-    window.addEventListener("contextmenu", close, true);
-    return () => {
-      window.removeEventListener("click", close, true);
-      window.removeEventListener("contextmenu", close, true);
-    };
-  }, [!!contextMenu]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The context menu is dismissed by a full-screen backdrop rendered below it
+  // (see the JSX). A previous window-level capture-phase "click" listener raced
+  // with the menu buttons' own onClick and swallowed them — the backdrop avoids
+  // that entirely because the menu panel sits above it and receives clicks first.
 
   const showReq = showRequirements;
-  const tree = buildTree(files.filter(f => f.filename !== REQ));
+  const tree = buildTree(files.filter(f => f.filename !== REQ), emptyDirs);
   const reqEntry: TreeFile | null = showReq
     ? (files.find(f => f.filename === REQ) ?? { filename: REQ, is_main: false, isDirty: false })
     : null;
 
-  // Directory paths that actually exist (a dir exists only if it holds a file).
+  // Directory paths that actually exist (from files, plus standalone/empty dirs).
   const dirPaths = new Set<string>();
+  for (const d of emptyDirs) {
+    const parts = d.split("/");
+    let acc = "";
+    for (const p of parts) { acc = acc ? `${acc}/${p}` : p; dirPaths.add(acc); }
+  }
   for (const f of files) {
     const parts = f.filename.split("/"); parts.pop();
     let acc = "";
@@ -228,8 +233,9 @@ export default function FileTree({
     setNewFileName("");
   }
 
-  /* ── New folder — folders exist only via files, so this chains into creating
-        the folder's first file (an empty folder can't be persisted). ── */
+  /* ── New folder. When onNewFolder is wired (skills, disk-backed) the folder is
+        persisted immediately (empty folders are fine on disk). Otherwise (scripts,
+        where a dir exists only via a file) we chain into naming its first file. ── */
   function startAddFolder(dirPath: string = "") {
     setAddingIn(null);
     setAddingFolderIn(dirPath);
@@ -239,14 +245,20 @@ export default function FileTree({
     setTimeout(() => newFolderInputRef.current?.focus(), 0);
   }
 
-  function commitNewFolder() {
+  async function commitNewFolder() {
     const name = newFolderName.trim().replace(/^\/+|\/+$/g, "");
     const parent = addingFolderIn;
     setAddingFolderIn(null);
     setNewFolderName("");
     if (!name) return;
     const folder = parent ? `${parent}/${name}` : name;
-    startAddNew(folder); // now name the first file inside it
+    if (onNewFolder) {
+      try { await onNewFolder(folder); }
+      catch (e) { toast.error(String(e)); return; }
+      setCollapsed(prev => { const s = new Set(prev); s.delete(folder); return s; });
+    } else {
+      startAddNew(folder); // no persistence → name the first file inside it
+    }
   }
 
   /* ── Upload: individual files (basename) ── */
@@ -561,6 +573,16 @@ export default function FileTree({
             Drop files or a folder to upload
           </div>
         </div>
+      )}
+
+      {/* Backdrop: dismisses the context menu on any outside click / right-click.
+          Sits at z-40, below the menu panels (z-50), so menu buttons get the click. */}
+      {contextMenu && (
+        <div
+          className="fixed inset-0 z-40"
+          onClick={() => setContextMenu(null)}
+          onContextMenu={e => { e.preventDefault(); setContextMenu(null); }}
+        />
       )}
 
       {/* Context menus */}

@@ -372,6 +372,7 @@ class SkillSummary(BaseModel):
 
 class SkillDetail(SkillSummary):
     files: list[SkillFileOut] = []
+    dirs: list[str] = []   # all sub-directories (incl. empty ones) so the tree shows them
 
 
 # ── Secret (externally-managed credentials for user scripts) ───────────────────

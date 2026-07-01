@@ -12,6 +12,7 @@ import type {
   AuthStatus, AuthResult, ApiKey, ApiKeyCreated,
   Secret,
   Skill, SkillSummary, SkillFile,
+  MarketplaceSkill, RegistrySkill,
 } from "./types";
 
 const BASE = "/api";
@@ -263,6 +264,52 @@ export const skills = {
 
   deleteFile: (id: string, filename: string) =>
     req<void>(`/skills/${id}/files/${encodeURIComponent(filename)}`, { method: "DELETE" }),
+
+  createDir: (id: string, path: string) =>
+    req<{ ok: boolean; path: string }>(`/skills/${id}/dirs`, {
+      method: "POST", body: JSON.stringify({ path }),
+    }),
+};
+
+// ── Skill marketplace (browse official repo + community registry, install) ──────
+
+export const marketplace = {
+  sources: () =>
+    req<{
+      official: { owner: string; repo: string; has_token: boolean };
+      registries: { provider: string; has_key: boolean }[];
+    }>("/marketplace/sources"),
+
+  official: (refresh = false) =>
+    req<{ skills: MarketplaceSkill[]; has_token: boolean }>(
+      `/marketplace/official${refresh ? "?refresh=true" : ""}`,
+    ),
+
+  // provider: "skillsmp" (anon-friendly) | "skillssh" (needs SKILLS_SH_TOKEN)
+  search: (q: string, provider = "skillsmp", page = 1, sort = "stars") =>
+    req<{
+      provider?: string;
+      skills: RegistrySkill[];
+      pagination: { page?: number; total?: number; totalPages?: number };
+      rate_remaining: number | null;
+      has_key: boolean;
+      auth_required?: boolean;
+    }>(`/marketplace/registry/search?q=${encodeURIComponent(q)}&provider=${provider}&page=${page}&sort=${sort}`),
+
+  install: (body: {
+    owner?: string; repo?: string; ref?: string | null;
+    subpath?: string; githubUrl?: string; refresh?: boolean;
+  }) =>
+    req<{
+      installed?: boolean;
+      already_installed?: boolean;
+      skill?: SkillSummary;
+      needs_choice?: boolean;
+      owner?: string;
+      repo?: string;
+      ref?: string | null;
+      skills?: MarketplaceSkill[];
+    }>("/marketplace/install", { method: "POST", body: JSON.stringify(body) }),
 };
 
 // ── Conversations ──────────────────────────────────────────────────────────────

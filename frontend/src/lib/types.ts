@@ -157,6 +157,34 @@ export interface SkillSummary {
 
 export interface Skill extends SkillSummary {
   files: SkillFile[];
+  /** all sub-directories (incl. empty ones), so the file tree can show them */
+  dirs?: string[];
+}
+
+// ── Skill marketplace ─────────────────────────────────────────────────────────
+
+/** A skill offered by the official GitHub repo (browse → install). */
+export interface MarketplaceSkill {
+  name: string;
+  description: string;
+  path: string;      // subpath within the repo to install
+  files: number;
+  owner?: string;
+  repo?: string;
+  upstream?: string;
+  installed?: boolean;
+}
+
+/** A skill returned by the SkillsMP community registry search. */
+export interface RegistrySkill {
+  id: string | number;
+  name: string;
+  author: string;
+  description: string;
+  githubUrl: string;
+  skillUrl: string;
+  stars: number;
+  updatedAt: string;
 }
 
 export interface MCPToolInfo {
