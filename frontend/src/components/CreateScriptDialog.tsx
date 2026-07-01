@@ -47,7 +47,10 @@ def run(input: dict) -> dict:
     message = input.get("message", "")
     history = input.get("history", [])
 
-    agent = get_agent(system_prompt="You are a helpful assistant.")
+    agent = get_agent(
+        system_prompt="You are a helpful assistant.",
+        reasoning=input.get("reasoning"),   # conversation "Think" level (off/low/medium/high)
+    )
 
     messages = [
         ("human" if m["role"] == "user" else "ai", m["content"])
@@ -62,19 +65,23 @@ def run(input: dict) -> dict:
   {
     id: "streaming-chat",
     label: "Streaming Chat",
-    description: "Direct LLM, token-by-token typewriter output",
+    description: "Streaming LLM, typewriter output, reasoning-aware",
     icon: <Type className="h-4 w-4" />,
     entryFunction: "run",
     mainPy:
-`"""Streaming chat — direct LLM, no tools, typewriter output for /converse.
+`"""Streaming chat - direct LLM, typewriter output, with reasoning support.
 
-token() pushes each chunk to the Chat page in real time. Use this over
-Simple Chat when you want the reply to stream and don't need tools/agent."""
+token() streams each chunk to the Chat page in real time. The conversation's
+"Think" level arrives as input["reasoning"] (off/low/medium/high) and is passed
+to get_llm so the model reasons. Reasoning that comes back separately in
+additional_kwargs["reasoning_content"] (e.g. DeepSeek official) is re-emitted as
+<think>...</think> so the UI shows a collapsible "thought process"; it is kept
+out of the returned reply. Use this over Simple Chat when you want streaming."""
 from agentflow import token, get_llm
 
 
 async def run(input: dict) -> dict:
-    llm = get_llm()
+    llm = get_llm(reasoning=input.get("reasoning"))
     history = input.get("history", [])
 
     messages = (
@@ -84,10 +91,25 @@ async def run(input: dict) -> dict:
     )
 
     full_reply = ""
+    in_think = False
     async for chunk in llm.astream(messages):
+        # Reasoning models may stream chain-of-thought separately; wrap it in
+        # <think> for the UI, and keep it OUT of full_reply so it isn't persisted
+        # or fed back into history.
+        rc = (getattr(chunk, "additional_kwargs", None) or {}).get("reasoning_content")
+        if rc:
+            if not in_think:
+                token("<think>")
+                in_think = True
+            token(rc)
         if chunk.content:
-            token(chunk.content)   # streams to /converse in real time
+            if in_think:
+                token("</think>")
+                in_think = False
+            token(chunk.content)
             full_reply += chunk.content
+    if in_think:
+        token("</think>")
 
     return {"reply": full_reply}
 `,
@@ -173,7 +195,7 @@ async def run(input: dict) -> dict:
         token("No default LLM configured. Add one in Settings first.")
         return {"reply": "No default LLM configured."}
 
-    agent = get_agent(system_prompt=SYSTEM_PROMPT, tools=TOOLS)
+    agent = get_agent(system_prompt=SYSTEM_PROMPT, tools=TOOLS, reasoning=input.get("reasoning"))
 
     # /converse passes prior turns in input.history.
     msgs = []

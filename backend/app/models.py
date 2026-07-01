@@ -262,6 +262,10 @@ class Conversation(Base):
     script_id = Column(String, ForeignKey("scripts.id", ondelete="CASCADE"), nullable=False)
     title = Column(String(500), default="New conversation")
     context_turns = Column(Integer, default=10)
+    # Per-conversation reasoning/think level: off | low | medium | high. Threaded
+    # into each run's input as input["reasoning"] and mapped to the model's
+    # provider-specific thinking knob by agentflow.get_llm(reasoning=...).
+    reasoning_effort = Column(String(16), default="off", server_default="off")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

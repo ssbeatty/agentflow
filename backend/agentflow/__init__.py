@@ -413,7 +413,64 @@ def mermaid(diagram: str, *, title: str | None = None) -> None:
     _emit({"type": "artifact", "kind": "mermaid", "code": str(diagram), "title": title})
 
 
-def get_llm(name: str = "default"):
+_REASONING_BUDGET = {"low": 1024, "medium": 4096, "high": 12000}
+
+
+def _norm_reasoning(level) -> "str | None":
+    """Normalise a reasoning/think request to None | 'low' | 'medium' | 'high'.
+
+    Accepts a level string, a bool (True → 'medium'), or falsy/off values → None.
+    """
+    if level is None or level is False:
+        return None
+    if level is True:
+        return "medium"
+    s = str(level).strip().lower()
+    if s in ("", "off", "none", "no", "false", "0", "disabled"):
+        return None
+    if s in ("low", "medium", "high"):
+        return s
+    if s in ("min", "minimal"):
+        return "low"
+    if s in ("max", "maximum"):
+        return "high"
+    return "medium"
+
+
+def _apply_reasoning(extra: dict, provider: str, base_url: "str | None", level: str) -> None:
+    """Translate one shared low/medium/high level into the provider-specific
+    'think' knob (each vendor exposes reasoning differently):
+
+      - anthropic  → thinking={'type':'enabled','budget_tokens': …}
+                     (Claude also needs temperature=1 and max_tokens > budget)
+      - openai o-series / gpt-5 (no base_url) → reasoning_effort=<level>
+      - OpenAI-compatible gateway (base_url set) → extra_body={'enable_thinking': True}
+                     (Qwen3 / GLM / vLLM style — a boolean toggle, so the level only
+                     gates on/off here; tune per-gateway if it supports a budget)
+      - deepseek   → nothing (deepseek-reasoner reasons natively; the text comes
+                     back in additional_kwargs['reasoning_content'])
+      - ollama     → reasoning=True
+    """
+    if provider == "anthropic":
+        budget = _REASONING_BUDGET[level]
+        extra["thinking"] = {"type": "enabled", "budget_tokens": budget}
+        extra["temperature"] = 1
+        if not extra.get("max_tokens") or extra["max_tokens"] <= budget:
+            extra["max_tokens"] = budget + 4096
+    elif provider == "deepseek":
+        return
+    elif provider == "ollama":
+        extra.setdefault("reasoning", True)
+    else:  # openai + OpenAI-compatible gateways
+        if base_url:
+            eb = dict(extra.get("extra_body") or {})
+            eb.setdefault("enable_thinking", True)
+            extra["extra_body"] = eb
+        else:
+            extra.setdefault("reasoning_effort", level)
+
+
+def get_llm(name: str = "default", reasoning=None):
     """
     Return a LangChain chat model.
 
@@ -422,6 +479,13 @@ def get_llm(name: str = "default"):
                                   normalised to `_`). When several channels serve the
                                   same model id, the highest-priority channel wins
                                   (ties → earliest); credentials come from that channel.
+    - `reasoning=`             → turn on the model's thinking/chain-of-thought at a
+                                  shared level: `"low"` / `"medium"` / `"high"` (or
+                                  `True` = medium; `None`/`"off"` = disabled). Mapped
+                                  per provider (Claude thinking budget, OpenAI
+                                  reasoning_effort, gateway enable_thinking, …). The
+                                  reasoning text streams back as `reasoning_content`
+                                  or a `<think>` block — see the chat templates.
 
     Available model ids can be enumerated with `list_llms()`. Returns None outside
     the platform.
@@ -453,6 +517,10 @@ def get_llm(name: str = "default"):
 
         extra.setdefault("timeout", 60)
         extra.setdefault("max_retries", 1)
+
+        _level = _norm_reasoning(reasoning)
+        if _level:
+            _apply_reasoning(extra, provider, base_url, _level)
 
         if provider == "anthropic":
             from langchain_anthropic import ChatAnthropic
@@ -780,6 +848,7 @@ def get_agent(
     system_prompt: str | None = None,
     llm_name: str = "default",
     tools: list | None = None,
+    reasoning=None,
 ):
     """
     Return a ready-to-use ReAct agent (LangGraph create_react_agent).
@@ -805,7 +874,7 @@ def get_agent(
     import inspect
     from langgraph.prebuilt import create_react_agent
 
-    llm = get_llm(llm_name)
+    llm = get_llm(llm_name, reasoning=reasoning)
     if llm is None:
         raise RuntimeError(
             "No LLM configured. Add one in AgentFlow Settings before calling get_agent()."
@@ -865,6 +934,7 @@ def get_deep_agent(
     system_prompt: str | None = None,
     llm_name: str = "default",
     tools: list | None = None,
+    reasoning=None,
     **kwargs,
 ):
     """
@@ -899,7 +969,7 @@ def get_deep_agent(
             "baseline venv; if it's missing, add 'deepagents' to requirements.txt."
         ) from e
 
-    llm = get_llm(llm_name)
+    llm = get_llm(llm_name, reasoning=reasoning)
     if llm is None:
         raise RuntimeError(
             "No LLM configured. Add one in AgentFlow Settings before calling get_deep_agent()."

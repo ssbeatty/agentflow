@@ -51,6 +51,7 @@ def create_conversation(body: ConversationCreate, db: Session = Depends(get_db))
         script_id=body.script_id,
         title=body.title,
         context_turns=body.context_turns,
+        reasoning_effort=body.reasoning_effort or "off",
     )
     db.add(conv)
     db.commit()
@@ -75,6 +76,8 @@ def update_conversation(conv_id: str, body: ConversationUpdate, db: Session = De
         conv.title = body.title
     if body.context_turns is not None:
         conv.context_turns = body.context_turns
+    if body.reasoning_effort is not None:
+        conv.reasoning_effort = body.reasoning_effort
     conv.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(conv)
@@ -154,10 +157,15 @@ async def chat_start(conv_id: str, body: ConverseChatStartRequest, db: Session =
     history_slice = prior[-(conv.context_turns * 2):]
     history = [{"role": m.role, "content": m.content} for m in history_slice]
 
-    # Create execution row
+    # Create execution row. Thread the conversation's reasoning level into the
+    # input so the script can pass it to get_llm(reasoning=input.get("reasoning")).
     exc = Execution(
         script_id=conv.script_id,
-        input_data={"message": body.message, "history": history},
+        input_data={
+            "message": body.message,
+            "history": history,
+            "reasoning": conv.reasoning_effort or "off",
+        },
     )
     db.add(exc)
     db.commit()

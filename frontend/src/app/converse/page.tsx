@@ -4,8 +4,8 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
   ArrowLeft, Send, Loader2, MessageSquare, Trash2, Bot,
-  Plus, Settings2, ExternalLink, ChevronDown, ChevronUp, Link2, Check,
-  Copy, Square, Search, ArrowDown, PanelLeftClose, PanelLeftOpen,
+  Plus, Settings2, ExternalLink, ChevronDown, ChevronUp, ChevronRight, Link2, Check,
+  Copy, Square, Search, ArrowDown, PanelLeftClose, PanelLeftOpen, Brain,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -43,6 +43,58 @@ function TypewriterText({ text, onDone }: { text: string; onDone: () => void }) 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text]);
   return <MarkdownContent text={displayed} />;
+}
+
+// ── Reasoning (chain-of-thought) ──────────────────────────────────────────────
+
+// Split a reasoning model's chain-of-thought (<think>…</think>, some models emit
+// <thinking>) out of the visible answer. Handles an unclosed tag mid-stream:
+// everything after an open <think> with no close yet is "reasoning so far".
+// Without this, react-markdown silently drops the unknown <think> HTML tag AND
+// its contents, so the thinking is invisible.
+function splitThink(content: string): { reasoning: string; answer: string; thinking: boolean } {
+  const om = content.match(/<think(?:ing)?>/i);
+  if (!om || om.index === undefined) return { reasoning: "", answer: content, thinking: false };
+  const afterOpen = content.slice(om.index + om[0].length);
+  const before = content.slice(0, om.index);
+  const cm = afterOpen.match(/<\/think(?:ing)?>/i);
+  if (!cm || cm.index === undefined) {
+    // Open tag but no close yet → still thinking.
+    return { reasoning: afterOpen, answer: before, thinking: true };
+  }
+  const reasoning = afterOpen.slice(0, cm.index);
+  const answer = before + afterOpen.slice(cm.index + cm[0].length);
+  return { reasoning: reasoning.trim(), answer: answer.trim(), thinking: false };
+}
+
+// Collapsible "thought process" block shown above an assistant answer. Auto-
+// expands while the model is actively thinking, then collapses (unless the user
+// toggled it) once the answer starts.
+function ThinkBlock({ reasoning, thinking }: { reasoning: string; thinking: boolean }) {
+  const [userOpen, setUserOpen] = useState<boolean | null>(null);
+  const open = userOpen ?? thinking;
+  if (!reasoning.trim()) return null;
+  return (
+    <div className="w-full max-w-[680px] rounded-xl border border-border/50 bg-secondary/10 overflow-hidden">
+      <button
+        onClick={() => setUserOpen(!open)}
+        className="w-full flex items-center gap-1.5 px-3 py-2 text-[11px] hover:bg-secondary/20 transition-colors"
+      >
+        {thinking
+          ? <Loader2 className="h-3.5 w-3.5 text-blue-400 animate-spin" />
+          : <Brain className="h-3.5 w-3.5 text-primary/70" />}
+        <span className="font-medium text-foreground/80">{thinking ? "Thinking…" : "Thought process"}</span>
+        {open
+          ? <ChevronDown className="h-3.5 w-3.5 ml-auto text-muted-foreground" />
+          : <ChevronRight className="h-3.5 w-3.5 ml-auto text-muted-foreground" />}
+      </button>
+      {open && (
+        <div className="px-3 pb-2.5 pt-1 border-t border-border/40 text-xs text-muted-foreground/90 whitespace-pre-wrap break-words max-h-72 overflow-auto leading-relaxed">
+          {reasoning}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── Log strip ─────────────────────────────────────────────────────────────────
@@ -123,12 +175,15 @@ function MessageRow({
   onDelete?: () => void;
 }) {
   const isUser = msg.role === "user";
+  const { reasoning, answer, thinking } = isUser
+    ? { reasoning: "", answer: msg.content, thinking: false }
+    : splitThink(msg.content);
   const [copied, setCopied] = useState(false);
   const canDelete = onDelete && !msg.streaming && !msg.animating && !msg.id.startsWith("tmp-");
   const showActions = !msg.streaming && !msg.animating && !msg.error;
 
   function copy() {
-    navigator.clipboard.writeText(msg.content).then(() => {
+    navigator.clipboard.writeText(answer).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     });
@@ -136,7 +191,7 @@ function MessageRow({
 
   const actions = (
     <div className={`flex gap-0.5 ${isUser ? "justify-end pr-1" : ""} opacity-0 group-hover:opacity-100 transition-opacity`}>
-      {showActions && msg.content && (
+      {showActions && answer && (
         <ActionButton onClick={copy} title="Copy">
           {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
         </ActionButton>
@@ -169,21 +224,27 @@ function MessageRow({
       </div>
       <div className="min-w-0 flex-1 space-y-2">
         {msg.traces && msg.traces.length > 0 && (
-          <AgentNarrative traces={msg.traces} excludeLastLlmText={!!msg.content && !msg.error} />
+          <AgentNarrative traces={msg.traces} excludeLastLlmText={!!answer && !msg.error} />
         )}
+        {reasoning && <ThinkBlock reasoning={reasoning} thinking={thinking} />}
 
         <div className={`text-sm ${msg.error ? "rounded-xl border border-destructive/40 bg-destructive/5 px-3 py-2" : ""}`}>
           {msg.error ? (
             <span className="text-destructive text-xs font-mono">{msg.error}</span>
           ) : msg.animating && onAnimDone ? (
-            <TypewriterText text={msg.content} onDone={onAnimDone} />
-          ) : msg.streaming && !msg.content ? (
-            <span className="flex items-center gap-1.5 text-muted-foreground">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              <span className="text-xs">Generating…</span>
-            </span>
+            <TypewriterText text={answer} onDone={onAnimDone} />
+          ) : msg.streaming && !answer ? (
+            // While the model is still emitting reasoning, the ThinkBlock above
+            // shows "Thinking…", so skip the spinner; once reasoning closed but
+            // the answer hasn't started, fall through to "Generating…".
+            thinking ? null : (
+              <span className="flex items-center gap-1.5 text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <span className="text-xs">Generating…</span>
+              </span>
+            )
           ) : (
-            <MarkdownContent text={msg.content} />
+            <MarkdownContent text={answer} />
           )}
         </div>
 
@@ -227,6 +288,58 @@ function ConvItem({
       >
         <Trash2 className="h-3 w-3" />
       </button>
+    </div>
+  );
+}
+
+// ── Reasoning / think level (conversation-level) ──────────────────────────────
+
+const REASONING_LEVELS = ["off", "low", "medium", "high"] as const;
+
+// Conversation-level "how hard should the model think" control. The chosen level
+// is saved on the conversation and threaded into each run's input as
+// input["reasoning"]; a script turns it on via get_llm(reasoning=…). Only shows
+// reasoning if the model supports it AND the script forwards the level.
+function ReasoningControl({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const active = !!value && value !== "off";
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((p) => !p)}
+        className={`flex items-center gap-1 text-xs px-2 py-1 rounded border border-transparent hover:border-border transition-colors ${
+          active ? "text-primary" : "text-muted-foreground hover:text-foreground"
+        }`}
+        title="Reasoning / think level"
+      >
+        <Brain className="h-3 w-3" />
+        <span className="capitalize">{active ? value : "Think"}</span>
+        {open ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-10 bg-popover border border-border rounded-lg shadow-md p-1 w-40">
+          {REASONING_LEVELS.map((lvl) => (
+            <button
+              key={lvl}
+              onClick={() => { onChange(lvl); setOpen(false); }}
+              className={`w-full text-left text-xs px-2 py-1.5 rounded hover:bg-muted/60 capitalize ${
+                value === lvl ? "text-primary font-medium" : "text-foreground"
+              }`}
+            >
+              {lvl === "off" ? "Off" : lvl}
+            </button>
+          ))}
+          <p className="text-[10px] text-muted-foreground px-2 py-1 leading-tight border-t border-border/50 mt-1">
+            Needs a reasoning-capable model and a script that forwards it to <code className="font-mono">get_llm(reasoning=…)</code>.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -377,6 +490,7 @@ function ConverseInner() {
   const [convList, setConvList] = useState<ConversationSummary[]>([]);
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
   const [contextTurns, setContextTurns] = useState(10);
+  const [reasoningEffort, setReasoningEffort] = useState("off");
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -427,7 +541,7 @@ function ConverseInner() {
         setConvList(list);
         // In embed mode, auto-create a fresh conversation so the page is ready to chat
         if (embed && list.length === 0) {
-          convsApi.create({ script_id: scriptId, context_turns: contextTurns })
+          convsApi.create({ script_id: scriptId, context_turns: contextTurns, reasoning_effort: reasoningEffort })
             .then((conv) => {
               setConvList([conv]);
               setActiveConvId(conv.id);
@@ -451,6 +565,7 @@ function ConverseInner() {
     }
     convsApi.get(activeConvId).then(async (conv) => {
       setContextTurns(conv.context_turns);
+      setReasoningEffort(conv.reasoning_effort ?? "off");
       const base: UiMessage[] = conv.messages.map((m) => ({
         id: m.id,
         role: m.role,
@@ -518,7 +633,7 @@ function ConverseInner() {
   async function createNewConversation() {
     if (!scriptId) return;
     try {
-      const conv = await convsApi.create({ script_id: scriptId, context_turns: contextTurns });
+      const conv = await convsApi.create({ script_id: scriptId, context_turns: contextTurns, reasoning_effort: reasoningEffort });
       setConvList((prev) => [conv, ...prev]);
       setActiveConvId(conv.id);
       setMessages([]);
@@ -544,6 +659,13 @@ function ConverseInner() {
     setContextTurns(n);
     if (activeConvId) {
       convsApi.update(activeConvId, { context_turns: n }).catch(() => {});
+    }
+  }
+
+  async function updateReasoning(v: string) {
+    setReasoningEffort(v);
+    if (activeConvId) {
+      convsApi.update(activeConvId, { reasoning_effort: v }).catch(() => {});
     }
   }
 
@@ -598,6 +720,12 @@ function ConverseInner() {
               m.id === assistantMsgId
                 ? {
                     ...m,
+                    // Swap the client temp id for the real DB id, otherwise the
+                    // just-finished message keeps a `tmp-…` id and the delete
+                    // button (gated on `!id.startsWith("tmp-")`) never appears
+                    // until a reload.
+                    id: saved.id,
+                    execution_id: saved.execution_id ?? m.execution_id,
                     content: saved.content,
                     error: saved.error ?? undefined,
                     streaming: false,
@@ -606,7 +734,9 @@ function ConverseInner() {
                 : m
             ));
             if (shouldAnimate) {
-              setAnimatingId(assistantMsgId);
+              // animatingId must match the new id so onAnimDone fires and clears
+              // `animating` (which also gates the delete button).
+              setAnimatingId(saved.id);
             }
             setSending(false);
             setConvList((prev) =>
@@ -636,7 +766,7 @@ function ConverseInner() {
     let convId = activeConvId;
     if (!convId) {
       try {
-        const conv = await convsApi.create({ script_id: scriptId, context_turns: contextTurns });
+        const conv = await convsApi.create({ script_id: scriptId, context_turns: contextTurns, reasoning_effort: reasoningEffort });
         skipNextMsgReloadRef.current = true;
         setConvList((prev) => [conv, ...prev]);
         setActiveConvId(conv.id);
@@ -822,6 +952,7 @@ function ConverseInner() {
             <Plus className="h-3.5 w-3.5" />
             New
           </button>
+          <ReasoningControl value={reasoningEffort} onChange={updateReasoning} />
           <ContextTurnsControl value={contextTurns} onChange={updateContextTurns} />
         </header>
         {messageArea}
@@ -911,6 +1042,7 @@ function ConverseInner() {
             {currentScript?.name ?? "Chat"}
           </span>
           <div className="ml-auto flex items-center gap-2">
+            <ReasoningControl value={reasoningEffort} onChange={updateReasoning} />
             <ContextTurnsControl value={contextTurns} onChange={updateContextTurns} />
             {scriptId && <CopyLinkButton scriptId={scriptId} />}
             {currentScript && (

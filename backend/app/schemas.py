@@ -524,11 +524,13 @@ class ConversationCreate(BaseModel):
     script_id: str
     title: str = "New conversation"
     context_turns: int = 10
+    reasoning_effort: str = "off"
 
 
 class ConversationUpdate(BaseModel):
     title: Optional[str] = None
     context_turns: Optional[int] = None
+    reasoning_effort: Optional[str] = None
 
 
 class ConversationSummary(BaseModel):
@@ -536,6 +538,7 @@ class ConversationSummary(BaseModel):
     script_id: str
     title: str
     context_turns: int
+    reasoning_effort: str = "off"
     created_at: datetime
     updated_at: datetime
 

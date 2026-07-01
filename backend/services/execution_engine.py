@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 from collections import deque
 from datetime import datetime
 from pathlib import Path
@@ -33,6 +34,19 @@ _PREFIX = "__AGENTFLOW__"
 
 MAX_CONCURRENT: int = int(os.getenv("AGENTFLOW_MAX_CONCURRENT", "5"))
 EXECUTION_TIMEOUT: float = float(os.getenv("AGENTFLOW_EXECUTION_TIMEOUT", "600"))
+
+# Lightweight timing diagnostics printed to the backend console (uvicorn / F5),
+# so a slow run can be split into queue-wait / prep / python-cold-start-imports /
+# script(LLM) without digging through the per-run logs in the DB. The heavy,
+# usually-dominant cost is `cold_import` — every run spawns a fresh python that
+# re-imports the whole langchain/langgraph stack (there is no warm worker pool).
+# Toggle off with AGENTFLOW_PROFILE=0.
+_PROFILE: bool = os.getenv("AGENTFLOW_PROFILE", "1").lower() not in ("0", "false", "no", "")
+
+
+def _prof(execution_id: str, msg: str) -> None:
+    if _PROFILE:
+        print(f"[agentflow] [{execution_id[:8]}] {msg}", flush=True)
 
 # lazy-init so it's created inside the running event loop
 _semaphore: asyncio.Semaphore | None = None
@@ -195,6 +209,10 @@ for _noisy in ("mcp", "httpx", "httpcore", "openai", "anthropic"):
 async def _main():
 
     import agentflow as _af
+    # Signal that python cold-start + base imports are done, so the engine can
+    # split process-boot cost from script(LLM) cost. Unknown event type -> the
+    # engine's drain loop ignores it (never shown in the Logs panel).
+    _emit({{"type": "boot"}})
 
     # Zero-intrusion execution tracing: emits __AGENTFLOW__ trace events
     # for every LangGraph node, tool call, and agent action. User scripts
@@ -253,6 +271,8 @@ except Exception as exc:
 async def start_execution(execution_id: str) -> None:
     db = SessionLocal()
     slot_acquired = False
+    _t_enter = time.perf_counter()
+    _t_slot = _t_spawn = _t_enter
     try:
         exc_row: Execution = db.query(Execution).filter_by(id=execution_id).first()
         if not exc_row:
@@ -269,6 +289,7 @@ async def start_execution(execution_id: str) -> None:
 
         await _get_semaphore().acquire()
         slot_acquired = True
+        _t_slot = time.perf_counter()
 
         # re-read: may have been cancelled while waiting in queue
         db.refresh(exc_row)
@@ -493,6 +514,12 @@ async def start_execution(execution_id: str) -> None:
             **popen_kwargs,
         )
         _procs[execution_id] = proc
+        _t_spawn = time.perf_counter()
+        _prof(execution_id, (
+            f"spawned pid={proc.pid} "
+            f"(queue_wait={_t_slot - _t_enter:.2f}s, prep={_t_spawn - _t_slot:.2f}s, "
+            f"venv={'yes' if venv_exists(exc_row.script_id) else 'no→backend-py'})"
+        ))
 
         def _pump(stream, is_stderr: bool):
             try:
@@ -510,14 +537,22 @@ async def start_execution(execution_id: str) -> None:
         result_data: Any = None
         error_data: dict | None = None
         eof_count = 0
+        first_output_at: float | None = None
+        result_at: float | None = None
 
         async def _drain():
-            nonlocal result_data, error_data, eof_count
+            nonlocal result_data, error_data, eof_count, first_output_at, result_at
             while eof_count < 2:
                 is_stderr, line = await queue.get()
                 if line is None:
                     eof_count += 1
                     continue
+                if first_output_at is None:
+                    first_output_at = time.perf_counter()
+                    _prof(execution_id, (
+                        f"first output +{first_output_at - _t_spawn:.2f}s "
+                        f"(python cold-start + imports)"
+                    ))
                 if line.startswith(_PREFIX):
                     try:
                         payload = json.loads(line[len(_PREFIX):])
@@ -572,6 +607,7 @@ async def start_execution(execution_id: str) -> None:
                         await ws_manager.send(execution_id, payload)
                     elif t == "result":
                         result_data = payload.get("data")
+                        result_at = time.perf_counter()
                     elif t == "error":
                         error_data = payload
                         # Persist the crash as a log too, so it shows in the Logs
@@ -607,6 +643,11 @@ async def start_execution(execution_id: str) -> None:
             _procs.pop(execution_id, None)
 
             timeout_msg = f"Execution timed out after {EXECUTION_TIMEOUT:.0f}s"
+            _prof(execution_id, (
+                f"TIMEOUT after {EXECUTION_TIMEOUT:.0f}s | "
+                f"cold_import={'n/a' if first_output_at is None else f'{first_output_at - _t_spawn:.2f}s'} "
+                f"(no result before timeout)"
+            ))
             exc_row = db.query(Execution).filter_by(id=execution_id).first()
             exc_row.status = "failed"
             exc_row.error = timeout_msg
@@ -654,6 +695,19 @@ async def start_execution(execution_id: str) -> None:
                     "step": "_engine", "timestamp": datetime.utcnow().isoformat(),
                 })
         db.commit()
+
+        _t_end = time.perf_counter()
+        if first_output_at is not None:
+            _cold = first_output_at - _t_spawn
+            _script = (result_at or _t_end) - first_output_at
+        else:
+            _cold = _t_end - _t_spawn      # process produced no output at all
+            _script = 0.0
+        _prof(execution_id, (
+            f"done status={exc_row.status} rc={proc.returncode} | "
+            f"queue_wait={_t_slot - _t_enter:.2f}s prep={_t_spawn - _t_slot:.2f}s "
+            f"cold_import={_cold:.2f}s script={_script:.2f}s total={_t_end - _t_slot:.2f}s"
+        ))
 
         await ws_manager.send(execution_id, {
             "type": "status",

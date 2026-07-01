@@ -322,6 +322,7 @@ export interface ConversationSummary {
   script_id: string;
   title: string;
   context_turns: number;
+  reasoning_effort: string;   // off | low | medium | high
   created_at: string;
   updated_at: string;
 }

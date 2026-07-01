@@ -335,12 +335,12 @@ export const conversations = {
   list: (scriptId?: string) =>
     req<ConversationSummary[]>(`/conversations${scriptId ? `?script_id=${scriptId}` : ""}`),
 
-  create: (data: { script_id: string; title?: string; context_turns?: number }) =>
+  create: (data: { script_id: string; title?: string; context_turns?: number; reasoning_effort?: string }) =>
     req<Conversation>("/conversations", { method: "POST", body: JSON.stringify(data) }),
 
   get: (id: string) => req<Conversation>(`/conversations/${id}`),
 
-  update: (id: string, data: { title?: string; context_turns?: number }) =>
+  update: (id: string, data: { title?: string; context_turns?: number; reasoning_effort?: string }) =>
     req<ConversationSummary>(`/conversations/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
 
   delete: (id: string) => req<void>(`/conversations/${id}`, { method: "DELETE" }),
