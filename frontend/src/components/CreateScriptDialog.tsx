@@ -489,12 +489,16 @@ export default function CreateScriptDialog({ open, onOpenChange, onCreated }: Pr
   const [name, setName]               = useState("");
   const [description, setDescription] = useState("");
   const [templateId, setTemplateId]   = useState("blank");
+  const [nameEdited, setNameEdited]   = useState(false);   // true once the user hand-edits the name
   const [loading, setLoading]         = useState(false);
 
   function selectTemplate(t: Template) {
     setTemplateId(t.id);
-    if (!name.trim() && t.id !== "blank") {
-      setName(t.label);
+    // Auto-fill the name from the template label until the user hand-edits it.
+    // Re-fills on every switch, so picking a different template updates the name
+    // too (blank has no label → clear it).
+    if (!nameEdited) {
+      setName(t.id === "blank" ? "" : t.label);
     }
   }
 
@@ -502,6 +506,7 @@ export default function CreateScriptDialog({ open, onOpenChange, onCreated }: Pr
     setName("");
     setDescription("");
     setTemplateId("blank");
+    setNameEdited(false);
   }
 
   async function handleCreate() {
@@ -576,7 +581,7 @@ export default function CreateScriptDialog({ open, onOpenChange, onCreated }: Pr
               <Label>Name</Label>
               <Input
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => { setName(e.target.value); setNameEdited(e.target.value.trim().length > 0); }}
                 placeholder="My LangGraph Agent"
                 onKeyDown={(e) => e.key === "Enter" && handleCreate()}
                 autoFocus
