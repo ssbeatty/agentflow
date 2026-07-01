@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import { FileCode, Search, Wrench, Globe, Zap, Workflow } from "lucide-react";
+import { FileCode, MessageSquare, Sparkles, Bot, Puzzle, Brain, Workflow, KeyRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ── Templates ──────────────────────────────────────────────────────────────────
@@ -27,31 +27,27 @@ const TEMPLATES: Template[] = [
   {
     id: "blank",
     label: "Blank",
-    description: "Basic run() starter",
+    description: "Empty run() starter",
     icon: <FileCode className="h-4 w-4" />,
     entryFunction: "run",
     mainPy: null,
   },
   {
-    id: "search-agent",
-    label: "Chat Agent",
-    description: "Multi-turn chat with web search support",
-    icon: <Search className="h-4 w-4" />,
+    id: "simple-chat",
+    label: "Simple Chat",
+    description: "Minimal multi-turn chat for the Chat page",
+    icon: <MessageSquare className="h-4 w-4" />,
     entryFunction: "run",
     mainPy:
-`from agentflow import log, get_agent
+`from agentflow import get_agent
 
 
 def run(input: dict) -> dict:
+    """Minimal multi-turn chat. Wire this script to the Chat page (/converse)."""
     message = input.get("message", "")
     history = input.get("history", [])
 
-    agent = get_agent(
-        system_prompt=(
-            "You are a helpful assistant. "
-            "Use web_search to find current information and web_fetch to read specific pages."
-        )
-    )
+    agent = get_agent(system_prompt="You are a helpful assistant.")
 
     messages = [
         ("human" if m["role"] == "user" else "ai", m["content"])
@@ -60,77 +56,159 @@ def run(input: dict) -> dict:
     messages.append(("human", message))
 
     result = agent.invoke({"messages": messages})
-    reply = result["messages"][-1].content
+    return {"reply": result["messages"][-1].content}
+`,
+  },
+  {
+    id: "rich-chat",
+    label: "Rich Chat",
+    description: "Streaming reply + Artifacts (md / table / chart / image)",
+    icon: <Sparkles className="h-4 w-4" />,
+    entryFunction: "run",
+    mainPy:
+`from agentflow import get_llm, token, markdown, table, mermaid, image, log
 
-    log(f"Steps taken: {len(result['messages'])}", step="done")
+
+def run(input: dict) -> dict:
+    """Streaming chat that also renders rich blocks in the Artifacts tab."""
+    message = input.get("message", "")
+    history = input.get("history", [])
+
+    llm = get_llm()
+    messages = [
+        ("human" if m["role"] == "user" else "ai", m["content"])
+        for m in history
+    ]
+    messages.append(("human", message))
+
+    # Stream the answer token-by-token (typewriter effect on the Chat page).
+    reply = ""
+    for chunk in llm.stream(messages):
+        if chunk.content:
+            token(chunk.content)
+            reply += chunk.content
+
+    # Everything below renders in the "Artifacts" tab, independent of \`reply\`.
+    markdown(
+        "### Recap\\n"
+        f"You asked: **{message}**\\n\\n"
+        f"The reply is {len(reply)} characters long.",
+        title="Summary",
+    )
+    table(
+        [{"metric": "reply_chars", "value": len(reply)},
+         {"metric": "turns", "value": len(history) + 1}],
+        title="Stats",
+    )
+    mermaid(
+        """
+        flowchart LR
+            U[User] --> A[LLM] --> R[Reply]
+        """.strip(),
+        title="Flow",
+    )
+    # image() accepts a URL, a file path, or raw bytes. Here we build an SVG
+    # in-memory; it is saved under the run's _artifacts dir and served back.
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="260" height="60">'
+        '<rect width="260" height="60" rx="8" fill="#4f46e5"/>'
+        f'<text x="16" y="38" fill="white" font-size="20">{len(reply)} chars</text>'
+        '</svg>'
+    )
+    image(svg.encode(), mime="image/svg+xml", alt="reply size", title="Generated SVG")
+
+    log("Artifacts emitted", step="done")
     return {"reply": reply}
 `,
   },
   {
-    id: "tool-diagnostics",
-    label: "Tool Diagnostics",
-    description: "Verify built-in & MCP tools (no LLM needed)",
-    icon: <Wrench className="h-4 w-4" />,
+    id: "react-agent",
+    label: "ReAct Agent",
+    description: "get_agent with web_search + web_fetch",
+    icon: <Bot className="h-4 w-4" />,
     entryFunction: "run",
     mainPy:
-`from agentflow import log, get_tools
+`from agentflow import get_agent, log
 
 
 def run(input: dict) -> dict:
-    """List available tools and run a quick smoke-test for each built-in."""
-    tools = get_tools()
-    names = [t.name for t in tools]
-    log(f"Available tools: {names}", step="init")
-
-    query = input.get("query", "LangGraph tutorial")
-    search = next((t for t in tools if t.name == "web_search"), None)
-    fetch  = next((t for t in tools if t.name == "web_fetch"),  None)
-
-    results: dict = {"tools": names}
-
-    if search:
-        results["search_preview"] = search.invoke({"query": query, "max_results": 3})[:600]
-        log("web_search OK", step="search")
-
-    if fetch:
-        results["fetch_preview"] = fetch.invoke({"url": "https://example.com"})[:300]
-        log("web_fetch OK", step="fetch")
-
-    return results
-`,
-  },
-  {
-    id: "webpage-summary",
-    label: "Webpage Summary",
-    description: "Fetch a URL and summarise with LLM",
-    icon: <Globe className="h-4 w-4" />,
-    entryFunction: "run",
-    mainPy:
-`from agentflow import log, get_agent
-
-
-def run(input: dict) -> dict:
-    url      = input.get("url", "https://example.com")
-    question = input.get("question", "What is this page about?")
-
-    log(f"Fetching: {url}", step="start")
+    """ReAct agent that can search the web and read pages (web_search / web_fetch)."""
+    question = input.get("question") or input.get("message", "What is LangGraph?")
+    log(f"Researching: {question}", step="start")
 
     agent = get_agent(
-        system_prompt="You are a concise summariser. Use web_fetch to read the given page."
+        system_prompt=(
+            "You are a research assistant. Use web_search for current facts and "
+            "web_fetch to read specific pages. Cite the sources you used."
+        ),
     )
-    result = agent.invoke({
-        "messages": [("human", f"Fetch {url} and answer: {question}")]
-    })
-
+    result = agent.invoke({"messages": [("human", question)]})
     answer = result["messages"][-1].content
-    log("Done", step="done")
-    return {"url": url, "question": question, "answer": answer}
+
+    log(f"Agent messages: {len(result['messages'])}", step="done")
+    return {"question": question, "answer": answer}
 `,
   },
   {
-    id: "research-loop",
-    label: "Research Loop",
-    description: "Multi-node LangGraph with cycle + conditional edge",
+    id: "skills-mcp",
+    label: "Skills + MCP",
+    description: "Use bound skills and MCP server tools",
+    icon: <Puzzle className="h-4 w-4" />,
+    entryFunction: "run",
+    mainPy:
+`from agentflow import get_agent, get_tools, list_skills, log
+
+
+def run(input: dict) -> dict:
+    """Use skills + MCP tools. Bind them in the script's right-hand panel first:
+    tick the MCP servers (mcp_server_ids) and skills (skill_ids)."""
+    message = input.get("message", "Introduce the tools and skills you have.")
+
+    # Introspect what this run has access to.
+    skills = list_skills()
+    log(f"Bound skills: {[s['name'] for s in skills]}", step="skills")
+
+    tools = get_tools()  # built-ins + tools from the MCP servers ticked for this script
+    # tools = get_tools(servers=["my-server"])  # or filter to one MCP server by name
+    log(f"Available tools: {[t.name for t in tools]}", step="tools")
+
+    # get_agent() auto-loads those tools, and for each bound skill it adds the
+    # skill's name + description to the prompt plus a read_skill(name) tool.
+    agent = get_agent(
+        system_prompt="Use the available MCP tools and skills to help the user.",
+    )
+    result = agent.invoke({"messages": [("human", message)]})
+    return {"reply": result["messages"][-1].content}
+`,
+  },
+  {
+    id: "deep-agent",
+    label: "Deep Agent",
+    description: "get_deep_agent: planning, sub-agents, skill filesystem",
+    icon: <Brain className="h-4 w-4" />,
+    entryFunction: "run",
+    mainPy:
+`from agentflow import get_deep_agent, log
+
+
+async def run(input: dict) -> dict:
+    """Deep Agent: built-in planning + sub-agents, and it mounts each bound skill
+    as a browsable filesystem (reads every skill file, not just SKILL.md).
+    Needs the deepagents package (already in the baseline venv)."""
+    message = input.get("message", "")
+    log("Building deep agent", step="init")
+
+    agent = get_deep_agent(
+        system_prompt="You are a capable assistant. Plan first, then use the mounted skills.",
+    )
+    result = await agent.ainvoke({"messages": [("human", message)]})
+    return {"reply": result["messages"][-1].content}
+`,
+  },
+  {
+    id: "graph-loop",
+    label: "LangGraph Loop",
+    description: "Multi-node graph with a cycle + conditional edge",
     icon: <Workflow className="h-4 w-4" />,
     entryFunction: "run",
     mainPy:
@@ -138,9 +216,9 @@ def run(input: dict) -> dict:
 Multi-node LangGraph demo.
 
 Graph topology:
-   START → planner → researcher → (count < max?) ──no──→ summarizer → END
-                         ▲                   │
-                         └────── yes ────────┘
+   START -> planner -> researcher -> (count < max?) --no--> summarizer -> END
+                         ^                   |
+                         +------- yes -------+
 
 Loop is controlled purely by an iteration counter (no LLM-judge node), so the
 number of rounds is deterministic and easy to reason about.
@@ -224,34 +302,29 @@ def run(input: dict) -> dict:
 `,
   },
   {
-    id: "async-agent",
-    label: "Async Agent",
-    description: "Async entry function with ainvoke",
-    icon: <Zap className="h-4 w-4" />,
+    id: "secrets-http",
+    label: "Secrets + HTTP",
+    description: "Read a secret and call an external API",
+    icon: <KeyRound className="h-4 w-4" />,
     entryFunction: "run",
     mainPy:
-`from agentflow import log, get_agent
+`from agentflow import get_secret, http_post, log
 
 
-async def run(input: dict) -> dict:
-    message = input.get("message", "")
-    history = input.get("history", [])
+def run(input: dict) -> dict:
+    """Call an external API using a secret. Add a secret named WEBHOOK_URL on the
+    /secrets page (values are never hard-coded in the script)."""
+    url = get_secret("WEBHOOK_URL")
+    if not url:
+        return {"error": "Create a secret named WEBHOOK_URL on the /secrets page first."}
 
-    log("Starting async run", step="init")
+    text = input.get("text", "Hello from AgentFlow!")
 
-    agent = get_agent()
-
-    messages = [
-        ("human" if m["role"] == "user" else "ai", m["content"])
-        for m in history
-    ]
-    messages.append(("human", message))
-
-    result = await agent.ainvoke({"messages": messages})
-    reply = result["messages"][-1].content
-
-    log(f"Steps: {len(result['messages'])}", step="done")
-    return {"reply": reply}
+    # http_get / http_post / http_request are thin httpx wrappers (default timeout,
+    # follow-redirects, raise_for_status) that return the httpx.Response.
+    resp = http_post(url, json={"content": text})
+    log(f"Posted, HTTP {resp.status_code}", step="done")
+    return {"ok": True, "status": resp.status_code}
 `,
   },
 ];
