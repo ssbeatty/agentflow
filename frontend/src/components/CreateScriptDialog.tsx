@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import { FileCode, MessageSquare, Sparkles, Bot, Puzzle, Brain, Workflow, KeyRound } from "lucide-react";
+import { FileCode, MessageSquare, Type, Sparkles, Bot, Puzzle, Brain, Workflow, KeyRound, FileInput } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ── Templates ──────────────────────────────────────────────────────────────────
@@ -60,64 +60,141 @@ def run(input: dict) -> dict:
 `,
   },
   {
+    id: "streaming-chat",
+    label: "Streaming Chat",
+    description: "Direct LLM, token-by-token typewriter output",
+    icon: <Type className="h-4 w-4" />,
+    entryFunction: "run",
+    mainPy:
+`"""Streaming chat — direct LLM, no tools, typewriter output for /converse.
+
+token() pushes each chunk to the Chat page in real time. Use this over
+Simple Chat when you want the reply to stream and don't need tools/agent."""
+from agentflow import token, get_llm
+
+
+async def run(input: dict) -> dict:
+    llm = get_llm()
+    history = input.get("history", [])
+
+    messages = (
+        [("system", "You are a helpful assistant.")]
+        + [(m["role"], m["content"]) for m in history]
+        + [("human", input["message"])]
+    )
+
+    full_reply = ""
+    async for chunk in llm.astream(messages):
+        if chunk.content:
+            token(chunk.content)   # streams to /converse in real time
+            full_reply += chunk.content
+
+    return {"reply": full_reply}
+`,
+  },
+  {
     id: "rich-chat",
     label: "Rich Chat",
-    description: "Streaming reply + Artifacts (md / table / chart / image)",
+    description: "LLM tool-calls to render markdown / table / chart / image",
     icon: <Sparkles className="h-4 w-4" />,
     entryFunction: "run",
     mainPy:
-`from agentflow import get_llm, token, markdown, table, mermaid, image, log
+`"""Chat where the LLM decides which artifact to render, via tool-calling.
+
+Each @tool wraps an agentflow artifact emitter (markdown / table / image /
+html / mermaid). The agent picks the right one from the user's request; its
+text reply streams token-by-token next to the rendered card in the Artifacts
+tab. Needs a tool-calling model (GPT-4o-mini / Claude Haiku / DeepSeek-V3)."""
+from langchain_core.tools import tool
+from langchain_core.messages import HumanMessage, AIMessage
+from agentflow import token, log, get_agent, get_llm
+from agentflow import (
+    markdown as _markdown,
+    image as _image,
+    table as _table,
+    html as _html,
+    mermaid as _mermaid,
+)
 
 
-def run(input: dict) -> dict:
-    """Streaming chat that also renders rich blocks in the Artifacts tab."""
-    message = input.get("message", "")
-    history = input.get("history", [])
+@tool
+def show_markdown(content: str, title: str = "") -> str:
+    """Render a markdown card: prose, lists, GFM tables, code blocks, links."""
+    _markdown(content, title=title or None)
+    return f"rendered markdown ({len(content)} chars)"
 
-    llm = get_llm()
-    messages = [
-        ("human" if m["role"] == "user" else "ai", m["content"])
-        for m in history
-    ]
-    messages.append(("human", message))
 
-    # Stream the answer token-by-token (typewriter effect on the Chat page).
+@tool
+def show_table(rows: list[dict], title: str = "") -> str:
+    """Render a data table. rows is a list of dicts; keys become the columns."""
+    _table(rows, title=title or None)
+    return f"rendered table ({len(rows)} rows)"
+
+
+@tool
+def show_image(url: str, alt: str = "", title: str = "") -> str:
+    """Render an image from a public http(s) URL. No real URL? Use
+    https://placehold.co/300x150/png?text=hello"""
+    _image(url, alt=alt, title=title or None)
+    return "rendered image"
+
+
+@tool
+def show_html(html_snippet: str, title: str = "") -> str:
+    """Render an HTML snippet in a sandboxed iframe. Inline CSS only, no scripts."""
+    _html(html_snippet, title=title or None)
+    return "rendered html"
+
+
+@tool
+def show_mermaid(diagram: str, title: str = "") -> str:
+    """Render a Mermaid diagram (flowchart / sequence / state / class / ER).
+    Pass only the diagram source, without any surrounding code fence."""
+    _mermaid(diagram, title=title or None)
+    return "rendered mermaid"
+
+
+TOOLS = [show_markdown, show_table, show_image, show_html, show_mermaid]
+
+SYSTEM_PROMPT = (
+    "You are a chat assistant that can render rich artifacts. When the user asks "
+    "to see / show / draw / render / visualise something, call the matching tool "
+    "(prefer show_mermaid for any flow / sequence / architecture diagram), then "
+    "ALSO write a short 1-2 sentence reply. Invent plausible sample data when the "
+    "user is only exploring. For plain conversation, don't call any tool."
+)
+
+
+async def run(input: dict) -> dict:
+    message = (input.get("message") or "").strip()
+    history = input.get("history") or []
+
+    if get_llm() is None:
+        token("No default LLM configured. Add one in Settings first.")
+        return {"reply": "No default LLM configured."}
+
+    agent = get_agent(system_prompt=SYSTEM_PROMPT, tools=TOOLS)
+
+    # /converse passes prior turns in input.history.
+    msgs = []
+    for m in history:
+        if m.get("role") == "user":
+            msgs.append(HumanMessage(m.get("content") or ""))
+        elif m.get("role") == "assistant" and m.get("content"):
+            msgs.append(AIMessage(m["content"]))
+    msgs.append(HumanMessage(message))
+
+    # Stream only the agent's own text (skip token streams from tool nodes).
     reply = ""
-    for chunk in llm.stream(messages):
-        if chunk.content:
-            token(chunk.content)
-            reply += chunk.content
+    async for chunk, meta in agent.astream({"messages": msgs}, stream_mode="messages"):
+        if meta.get("langgraph_node") != "agent":
+            continue
+        text = getattr(chunk, "content", None)
+        if text and isinstance(text, str):
+            token(text)
+            reply += text
 
-    # Everything below renders in the "Artifacts" tab, independent of \`reply\`.
-    markdown(
-        "### Recap\\n"
-        f"You asked: **{message}**\\n\\n"
-        f"The reply is {len(reply)} characters long.",
-        title="Summary",
-    )
-    table(
-        [{"metric": "reply_chars", "value": len(reply)},
-         {"metric": "turns", "value": len(history) + 1}],
-        title="Stats",
-    )
-    mermaid(
-        """
-        flowchart LR
-            U[User] --> A[LLM] --> R[Reply]
-        """.strip(),
-        title="Flow",
-    )
-    # image() accepts a URL, a file path, or raw bytes. Here we build an SVG
-    # in-memory; it is saved under the run's _artifacts dir and served back.
-    svg = (
-        '<svg xmlns="http://www.w3.org/2000/svg" width="260" height="60">'
-        '<rect width="260" height="60" rx="8" fill="#4f46e5"/>'
-        f'<text x="16" y="38" fill="white" font-size="20">{len(reply)} chars</text>'
-        '</svg>'
-    )
-    image(svg.encode(), mime="image/svg+xml", alt="reply size", title="Generated SVG")
-
-    log("Artifacts emitted", step="done")
+    log("turn done", data={"reply_chars": len(reply)})
     return {"reply": reply}
 `,
   },
@@ -325,6 +402,55 @@ def run(input: dict) -> dict:
     resp = http_post(url, json={"content": text})
     log(f"Posted, HTTP {resp.status_code}", step="done")
     return {"ok": True, "status": resp.status_code}
+`,
+  },
+  {
+    id: "file-workspace",
+    label: "File + Workspace",
+    description: "Handle an uploaded file + persist state across runs",
+    icon: <FileInput className="h-4 w-4" />,
+    entryFunction: "run",
+    mainPy:
+`from agentflow import paths, log, markdown
+
+
+def run(input: dict) -> dict:
+    """Process an uploaded file and persist state across runs.
+
+    Upload a file in the run panel, then reference it in the input JSON, e.g.
+        {"file": {"$file": "<id>"}}
+    It arrives here as an AgentFlowFile. paths.workspace survives between runs
+    (paths.run_dir is wiped each run), so use it for caches / accumulated state.
+    """
+    # Persistent run counter kept in the shared workspace dir.
+    counter = paths.workspace / "run_count.txt"
+    count = int(counter.read_text()) + 1 if counter.exists() else 1
+    counter.write_text(str(count))
+
+    f = input.get("file")
+    if f is None:
+        log('No file. Add {"file": {"$file": "<id>"}} to the input JSON.', level="warning")
+        return {"runs_so_far": count, "hint": "Upload a file and reference it to process it."}
+
+    # AgentFlowFile: .name / .mime / .size / .path / .read_bytes() / .read_text()
+    log(f"File: {f.name} ({f.size} bytes, {f.mime})", step="file")
+    try:
+        preview = f.read_text(errors="replace")[:300]
+        log(f"Preview: {preview}", step="preview")
+    except Exception:
+        pass
+
+    # Keep a copy in the workspace so it outlives this (ephemeral) run.
+    (paths.workspace / f.name).write_bytes(f.read_bytes())
+
+    markdown(
+        f"### {f.name}\\n\\n"
+        f"- size: {f.size} bytes\\n"
+        f"- type: {f.mime}\\n"
+        f"- this script has run {count} time(s)",
+        title="File info",
+    )
+    return {"name": f.name, "size": f.size, "runs_so_far": count}
 `,
   },
 ];
