@@ -76,6 +76,7 @@ function ScriptPage() {
   // Script metadata
   const [name, setName] = useState("");
   const [entryFn, setEntryFn] = useState("run");
+  const [maxExec, setMaxExec] = useState(50);
   const [selectedMcpIds, setSelectedMcpIds] = useState<string[]>([]);
   const [availableMcpServers, setAvailableMcpServers] = useState<MCPServerConfig[]>([]);
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
@@ -150,6 +151,7 @@ function ScriptPage() {
         setScript(s);
         setName(s.name);
         setEntryFn(s.entry_function);
+        setMaxExec(s.max_executions ?? 50);
         setSelectedMcpIds(s.mcp_server_ids || []);
         setAvailableMcpServers(servers.filter(srv => srv.enabled));
         setSelectedSkillIds(s.skill_ids || []);
@@ -256,7 +258,7 @@ function ScriptPage() {
     try {
       const reqContent = fileContents.get("requirements.txt") ?? "";
       const ops: Promise<unknown>[] = [
-        scripts.update(id, { name, entry_function: entryFn, requirements: reqContent, mcp_server_ids: selectedMcpIds, skill_ids: selectedSkillIds }),
+        scripts.update(id, { name, entry_function: entryFn, requirements: reqContent, mcp_server_ids: selectedMcpIds, skill_ids: selectedSkillIds, max_executions: maxExec }),
       ];
       for (const filename of dirtyFiles) {
         if (filename === "requirements.txt" || filename === "__meta__") continue;
@@ -266,7 +268,7 @@ function ScriptPage() {
       }
       await Promise.all(ops);
       setDirtyFiles(new Set());
-      setScript(prev => prev ? { ...prev, name, entry_function: entryFn, requirements: reqContent, mcp_server_ids: selectedMcpIds, skill_ids: selectedSkillIds } : prev);
+      setScript(prev => prev ? { ...prev, name, entry_function: entryFn, requirements: reqContent, mcp_server_ids: selectedMcpIds, skill_ids: selectedSkillIds, max_executions: maxExec } : prev);
       setLoadedRevision(null);
       // Create revision snapshot after successful save
       revisionsApi.create(id).then(() => setRevisionRefresh(n => n + 1)).catch(() => null);
@@ -669,6 +671,31 @@ function ScriptPage() {
                   </div>
                 </div>
 
+                {/* Execution retention */}
+                <div className="space-y-1.5">
+                  <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/70 flex items-center gap-1.5">
+                    <History className="h-3 w-3" />保留执行记录数
+                  </p>
+                  <div className="relative">
+                    <Input
+                      type="number"
+                      min={0}
+                      max={10000}
+                      value={maxExec}
+                      onChange={e => {
+                        const n = Math.max(0, Math.min(10000, Math.floor(Number(e.target.value) || 0)));
+                        setMaxExec(n);
+                        markDirty("__meta__");
+                      }}
+                      className="h-8 text-xs font-mono"
+                      placeholder="50"
+                    />
+                  </div>
+                  <p className="text-[10px] text-muted-foreground/70 leading-snug">
+                    每次运行后自动删除超出数量的旧记录(按时间,最旧的先删)。0 = 不限。
+                  </p>
+                </div>
+
                 {/* MCP Servers */}
                 {availableMcpServers.length > 0 && (
                   <div className="space-y-2">
@@ -1064,11 +1091,30 @@ function RunsTab({
 }) {
   const [items, setItems] = useState<ExecutionSummary[]>([]);
   const [loadingRuns, setLoadingRuns] = useState(false);
+  const [confirmDelId, setConfirmDelId] = useState<string | null>(null);
+  const [confirmClear, setConfirmClear] = useState(false);
 
   const reload = useCallback(() => {
     setLoadingRuns(true);
     executions.list(scriptId).then(setItems).catch(() => null).finally(() => setLoadingRuns(false));
   }, [scriptId]);
+
+  async function delOne(id: string) {
+    setConfirmDelId(null);
+    try {
+      await executions.delete(id);
+      setItems(prev => prev.filter(x => x.id !== id));
+    } catch (e) { toast.error(String(e)); }
+  }
+
+  async function clearAll() {
+    setConfirmClear(false);
+    try {
+      const r = await executions.clear(scriptId);
+      toast.success(`已清空 ${r.deleted} 条记录`);
+      reload();
+    } catch (e) { toast.error(String(e)); }
+  }
 
   useEffect(() => { reload(); }, [reload]);
   useEffect(() => {
@@ -1116,22 +1162,62 @@ function RunsTab({
   return (
     <ScrollArea className="h-full">
       <div className="p-3 space-y-1">
+        {items.length > 0 && (
+          <div className="flex items-center justify-between pb-1">
+            <span className="text-[10px] text-muted-foreground/70 tabular-nums">{items.length} 条记录</span>
+            {confirmClear ? (
+              <span className="flex items-center gap-1 text-[10px]">
+                <span className="text-muted-foreground">清空全部?</span>
+                <button onClick={clearAll} className="text-destructive hover:underline">确认</button>
+                <button onClick={() => setConfirmClear(false)} className="text-muted-foreground hover:underline">取消</button>
+              </span>
+            ) : (
+              <button
+                onClick={() => setConfirmClear(true)}
+                className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-destructive transition-colors"
+                title="删除全部已结束的执行记录"
+              >
+                <Trash2 className="h-3 w-3" />清空
+              </button>
+            )}
+          </div>
+        )}
         {loadingRuns && items.length === 0 && <div className="text-xs text-muted-foreground">Loading…</div>}
         {!loadingRuns && items.length === 0 && <div className="text-xs text-muted-foreground">No runs yet.</div>}
-        {items.map(e => (
-          <button
-            key={e.id}
-            onClick={() => openRun(e.id)}
-            className={`w-full flex items-center gap-2 text-xs px-2 py-1.5 rounded hover:bg-secondary/40 transition-colors ${
-              currentExecId === e.id ? "bg-secondary/40" : ""
-            }`}
-          >
-            {statusIcon(e.status)}
-            <span className="font-mono text-muted-foreground">{e.id.slice(0, 8)}</span>
-            <span className="text-muted-foreground">{e.status}</span>
-            <span className="ml-auto text-muted-foreground">{formatDate(e.created_at)}</span>
-          </button>
-        ))}
+        {items.map(e => {
+          const inFlight = ["running", "queued", "pending"].includes(e.status);
+          return (
+            <div
+              key={e.id}
+              className={`group flex items-center gap-2 text-xs px-2 py-1.5 rounded hover:bg-secondary/40 transition-colors ${
+                currentExecId === e.id ? "bg-secondary/40" : ""
+              }`}
+            >
+              <button onClick={() => openRun(e.id)} className="flex items-center gap-2 flex-1 min-w-0 text-left">
+                {statusIcon(e.status)}
+                <span className="font-mono text-muted-foreground">{e.id.slice(0, 8)}</span>
+                <span className="text-muted-foreground">{e.status}</span>
+                <span className="ml-auto text-muted-foreground shrink-0">{formatDate(e.created_at)}</span>
+              </button>
+              {confirmDelId === e.id ? (
+                <span className="flex items-center gap-1 shrink-0">
+                  <button onClick={() => delOne(e.id)} className="text-destructive" title="确认删除"><Check className="h-3 w-3" /></button>
+                  <button onClick={() => setConfirmDelId(null)} className="text-muted-foreground" title="取消"><XCircle className="h-3 w-3" /></button>
+                </span>
+              ) : (
+                !inFlight && (
+                  <button
+                    onClick={() => setConfirmDelId(e.id)}
+                    className="shrink-0 text-muted-foreground/50 hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="删除这条记录"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                )
+              )}
+            </div>
+          );
+        })}
       </div>
     </ScrollArea>
   );

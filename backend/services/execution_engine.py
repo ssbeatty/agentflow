@@ -560,6 +560,18 @@ async def start_execution(execution_id: str) -> None:
                         result_data = payload.get("data")
                     elif t == "error":
                         error_data = payload
+                        # Persist the crash as a log too, so it shows in the Logs
+                        # panel (live + on reload) — not only in execution.error /
+                        # a transient toast. The full traceback goes in the message
+                        # (whitespace-preserved), the short message in step.
+                        err_msg = payload.get("traceback") or payload.get("message") or "Execution failed"
+                        _persist_log(db, execution_id, {
+                            "level": "error", "message": err_msg, "step": "error",
+                        })
+                        await ws_manager.send(execution_id, {
+                            "type": "log", "level": "error", "message": err_msg,
+                            "step": "error", "timestamp": datetime.utcnow().isoformat(),
+                        })
                 else:
                     level = "error" if is_stderr else "raw"
                     _persist_log(db, execution_id, {"level": level, "message": line})
@@ -608,6 +620,25 @@ async def start_execution(execution_id: str) -> None:
             exc_row.status = "failed"
             if error_data:
                 exc_row.error = error_data.get("traceback") or error_data.get("message")
+            else:
+                # Process died without emitting a structured error (e.g. sys.exit(),
+                # SIGKILL/OOM, or a native crash). Without this the run would be
+                # marked failed with a completely empty error — nothing in Logs,
+                # Output or Flow. Synthesize a message from the exit code so the
+                # failure is at least visible and traceable.
+                synth = (
+                    f"Process exited with code {proc.returncode} without reporting an "
+                    f"error (possibly sys.exit(), a killed/out-of-memory process, or a "
+                    f"native crash). Check the raw output above for details."
+                )
+                exc_row.error = synth
+                _persist_log(db, execution_id, {
+                    "level": "error", "message": synth, "step": "_engine",
+                })
+                await ws_manager.send(execution_id, {
+                    "type": "log", "level": "error", "message": synth,
+                    "step": "_engine", "timestamp": datetime.utcnow().isoformat(),
+                })
         db.commit()
 
         await ws_manager.send(execution_id, {
@@ -629,6 +660,11 @@ async def start_execution(execution_id: str) -> None:
             pass
         try:
             _prune_old_runs(script_dir, keep=20)
+        except Exception:
+            pass
+        # prune old execution *rows* (DB) per the script's retention setting
+        try:
+            prune_executions(db, script.id, script.max_executions)
         except Exception:
             pass
 
@@ -738,3 +774,50 @@ def _mark_failed(db, execution_id: str, error: str) -> None:
         row.error = error
         row.finished_at = datetime.utcnow()
         db.commit()
+    # Persist the engine-level failure as a log so it surfaces in the Logs panel
+    # (on reload) instead of being buried only in execution.error.
+    try:
+        _persist_log(db, execution_id, {
+            "level": "error", "message": error or "Execution failed", "step": "_engine",
+        })
+    except Exception:
+        pass
+
+
+# ── Execution-record retention ───────────────────────────────────────────────
+
+def delete_run_dir(script_id: str, execution_id: str) -> None:
+    """Remove the per-execution working dir (best-effort)."""
+    try:
+        run_dir = get_script_dir(script_id) / "runs" / execution_id
+        shutil.rmtree(run_dir, ignore_errors=True)
+    except Exception:
+        pass
+
+
+def prune_executions(db, script_id: str, keep: int | None) -> int:
+    """Delete the oldest execution rows for a script beyond `keep`, keeping the
+    `keep` most recent. In-flight runs (running/queued/pending) are never deleted
+    and don't count against the limit. Returns how many rows were removed.
+
+    keep <= 0 (or None) means unlimited — nothing is pruned.
+    """
+    if not keep or keep <= 0:
+        return 0
+    rows = (
+        db.query(Execution)
+        .filter(Execution.script_id == script_id)
+        .order_by(Execution.created_at.desc())
+        .all()
+    )
+    # Only terminal runs are candidates for deletion; keep the newest `keep` of them.
+    terminal = [r for r in rows if r.status in ("completed", "failed", "cancelled")]
+    stale = terminal[keep:]
+    removed = 0
+    for r in stale:
+        delete_run_dir(script_id, r.id)
+        db.delete(r)  # cascade removes ExecutionLog rows
+        removed += 1
+    if removed:
+        db.commit()
+    return removed

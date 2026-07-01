@@ -20,6 +20,9 @@ class Script(Base):
     requirements = Column(Text, default="")
     mcp_server_ids = Column(JSON, default=list)
     skill_ids = Column(JSON, default=list)
+    # Max execution records to keep for this script; older ones are auto-pruned
+    # (oldest terminal runs first) after each run. 0 = keep unlimited.
+    max_executions = Column(Integer, default=50)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

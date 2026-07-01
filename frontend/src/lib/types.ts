@@ -15,6 +15,7 @@ export interface Script {
   requirements: string;
   mcp_server_ids: string[];
   skill_ids: string[];
+  max_executions: number;
   created_at: string;
   updated_at: string;
   files: ScriptFile[];
@@ -27,6 +28,7 @@ export interface ScriptSummary {
   entry_function: string;
   mcp_server_ids: string[];
   skill_ids: string[];
+  max_executions: number;
   created_at: string;
   updated_at: string;
 }

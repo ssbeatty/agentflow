@@ -58,10 +58,18 @@ def get_script(script_id: str, db: Session = Depends(get_db)):
 @router.patch("/{script_id}", response_model=ScriptDetail)
 def update_script(script_id: str, body: ScriptUpdate, db: Session = Depends(get_db)):
     script = _get_or_404(script_id, db)
-    for k, v in body.model_dump(exclude_none=True).items():
+    changes = body.model_dump(exclude_none=True)
+    for k, v in changes.items():
         setattr(script, k, v)
     db.commit()
     db.refresh(script)
+    # If retention was lowered, apply it immediately so old records go away now.
+    if "max_executions" in changes:
+        try:
+            from services.execution_engine import prune_executions
+            prune_executions(db, script.id, script.max_executions)
+        except Exception:
+            pass
     return script
 
 

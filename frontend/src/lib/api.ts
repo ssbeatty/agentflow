@@ -54,7 +54,7 @@ export const scripts = {
   create: (data: { name: string; description?: string; entry_function?: string }) =>
     req<Script>("/scripts", { method: "POST", body: JSON.stringify(data) }),
 
-  update: (id: string, data: Partial<Pick<Script, "name" | "description" | "entry_function" | "requirements" | "mcp_server_ids" | "skill_ids">>) =>
+  update: (id: string, data: Partial<Pick<Script, "name" | "description" | "entry_function" | "requirements" | "mcp_server_ids" | "skill_ids" | "max_executions">>) =>
     req<Script>(`/scripts/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
 
   delete: (id: string) => req<void>(`/scripts/${id}`, { method: "DELETE" }),
@@ -151,6 +151,11 @@ export const executions = {
     }),
 
   stop: (id: string) => req<{ stopped: boolean; status: string }>(`/executions/${id}/stop`, { method: "POST" }),
+
+  delete: (id: string) => req<void>(`/executions/${id}`, { method: "DELETE" }),
+
+  clear: (scriptId: string) =>
+    req<{ deleted: number }>(`/executions?script_id=${encodeURIComponent(scriptId)}`, { method: "DELETE" }),
 };
 
 // ── LLM Configs ────────────────────────────────────────────────────────────────

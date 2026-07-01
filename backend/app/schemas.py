@@ -31,6 +31,7 @@ class ScriptCreate(BaseModel):
     requirements: str = ""
     mcp_server_ids: list[str] = []
     skill_ids: list[str] = []
+    max_executions: int = 50
 
 
 class ScriptUpdate(BaseModel):
@@ -40,6 +41,7 @@ class ScriptUpdate(BaseModel):
     requirements: Optional[str] = None
     mcp_server_ids: Optional[list[str]] = None
     skill_ids: Optional[list[str]] = None
+    max_executions: Optional[int] = Field(default=None, ge=0, le=10000)
 
 
 class ScriptSummary(BaseModel):
@@ -49,6 +51,7 @@ class ScriptSummary(BaseModel):
     entry_function: str
     mcp_server_ids: list[str] = []
     skill_ids: list[str] = []
+    max_executions: int = 50
     created_at: datetime
     updated_at: datetime
 
