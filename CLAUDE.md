@@ -102,6 +102,15 @@ Scripts must not hard-code API keys / tokens / webhook URLs. The `Secret` model 
 - Scripts read them via `agentflow.get_secret("<key>")` (case-insensitive, non-alnum → `_`, same `_norm` as `get_llm`) / `list_secrets()`. Global by design — single-admin model, every script sees every secret (no per-script opt-in like `mcp_server_ids`).
 - **At rest the value is plaintext in the DB** — consistent with `channels.api_key` and `oauth_token`; the DB lives on the protected data volume and is never exposed via the API. Encryption-at-rest would need a non-stdlib cipher (breaks `security.py`'s stdlib-only rule), so it's intentionally out of scope.
 
+### Sandboxed exec tools (opt-in bash + python)
+
+Two sandboxed exec capabilities live in **`backend/agentflow/_sandbox.py`** (stdlib-only, no new deps): `run_bash(command)` (a shell "exec sandbox") and `run_python(code)` (a full Python interpreter, e.g. for computation/data wrangling — the final bare expression is echoed notebook-style). **They are OPT-IN — deliberately NOT in the default `get_tools()`/`get_agent()`**, because they run arbitrary commands/code; this mirrors the `markdown()`/`image()` SDK-method model (the script enables them, they're not always on). A script uses them two ways:
+
+- **Direct SDK calls** (like `markdown()`): `from agentflow import run_bash, run_python` → returns `{stdout, stderr, returncode, timed_out}`.
+- **As agent tools**: `bash_tool()` / `python_tool()` return LangChain tools named `bash` / `python`; `exec_tools()` returns both. Hand them to an agent explicitly: `get_agent(tools=get_tools() + exec_tools())` (or `+ [bash_tool()]` for bash only). Each tool takes an optional `timeout=`.
+
+**Isolation** (shared core `_run_sandboxed`, applied to both) is *process*-level, not a language jail — the child can still touch the filesystem; the guarantees are: (1) **env scrub** — the child keeps only a small allowlist (`PATH`/`HOME`/`LANG`/`LD_LIBRARY_PATH`/…), so **every `AGENTFLOW_*` var (secrets, LLM keys, OAuth tokens) is dropped** and sandboxed code can't read platform credentials; (2) **POSIX rlimits** via `preexec_fn` — `RLIMIT_CPU` (busy-loop backstop), `RLIMIT_AS` (memory, default 1024 MB), `RLIMIT_FSIZE` (default 64 MB), `RLIMIT_CORE=0`, plus `os.setsid()` so a timeout kills the whole process group; (3) **wall-clock `timeout`** (default 30 s) → SIGKILL the group; (4) **isolated temp cwd** (`tempfile.mkdtemp`, `shutil.rmtree`'d after). The Python sandbox runs under `python -I` (isolated mode) using **`sys.executable`** — i.e. the per-script venv python — so installed packages (numpy/pandas/…) are importable; bash runs via `bash -c` (falls back to `sh`). `allow_network=False` best-effort blocks network via `unshare -rn` where the kernel permits it, silently falling back to allow — **not** a hard guarantee; the real protection is the scrubbed env. Windows degrades gracefully (no `resource`/`preexec_fn`, keeps timeout + cwd + env-scrub + `CREATE_NEW_PROCESS_GROUP`). Non-configurable/global — no DB model or UI; behaviour is code-only in the SDK.
+
 ### Web search provider (built-in web_search / web_fetch)
 
 The built-in `web_search` / `web_fetch` tools (defined in `agentflow/__init__.py::_make_builtin_tools`) pick a provider from a **singleton config**, with **DuckDuckGo (via `ddgs`, no key) as the always-on fallback** so an unconfigured deployment still searches.
@@ -159,6 +168,15 @@ The whole management UI/API sits behind a **single admin login**; external syste
 - **Routers**: `routers/auth.py` (status/setup/login/logout/change-password/me) and `routers/api_keys.py` (list / create-once / revoke). `setup` only works when no admin exists yet (first-run).
 - **Frontend gate**: `components/AuthGate.tsx` wraps the app in `layout.tsx`; it calls `/api/auth/status` on every navigation and routes to `/setup` (no admin), `/login` (not authed), or through. Protected pages don't mount until authorized. `lib/api.ts::req()` bounces to `/login` on a 401 (except for `/auth/*` calls). Pages: `app/login`, `app/setup`, `app/security` (account + API key management).
 - **External API usage**: `curl -X POST http://host/api/executions/run -H "X-API-Key: af_…" -H "Content-Type: application/json" -d '{"script_id":"…","input_data":{…}}'` — blocks until the script finishes and returns `{id,status,output_data,error,…}`.
+
+### Outward MCP gateway (external coding agents develop scripts here)
+
+AgentFlow **serves** an MCP endpoint (distinct from *consuming* external MCP servers above): Claude Code / Cursor / any MCP client connects to `POST /mcp` (Streamable HTTP, stateless, JSON responses) and gets 13 tools covering the full write→run→debug loop — `get_platform_context`, `get_scripting_guide`, script CRUD (`list/get/create/update_script`), file CRUD (`read/write/delete_script_file`, write returns ast-lint issues), `setup_script_env` (venv create + requirements install; slow first time), `run_script` (blocking, returns `output_data`/`error` **+ error logs/traceback** on failure), `list_executions`, `get_execution_logs`. All in `services/mcp_gateway.py` (FastMCP from the `mcp` SDK, already a backend dep).
+
+- **Wiring is a pure-ASGI middleware, NOT a Mount**: `MCPGatewayMiddleware` (added in `app/main.py`) intercepts `/mcp`, `/mcp/` and `/mcp/skill` before FastAPI routing. A `Mount("/mcp")` doesn't work — current Starlette mounts don't match the bare `/mcp` path (falls through to the frontend catch-all → 405) and no longer rewrite `scope["path"]` for children; the middleware normalizes the scope itself. The lifespan must run `async with mcp_gateway.session_manager.run():` (required even in stateless mode).
+- **Auth**: same credentials as `POST /api/executions/run` (issued `af_…` API key via `X-API-Key`/Bearer, or an admin session Bearer token), enforced inside the middleware. **This widens API-key scope** — a key holder gets script CRUD + run through `/mcp`, not just run; acceptable in the single-admin trust model, documented on the docs page.
+- **The companion Agent Skill** lives at `backend/assets/skills/agentflow-scripting/SKILL.md` (inside `backend/` so the Docker `COPY backend/` picks it up) — single source of truth for "how to write AgentFlow scripts": served to agents at runtime via the `get_scripting_guide` tool and downloadable publicly at `GET /mcp/skill` for local install (`~/.claude/skills/agentflow-scripting/`). Keep it in sync when the SDK / conventions change.
+- **Client setup docs** are on the frontend `/docs` page ("Connect a coding agent (MCP)" section): `claude mcp add --transport http agentflow http://host/mcp --header "X-API-Key: af_…"`, generic `mcpServers` JSON, and the skill-install curl.
 
 ### Time/timezone
 
@@ -222,6 +240,10 @@ Backend uses naive `datetime.utcnow()` everywhere (stored without TZ). Frontend 
 | Secret injection into user scripts | `services/execution_engine.py` (`secret_envs` → `sub_env`) |
 | Script-facing secret / HTTP helpers | `backend/agentflow/__init__.py::get_secret` / `list_secrets` / `http_get` / `http_post` |
 | Secrets management UI | `frontend/src/app/secrets/page.tsx` (+ navbar link in `app/page.tsx`) |
+| Outward MCP gateway (tools / auth middleware / skill download) | `backend/services/mcp_gateway.py` + wiring in `app/main.py` (middleware + lifespan `session_manager.run()`) |
+| agentflow-scripting companion skill (scripting guide source) | `backend/assets/skills/agentflow-scripting/SKILL.md` |
+| MCP / coding-agent onboarding docs | `frontend/src/app/docs/page.tsx` ("Connect a coding agent" section) |
+| Opt-in sandboxed exec (bash + python; `run_bash`/`run_python` SDK, `bash_tool`/`python_tool`/`exec_tools` agent tools) | `backend/agentflow/_sandbox.py` + factories in `agentflow/__init__.py` (NOT in default `get_tools()`) |
 | Web search provider (model / schema / CRUD / test) | `app/models.py::SearchConfig` + `schemas.py` (`SearchConfig*`) + `routers/search_config.py` + Alembic `0003` |
 | web_search / web_fetch provider dispatch (Tavily → DDG fallback) | `backend/agentflow/__init__.py` (`_search_config` / `_tavily_search` / `_tavily_extract` / `_ddg_search` / `_httpx_fetch` / `_make_builtin_tools`) |
 | Search config injection (`AGENTFLOW_SEARCH_CONFIG`) | `services/execution_engine.py` (`secret_envs` → `sub_env`) |
