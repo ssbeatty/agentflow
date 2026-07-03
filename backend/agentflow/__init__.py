@@ -20,6 +20,15 @@ from types import SimpleNamespace
 _PREFIX = "__AGENTFLOW__"
 _IN_PLATFORM = bool(os.environ.get("AGENTFLOW_EXECUTION_ID"))
 
+# Sandboxed exec (see agentflow/_sandbox.py). Re-exported so scripts can call
+# them directly (like markdown()/image()). They are OPT-IN — NOT part of the
+# default tool set; hand them to an agent via exec_tools()/bash_tool()/
+# python_tool() (defined below).
+from agentflow._sandbox import (  # noqa: E402
+    run_bash,
+    run_python,
+)
+
 # Populated by the runner before user code runs when MCP servers are configured.
 _injected_tools: list = []
 
@@ -765,6 +774,86 @@ def _get_builtin_tools() -> list:
     return _builtin_tools
 
 
+# ── Opt-in sandboxed exec tools (bash + python) ────────────────────────────────
+#
+# These are deliberately NOT in get_tools()/get_agent() by default, because they
+# run arbitrary commands/code. A script opts in — either calling run_bash() /
+# run_python() directly, or handing the tools to an agent:
+#
+#     agent = get_agent(tools=get_tools() + exec_tools())
+#     agent = get_agent(tools=get_tools() + [bash_tool()])   # bash only
+#
+# Isolation (env-scrub of all AGENTFLOW_* secrets, rlimits, timeout, throwaway
+# cwd) lives in agentflow/_sandbox.py.
+
+def bash_tool(*, timeout: float | None = None):
+    """Return a LangChain `bash` tool that runs a shell command in the sandbox.
+
+    Opt-in: add it to an agent's tools yourself (it is never auto-included)::
+
+        agent = get_agent(tools=get_tools() + [bash_tool()])
+    """
+    from langchain_core.tools import tool
+    from agentflow._sandbox import run_bash, format_exec_result, DEFAULT_TIMEOUT
+    _to = timeout if timeout is not None else DEFAULT_TIMEOUT
+
+    @tool
+    def bash(command: str) -> str:
+        """Run a shell command in a sandbox and return its output (stdout, then
+        stderr / exit code on failure). The sandbox has a working directory of
+        its own, a timeout, resource limits, and no access to platform secrets.
+        Use it to inspect files, run CLIs, or shell out to other tools.
+
+        Example: bash("ls -la && python3 -c 'print(2**10)'")
+        """
+        try:
+            return format_exec_result(run_bash(command, timeout=_to), timeout=_to)
+        except Exception as e:
+            return f"Sandbox error: {e}"
+
+    return bash
+
+
+def python_tool(*, timeout: float | None = None):
+    """Return a LangChain `python` tool that runs Python code in the sandbox.
+
+    Opt-in: add it to an agent's tools yourself (it is never auto-included)::
+
+        agent = get_agent(tools=get_tools() + [python_tool()])
+    """
+    from langchain_core.tools import tool
+    from agentflow._sandbox import run_python, format_exec_result, DEFAULT_TIMEOUT
+    _to = timeout if timeout is not None else DEFAULT_TIMEOUT
+
+    @tool
+    def python(code: str) -> str:
+        """Run Python code in a sandbox and return its output. Use this for
+        computation, data wrangling, parsing, or simulation — anything better
+        solved by running code than by reasoning it out. Packages installed for
+        this script (numpy, pandas, …) are importable. `print(...)` to show
+        output; a bare final expression is echoed automatically (notebook-style).
+        The sandbox has a timeout, resource limits, and no access to secrets.
+
+        Example: python("import statistics; statistics.stdev([2,4,4,4,5,5,7,9])")
+        """
+        try:
+            return format_exec_result(run_python(code, timeout=_to), timeout=_to)
+        except Exception as e:
+            return f"Sandbox error: {e}"
+
+    return python
+
+
+def exec_tools(*, timeout: float | None = None) -> list:
+    """Return both opt-in sandbox tools ``[bash_tool(), python_tool()]``.
+
+    Convenience for the common case::
+
+        agent = get_agent(tools=get_tools() + exec_tools())
+    """
+    return [bash_tool(timeout=timeout), python_tool(timeout=timeout)]
+
+
 # ── Public tool API ────────────────────────────────────────────────────────────
 
 def _ensure_sync(tool):
@@ -807,6 +896,8 @@ def get_tools(
     Return available LangChain tools.
 
     - Built-ins always included: `web_fetch`, `web_search`
+    - Sandboxed exec tools (`bash`, `python`) are OPT-IN — not included here;
+      add them explicitly with `exec_tools()` (see `bash_tool` / `python_tool`)
     - MCP tools are injected automatically from platform-configured MCP servers
     - `servers`: filter to specific MCP server names (by tool name prefix)
     - `include_builtins=False`: skip web_fetch / web_search

@@ -102,6 +102,15 @@ Scripts must not hard-code API keys / tokens / webhook URLs. The `Secret` model 
 - Scripts read them via `agentflow.get_secret("<key>")` (case-insensitive, non-alnum → `_`, same `_norm` as `get_llm`) / `list_secrets()`. Global by design — single-admin model, every script sees every secret (no per-script opt-in like `mcp_server_ids`).
 - **At rest the value is plaintext in the DB** — consistent with `channels.api_key` and `oauth_token`; the DB lives on the protected data volume and is never exposed via the API. Encryption-at-rest would need a non-stdlib cipher (breaks `security.py`'s stdlib-only rule), so it's intentionally out of scope.
 
+### Sandboxed exec tools (opt-in bash + python)
+
+Two sandboxed exec capabilities live in **`backend/agentflow/_sandbox.py`** (stdlib-only, no new deps): `run_bash(command)` (a shell "exec sandbox") and `run_python(code)` (a full Python interpreter, e.g. for computation/data wrangling — the final bare expression is echoed notebook-style). **They are OPT-IN — deliberately NOT in the default `get_tools()`/`get_agent()`**, because they run arbitrary commands/code; this mirrors the `markdown()`/`image()` SDK-method model (the script enables them, they're not always on). A script uses them two ways:
+
+- **Direct SDK calls** (like `markdown()`): `from agentflow import run_bash, run_python` → returns `{stdout, stderr, returncode, timed_out}`.
+- **As agent tools**: `bash_tool()` / `python_tool()` return LangChain tools named `bash` / `python`; `exec_tools()` returns both. Hand them to an agent explicitly: `get_agent(tools=get_tools() + exec_tools())` (or `+ [bash_tool()]` for bash only). Each tool takes an optional `timeout=`.
+
+**Isolation** (shared core `_run_sandboxed`, applied to both) is *process*-level, not a language jail — the child can still touch the filesystem; the guarantees are: (1) **env scrub** — the child keeps only a small allowlist (`PATH`/`HOME`/`LANG`/`LD_LIBRARY_PATH`/…), so **every `AGENTFLOW_*` var (secrets, LLM keys, OAuth tokens) is dropped** and sandboxed code can't read platform credentials; (2) **POSIX rlimits** via `preexec_fn` — `RLIMIT_CPU` (busy-loop backstop), `RLIMIT_AS` (memory, default 1024 MB), `RLIMIT_FSIZE` (default 64 MB), `RLIMIT_CORE=0`, plus `os.setsid()` so a timeout kills the whole process group; (3) **wall-clock `timeout`** (default 30 s) → SIGKILL the group; (4) **isolated temp cwd** (`tempfile.mkdtemp`, `shutil.rmtree`'d after). The Python sandbox runs under `python -I` (isolated mode) using **`sys.executable`** — i.e. the per-script venv python — so installed packages (numpy/pandas/…) are importable; bash runs via `bash -c` (falls back to `sh`). `allow_network=False` best-effort blocks network via `unshare -rn` where the kernel permits it, silently falling back to allow — **not** a hard guarantee; the real protection is the scrubbed env. Windows degrades gracefully (no `resource`/`preexec_fn`, keeps timeout + cwd + env-scrub + `CREATE_NEW_PROCESS_GROUP`). Non-configurable/global — no DB model or UI; behaviour is code-only in the SDK.
+
 ### Web search provider (built-in web_search / web_fetch)
 
 The built-in `web_search` / `web_fetch` tools (defined in `agentflow/__init__.py::_make_builtin_tools`) pick a provider from a **singleton config**, with **DuckDuckGo (via `ddgs`, no key) as the always-on fallback** so an unconfigured deployment still searches.
@@ -222,6 +231,7 @@ Backend uses naive `datetime.utcnow()` everywhere (stored without TZ). Frontend 
 | Secret injection into user scripts | `services/execution_engine.py` (`secret_envs` → `sub_env`) |
 | Script-facing secret / HTTP helpers | `backend/agentflow/__init__.py::get_secret` / `list_secrets` / `http_get` / `http_post` |
 | Secrets management UI | `frontend/src/app/secrets/page.tsx` (+ navbar link in `app/page.tsx`) |
+| Opt-in sandboxed exec (bash + python; `run_bash`/`run_python` SDK, `bash_tool`/`python_tool`/`exec_tools` agent tools) | `backend/agentflow/_sandbox.py` + factories in `agentflow/__init__.py` (NOT in default `get_tools()`) |
 | Web search provider (model / schema / CRUD / test) | `app/models.py::SearchConfig` + `schemas.py` (`SearchConfig*`) + `routers/search_config.py` + Alembic `0003` |
 | web_search / web_fetch provider dispatch (Tavily → DDG fallback) | `backend/agentflow/__init__.py` (`_search_config` / `_tavily_search` / `_tavily_extract` / `_ddg_search` / `_httpx_fetch` / `_make_builtin_tools`) |
 | Search config injection (`AGENTFLOW_SEARCH_CONFIG`) | `services/execution_engine.py` (`secret_envs` → `sub_env`) |
