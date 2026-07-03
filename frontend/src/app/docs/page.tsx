@@ -58,6 +58,53 @@ export default function DocsPage() {
         <Intro origin={origin} />
 
         <Section
+          title="Connect a coding agent (MCP)"
+          desc="AgentFlow exposes an MCP server so Claude Code, Cursor or any MCP client can develop scripts on this instance directly: create/edit script files, set up the venv, run scripts and read the failing traceback — the full write→run→debug loop. Auth is an issued API key (create one on the /security page). Note: unlike /api/executions/run, the MCP endpoint gives an API key full script-management scope, not just run."
+        >
+          <Endpoint method="POST" path="/mcp  (Streamable HTTP)" />
+          <Code
+            label="Claude Code"
+            code={`claude mcp add --transport http agentflow ${origin}/mcp \\
+  --header "X-API-Key: af_…"`}
+          />
+          <Code
+            label="Cursor / generic mcpServers JSON"
+            code={`{
+  "mcpServers": {
+    "agentflow": {
+      "url": "${origin}/mcp",
+      "headers": { "X-API-Key": "af_…" }
+    }
+  }
+}`}
+          />
+          <Code
+            label="Install the companion skill (teaches the agent the script conventions)"
+            code={`mkdir -p ~/.claude/skills/agentflow-scripting
+curl -s ${origin}/mcp/skill \\
+  -o ~/.claude/skills/agentflow-scripting/SKILL.md`}
+          />
+          <p className="text-xs text-muted-foreground">
+            Tools exposed: <code className="text-foreground">get_platform_context</code>,{" "}
+            <code className="text-foreground">get_scripting_guide</code>,{" "}
+            <code className="text-foreground">list_scripts</code>,{" "}
+            <code className="text-foreground">get_script</code>,{" "}
+            <code className="text-foreground">create_script</code>,{" "}
+            <code className="text-foreground">update_script</code>,{" "}
+            <code className="text-foreground">read_script_file</code>,{" "}
+            <code className="text-foreground">write_script_file</code>,{" "}
+            <code className="text-foreground">delete_script_file</code>,{" "}
+            <code className="text-foreground">setup_script_env</code>,{" "}
+            <code className="text-foreground">run_script</code>,{" "}
+            <code className="text-foreground">list_executions</code>,{" "}
+            <code className="text-foreground">get_execution_logs</code>. The same skill text
+            is also available to the agent at runtime via{" "}
+            <code className="text-foreground">get_scripting_guide</code>, so installing it
+            locally is optional — it just helps the agent pick the right approach sooner.
+          </p>
+        </Section>
+
+        <Section
           title="Run synchronously"
           desc="Blocks until the script finishes and returns the final output_data. Best for external service-to-service calls — this is the one endpoint you can call with an X-API-Key (default timeout 300s)."
         >

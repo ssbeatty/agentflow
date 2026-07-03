@@ -22,6 +22,7 @@ from app.routers import (
     search_config,
 )
 from services.scheduler import scheduler_service
+from services.mcp_gateway import MCPGatewayMiddleware, gateway as mcp_gateway
 
 FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend" / "out"
 
@@ -61,7 +62,10 @@ async def lifespan(app: FastAPI):
         db.close()
     scheduler_service.start()
     try:
-        yield
+        # The MCP gateway's StreamableHTTP session manager needs a running task
+        # group for the lifetime of the app (stateless mode still requires it).
+        async with mcp_gateway.session_manager.run():
+            yield
     finally:
         scheduler_service.shutdown()
 
@@ -103,6 +107,13 @@ app.include_router(secrets.router,        prefix="/api/secrets",        tags=["s
 app.include_router(skills.router,         prefix="/api/skills",         tags=["skills"],         dependencies=_admin)
 app.include_router(marketplace.router,     prefix="/api/marketplace",     tags=["marketplace"],     dependencies=_admin)
 app.include_router(search_config.router,   prefix="/api/search-config",   tags=["search-config"],   dependencies=_admin)
+
+# ── MCP gateway (external coding agents: Claude Code, Cursor, …) ─────────────
+# Streamable HTTP MCP server for developing scripts remotely, intercepted at
+# /mcp before FastAPI routing (a Mount can't match the bare /mcp path). Auth:
+# issued API key or admin session Bearer — enforced inside the middleware.
+app.add_middleware(MCPGatewayMiddleware)
+
 
 @app.get("/health")
 def health():

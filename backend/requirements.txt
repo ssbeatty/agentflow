@@ -9,10 +9,12 @@ apscheduler>=3.10.4
 python-dotenv>=1.0.0
 websockets>=14.0
 
-# MCP "test connection" probe + OAuth flow run in the backend process.
+# MCP "test connection" probe + OAuth flow run in the backend process, and the
+# outward /mcp gateway (services/mcp_gateway.py) — the gateway's FastMCP
+# stateless streamable-http kwargs need a recent SDK, hence the floor.
 # (langchain-mcp-adapters stays a per-script venv baseline; the backend only
 #  needs the raw client SDK + httpx for discovery/token exchange.)
-mcp>=1.9.0
+mcp>=1.28.0
 httpx>=0.27.0
 
 # Optional DB drivers — installed in the docker image so DATABASE_URL can

@@ -169,6 +169,15 @@ The whole management UI/API sits behind a **single admin login**; external syste
 - **Frontend gate**: `components/AuthGate.tsx` wraps the app in `layout.tsx`; it calls `/api/auth/status` on every navigation and routes to `/setup` (no admin), `/login` (not authed), or through. Protected pages don't mount until authorized. `lib/api.ts::req()` bounces to `/login` on a 401 (except for `/auth/*` calls). Pages: `app/login`, `app/setup`, `app/security` (account + API key management).
 - **External API usage**: `curl -X POST http://host/api/executions/run -H "X-API-Key: af_…" -H "Content-Type: application/json" -d '{"script_id":"…","input_data":{…}}'` — blocks until the script finishes and returns `{id,status,output_data,error,…}`.
 
+### Outward MCP gateway (external coding agents develop scripts here)
+
+AgentFlow **serves** an MCP endpoint (distinct from *consuming* external MCP servers above): Claude Code / Cursor / any MCP client connects to `POST /mcp` (Streamable HTTP, stateless, JSON responses) and gets 13 tools covering the full write→run→debug loop — `get_platform_context`, `get_scripting_guide`, script CRUD (`list/get/create/update_script`), file CRUD (`read/write/delete_script_file`, write returns ast-lint issues), `setup_script_env` (venv create + requirements install; slow first time), `run_script` (blocking, returns `output_data`/`error` **+ error logs/traceback** on failure), `list_executions`, `get_execution_logs`. All in `services/mcp_gateway.py` (FastMCP from the `mcp` SDK, already a backend dep).
+
+- **Wiring is a pure-ASGI middleware, NOT a Mount**: `MCPGatewayMiddleware` (added in `app/main.py`) intercepts `/mcp`, `/mcp/` and `/mcp/skill` before FastAPI routing. A `Mount("/mcp")` doesn't work — current Starlette mounts don't match the bare `/mcp` path (falls through to the frontend catch-all → 405) and no longer rewrite `scope["path"]` for children; the middleware normalizes the scope itself. The lifespan must run `async with mcp_gateway.session_manager.run():` (required even in stateless mode).
+- **Auth**: same credentials as `POST /api/executions/run` (issued `af_…` API key via `X-API-Key`/Bearer, or an admin session Bearer token), enforced inside the middleware. **This widens API-key scope** — a key holder gets script CRUD + run through `/mcp`, not just run; acceptable in the single-admin trust model, documented on the docs page.
+- **The companion Agent Skill** lives at `backend/assets/skills/agentflow-scripting/SKILL.md` (inside `backend/` so the Docker `COPY backend/` picks it up) — single source of truth for "how to write AgentFlow scripts": served to agents at runtime via the `get_scripting_guide` tool and downloadable publicly at `GET /mcp/skill` for local install (`~/.claude/skills/agentflow-scripting/`). Keep it in sync when the SDK / conventions change.
+- **Client setup docs** are on the frontend `/docs` page ("Connect a coding agent (MCP)" section): `claude mcp add --transport http agentflow http://host/mcp --header "X-API-Key: af_…"`, generic `mcpServers` JSON, and the skill-install curl.
+
 ### Time/timezone
 
 Backend uses naive `datetime.utcnow()` everywhere (stored without TZ). Frontend `formatDate` / `toLocalDate` in `frontend/src/lib/utils.ts` append `Z` to TZ-less strings before parsing. **Don't change one side without the other**, or times will silently shift 8 hours.
@@ -231,6 +240,9 @@ Backend uses naive `datetime.utcnow()` everywhere (stored without TZ). Frontend 
 | Secret injection into user scripts | `services/execution_engine.py` (`secret_envs` → `sub_env`) |
 | Script-facing secret / HTTP helpers | `backend/agentflow/__init__.py::get_secret` / `list_secrets` / `http_get` / `http_post` |
 | Secrets management UI | `frontend/src/app/secrets/page.tsx` (+ navbar link in `app/page.tsx`) |
+| Outward MCP gateway (tools / auth middleware / skill download) | `backend/services/mcp_gateway.py` + wiring in `app/main.py` (middleware + lifespan `session_manager.run()`) |
+| agentflow-scripting companion skill (scripting guide source) | `backend/assets/skills/agentflow-scripting/SKILL.md` |
+| MCP / coding-agent onboarding docs | `frontend/src/app/docs/page.tsx` ("Connect a coding agent" section) |
 | Opt-in sandboxed exec (bash + python; `run_bash`/`run_python` SDK, `bash_tool`/`python_tool`/`exec_tools` agent tools) | `backend/agentflow/_sandbox.py` + factories in `agentflow/__init__.py` (NOT in default `get_tools()`) |
 | Web search provider (model / schema / CRUD / test) | `app/models.py::SearchConfig` + `schemas.py` (`SearchConfig*`) + `routers/search_config.py` + Alembic `0003` |
 | web_search / web_fetch provider dispatch (Tavily → DDG fallback) | `backend/agentflow/__init__.py` (`_search_config` / `_tavily_search` / `_tavily_extract` / `_ddg_search` / `_httpx_fetch` / `_make_builtin_tools`) |
