@@ -479,7 +479,118 @@ def _apply_reasoning(extra: dict, provider: str, base_url: "str | None", level: 
             extra.setdefault("reasoning_effort", level)
 
 
-def get_llm(name: str = "default", reasoning=None):
+# ── Auto-stream chain-of-thought as <think> (opt-in via stream_reasoning=) ──────
+#
+# A reasoning model returns its chain-of-thought on a channel separate from the
+# answer — DeepSeek in `additional_kwargs["reasoning_content"]`, Anthropic in
+# `thinking` content blocks. Surfacing it in /converse means wrapping it in a
+# `<think>…</think>` block in the token stream. Making each script do that by hand
+# is error-prone (open once / close once / keep it out of the reply), so instead
+# `get_llm(stream_reasoning=True)` (and get_agent/get_deep_agent) attach this
+# callback: it watches the model's streamed tokens and emits the reasoning as a
+# single <think> block automatically, so scripts contain NO think-handling logic.
+
+def _chunk_reasoning(chunk) -> str:
+    """Reasoning delta carried by a streamed chunk, if any (provider-agnostic)."""
+    msg = getattr(chunk, "message", None)
+    if msg is None:
+        return ""
+    ak = getattr(msg, "additional_kwargs", None) or {}
+    rc = ak.get("reasoning_content")
+    if rc:
+        return rc if isinstance(rc, str) else str(rc)
+    content = getattr(msg, "content", None)  # Anthropic: thinking blocks
+    if isinstance(content, list):
+        parts = [
+            (b.get("thinking") or b.get("text") or "")
+            for b in content
+            if isinstance(b, dict) and b.get("type") in ("thinking", "redacted_thinking")
+        ]
+        if any(parts):
+            return "".join(parts)
+    return ""
+
+
+def _final_reasoning_content(response) -> str:
+    """Reasoning from a *non-streamed* LLMResult (the invoke() fallback path)."""
+    try:
+        for batch in (getattr(response, "generations", None) or []):
+            for g in (batch if isinstance(batch, list) else [batch]):
+                rc = _chunk_reasoning(g)
+                if rc:
+                    return rc
+    except Exception:
+        pass
+    return ""
+
+
+try:
+    from langchain_core.callbacks import BaseCallbackHandler as _BaseCB  # type: ignore
+except ImportError:  # pragma: no cover
+    _BaseCB = object  # type: ignore
+
+
+class _ReasoningStreamer(_BaseCB):
+    """Emit a model's separate chain-of-thought to the chat UI as one
+    ``<think>…</think>`` block, so a script never handles reasoning tags itself.
+    Sync + ``run_inline`` so it fires (in order) for both ``.stream()`` and
+    ``.astream()``, exactly like the global tracer. State is keyed per LLM run,
+    so an agent's tool-loop (many LLM calls) closes each block cleanly."""
+
+    raise_error = False
+    run_inline = True
+
+    def __init__(self) -> None:
+        self._open: dict[str, bool] = {}      # run_id → <think> currently open
+        self._streamed: dict[str, bool] = {}  # run_id → emitted any reasoning live
+
+    def on_llm_new_token(self, *args, **kwargs):
+        # LangChain passes the token text positionally in some paths and as the
+        # keyword `token=` in others; accept both without shadowing the module's
+        # own token() emitter (hence *args/**kwargs, not a `token` parameter).
+        text = kwargs.get("token")
+        if text is None and args:
+            text = args[0]
+        chunk = kwargs.get("chunk")
+        rid = str(kwargs.get("run_id"))
+        rc = _chunk_reasoning(chunk) if chunk is not None else ""
+        if rc:
+            if not self._open.get(rid):
+                token("<think>")
+                self._open[rid] = True
+            token(rc)
+            self._streamed[rid] = True
+            return
+        if text and self._open.get(rid):   # answer text began → close the block once
+            token("</think>")
+            self._open[rid] = False
+
+    def on_llm_end(self, response, *, run_id=None, **kwargs):
+        rid = str(run_id)
+        if self._open.pop(rid, False):
+            token("</think>")
+        elif not self._streamed.get(rid):
+            # Non-streaming (invoke): reasoning arrived whole in the final message.
+            rc = _final_reasoning_content(response)
+            if rc:
+                token(f"<think>{rc}</think>")
+        self._streamed.pop(rid, None)
+
+    def on_llm_error(self, error, *, run_id=None, **kwargs):
+        rid = str(run_id)
+        if self._open.pop(rid, False):
+            token("</think>")
+        self._streamed.pop(rid, None)
+
+
+def _reasoning_callbacks(stream_reasoning: bool) -> list:
+    """[_ReasoningStreamer()] when opted in and langchain is importable, else []."""
+    if not stream_reasoning or _BaseCB is object:
+        return []
+    return [_ReasoningStreamer()]
+
+
+def get_llm(name: str = "default", reasoning=None, stream_reasoning: bool = False):
     """
     Return a LangChain chat model.
 
@@ -495,6 +606,12 @@ def get_llm(name: str = "default", reasoning=None):
                                   reasoning_effort, gateway enable_thinking, …). The
                                   reasoning text streams back as `reasoning_content`
                                   or a `<think>` block — see the chat templates.
+    - `stream_reasoning=True`  → auto-surface that chain-of-thought in the chat UI as
+                                  a collapsible `<think>` block, with NO think logic in
+                                  your script: just `token(chunk.content)` for the
+                                  answer. The platform emits the reasoning for you and
+                                  keeps it out of your returned reply. No-op if the
+                                  model isn't reasoning. Pair with `reasoning=`.
 
     Available model ids can be enumerated with `list_llms()`. Returns None outside
     the platform.
@@ -530,6 +647,11 @@ def get_llm(name: str = "default", reasoning=None):
         _level = _norm_reasoning(reasoning)
         if _level:
             _apply_reasoning(extra, provider, base_url, _level)
+
+        # Opt-in: attach the callback that auto-streams reasoning as <think>.
+        _cbs = _reasoning_callbacks(stream_reasoning)
+        if _cbs:
+            extra["callbacks"] = list(extra.get("callbacks") or []) + _cbs
 
         if provider == "anthropic":
             from langchain_anthropic import ChatAnthropic
@@ -972,12 +1094,17 @@ def get_agent(
     llm_name: str = "default",
     tools: list | None = None,
     reasoning=None,
+    stream_reasoning: bool = False,
 ):
     """
     Return a ready-to-use ReAct agent (LangGraph create_react_agent).
 
     The agent has all platform-configured tools pre-loaded (web_fetch,
     web_search, and any MCP server tools). Pass `tools` to override.
+
+    `stream_reasoning=True` auto-surfaces the model's chain-of-thought in the chat
+    UI as a `<think>` block — the platform handles it, so your streaming loop needs
+    no reasoning logic (see `get_llm`). Pair with `reasoning=`.
 
     Example:
         def run(input: dict) -> dict:
@@ -997,7 +1124,7 @@ def get_agent(
     import inspect
     from langgraph.prebuilt import create_react_agent
 
-    llm = get_llm(llm_name, reasoning=reasoning)
+    llm = get_llm(llm_name, reasoning=reasoning, stream_reasoning=stream_reasoning)
     if llm is None:
         raise RuntimeError(
             "No LLM configured. Add one in AgentFlow Settings before calling get_agent()."
@@ -1058,6 +1185,7 @@ def get_deep_agent(
     llm_name: str = "default",
     tools: list | None = None,
     reasoning=None,
+    stream_reasoning: bool = False,
     **kwargs,
 ):
     """
@@ -1092,7 +1220,7 @@ def get_deep_agent(
             "baseline venv; if it's missing, add 'deepagents' to requirements.txt."
         ) from e
 
-    llm = get_llm(llm_name, reasoning=reasoning)
+    llm = get_llm(llm_name, reasoning=reasoning, stream_reasoning=stream_reasoning)
     if llm is None:
         raise RuntimeError(
             "No LLM configured. Add one in AgentFlow Settings before calling get_deep_agent()."

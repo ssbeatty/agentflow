@@ -9,11 +9,11 @@ Reasoning / "Think":
     input["reasoning"] = "off" | "low" | "medium" | "high" and is passed to
     get_llm(reasoning=…), which maps it to the model's provider-specific knob
     (Claude thinking budget, OpenAI reasoning_effort, gateway enable_thinking…).
-  - Reasoning that a model returns separately in
-    additional_kwargs["reasoning_content"] (e.g. DeepSeek official API) is
-    re-emitted as <think>…</think> so the chat UI renders a collapsible
-    "thought process". It is kept OUT of the returned reply, so it is not
-    persisted and does not pollute future history.
+  - `stream_reasoning=True` makes the PLATFORM surface the model's chain-of-thought
+    (DeepSeek `reasoning_content`, Claude thinking blocks, …) in the chat UI as a
+    collapsible "thought process" — kept out of the returned reply automatically.
+    Your loop stays trivial: no <think> tags, no reasoning_content branch. This
+    is the whole point — think handling is not the script's job to get right.
 
 How to use:
   1. Copy this file's content into a new AgentFlow script (main.py).
@@ -26,7 +26,7 @@ from agentflow import token, get_llm
 
 
 async def run(input: dict) -> dict:
-    llm = get_llm(reasoning=input.get("reasoning"))
+    llm = get_llm(reasoning=input.get("reasoning"), stream_reasoning=True)
     history = input.get("history", [])
 
     messages = (
@@ -36,21 +36,12 @@ async def run(input: dict) -> dict:
     )
 
     full_reply = ""
-    in_think = False
     async for chunk in llm.astream(messages):
-        rc = (getattr(chunk, "additional_kwargs", None) or {}).get("reasoning_content")
-        if rc:
-            if not in_think:
-                token("<think>")
-                in_think = True
-            token(rc)
-        if chunk.content:
-            if in_think:
-                token("</think>")
-                in_think = False
-            token(chunk.content)   # streams to /converse in real-time
-            full_reply += chunk.content
-    if in_think:
-        token("</think>")
+        # Only the answer — the platform streams the <think> reasoning block for us.
+        text = chunk.content if isinstance(chunk.content, str) else "".join(
+            c.get("text", "") for c in chunk.content if isinstance(c, dict))
+        if text:
+            token(text)          # streams to /converse in real-time
+            full_reply += text
 
     return {"reply": full_reply}

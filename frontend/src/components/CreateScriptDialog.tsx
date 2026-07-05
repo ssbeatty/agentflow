@@ -73,15 +73,16 @@ def run(input: dict) -> dict:
 
 token() streams each chunk to the Chat page in real time. The conversation's
 "Think" level arrives as input["reasoning"] (off/low/medium/high) and is passed
-to get_llm so the model reasons. Reasoning that comes back separately in
-additional_kwargs["reasoning_content"] (e.g. DeepSeek official) is re-emitted as
-<think>...</think> so the UI shows a collapsible "thought process"; it is kept
-out of the returned reply. Use this over Simple Chat when you want streaming."""
+to get_llm so the model reasons. stream_reasoning=True lets the PLATFORM surface
+the model's chain-of-thought (DeepSeek reasoning_content, Claude thinking, ...) in
+the UI as a collapsible "thought process" - kept out of the returned reply for you,
+so this loop needs no <think> logic. Use this over Simple Chat when you want
+streaming."""
 from agentflow import token, get_llm
 
 
 async def run(input: dict) -> dict:
-    llm = get_llm(reasoning=input.get("reasoning"))
+    llm = get_llm(reasoning=input.get("reasoning"), stream_reasoning=True)
     history = input.get("history", [])
 
     messages = (
@@ -91,25 +92,13 @@ async def run(input: dict) -> dict:
     )
 
     full_reply = ""
-    in_think = False
     async for chunk in llm.astream(messages):
-        # Reasoning models may stream chain-of-thought separately; wrap it in
-        # <think> for the UI, and keep it OUT of full_reply so it isn't persisted
-        # or fed back into history.
-        rc = (getattr(chunk, "additional_kwargs", None) or {}).get("reasoning_content")
-        if rc:
-            if not in_think:
-                token("<think>")
-                in_think = True
-            token(rc)
-        if chunk.content:
-            if in_think:
-                token("</think>")
-                in_think = False
-            token(chunk.content)
-            full_reply += chunk.content
-    if in_think:
-        token("</think>")
+        # Just the answer - the platform streams the <think> reasoning block itself.
+        text = chunk.content if isinstance(chunk.content, str) else "".join(
+            c.get("text", "") for c in chunk.content if isinstance(c, dict))
+        if text:
+            token(text)
+            full_reply += text
 
     return {"reply": full_reply}
 `,

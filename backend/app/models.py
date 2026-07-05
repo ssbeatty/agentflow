@@ -284,6 +284,10 @@ class ConversationMessage(Base):
     conversation_id = Column(String, ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
     role = Column(String(20), nullable=False)        # "user" | "assistant"
     content = Column(Text, nullable=False, default="")
+    # Chain-of-thought for the assistant turn, kept SEPARATE from `content` so it
+    # survives reload (rendered as the <think> block) without ever entering the
+    # model history (chat_start builds history from `content` only). Null = none.
+    reasoning = Column(Text, nullable=True)
     error = Column(Text, nullable=True)
     execution_id = Column(String, nullable=True)     # plain string ref to executions.id
     created_at = Column(DateTime, default=datetime.utcnow)

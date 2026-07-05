@@ -46,6 +46,8 @@ LLMs (configured as channels by the platform admin; see `get_platform_context`):
 llm = get_llm()                     # the instance's default model
 llm = get_llm("gpt-4o")             # by model id, case-insensitive
 llm = get_llm(reasoning="medium")   # thinking mode: "off"|"low"|"medium"|"high"
+llm = get_llm(reasoning="medium", stream_reasoning=True)  # + auto-stream the
+                                    # chain-of-thought to the chat UI as <think>
 models = list_llms()                # available model ids
 ```
 
@@ -57,6 +59,7 @@ tools = get_tools()                 # built-in web_search + web_fetch + the MCP 
 agent = get_agent()                 # LangGraph ReAct agent over get_tools() + bound
                                     # skills (advertised in prompt, read via read_skill)
 agent = get_agent(system_prompt="You are...", llm_name="default", reasoning="low")
+agent = get_agent(reasoning="high", stream_reasoning=True)  # auto <think> in chat
 result = agent.invoke({"messages": [("user", msg)]})
 reply = result["messages"][-1].content
 
@@ -109,18 +112,23 @@ folder = skill_path("pdf-tools")          # Path to the skill's files
 
 Input arrives as `{"message": str, "history": [{"role","content"}], "reasoning": str}`;
 return `{"reply": str}`. Forward the reasoning level: `get_agent(reasoning=input.get("reasoning"))`.
-Stream with `token(...)` for a live-typing UI. If the model returns its chain of
-thought separately (e.g. DeepSeek `additional_kwargs["reasoning_content"]`), re-emit
-it as `token("<think>...</think>")` but keep it out of the returned `reply`.
+Stream with `token(...)` for a live-typing UI.
 
-Minimal chat agent:
+**Reasoning / "thought process": do NOT handle it in your script.** Pass
+`stream_reasoning=True` to `get_agent` / `get_llm` and the platform surfaces the
+model's chain-of-thought (DeepSeek `reasoning_content`, Claude thinking, …) in the UI
+as a collapsible `<think>` block, kept out of your returned `reply` automatically. Your
+loop only ever streams the answer — never emit `<think>` tags or read
+`reasoning_content` yourself (that's the error-prone path the flag exists to remove).
+
+Minimal chat agent (reasoning surfaced automatically by the flag):
 
 ```python
 from agentflow import get_agent, token
 
 def run(input: dict) -> dict:
     history = [(m["role"], m["content"]) for m in input.get("history", [])]
-    agent = get_agent(reasoning=input.get("reasoning"))
+    agent = get_agent(reasoning=input.get("reasoning"), stream_reasoning=True)
     out = []
     for chunk, meta in agent.stream(
         {"messages": history + [("user", input["message"])]},

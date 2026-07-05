@@ -312,6 +312,7 @@ export interface ConversationMessage {
   conversation_id: string;
   role: "user" | "assistant";
   content: string;
+  reasoning?: string;   // <think> chain-of-thought; never sent as model history
   error?: string;
   execution_id?: string;
   created_at: string;

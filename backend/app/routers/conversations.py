@@ -203,10 +203,16 @@ def confirm_reply(conv_id: str, body: ConverseConfirmRequest, db: Session = Depe
         content = ""
         error = exc.error or f"Execution {exc.status}"
 
+    # The chain-of-thought is streamed over the WS only (not in output_data), so the
+    # frontend hands it back here to persist for reload. Stored separately from
+    # `content` so it never enters the model history built by chat_start.
+    reasoning = (body.reasoning or "").strip() or None if exc.status == "completed" else None
+
     assistant_msg = ConversationMessage(
         conversation_id=conv_id,
         role="assistant",
         content=content,
+        reasoning=reasoning,
         error=error,
         execution_id=body.execution_id,
     )

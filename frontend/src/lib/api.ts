@@ -351,10 +351,10 @@ export const conversations = {
       body: JSON.stringify({ message }),
     }),
 
-  confirm: (id: string, execution_id: string) =>
+  confirm: (id: string, execution_id: string, reasoning?: string) =>
     req<ConversationMessage>(`/conversations/${id}/confirm`, {
       method: "POST",
-      body: JSON.stringify({ execution_id }),
+      body: JSON.stringify({ execution_id, reasoning }),
     }),
 
   deleteMessage: (convId: string, msgId: string) =>

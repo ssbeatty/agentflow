@@ -513,6 +513,7 @@ class ConversationMessageOut(BaseModel):
     conversation_id: str
     role: str
     content: str
+    reasoning: Optional[str] = None   # <think> chain-of-thought; never sent as history
     error: Optional[str] = None
     execution_id: Optional[str] = None
     created_at: datetime
@@ -555,6 +556,7 @@ class ConverseChatStartRequest(BaseModel):
 
 class ConverseConfirmRequest(BaseModel):
     execution_id: str
+    reasoning: Optional[str] = None   # streamed <think> CoT, persisted for reload
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────

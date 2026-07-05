@@ -48,23 +48,45 @@ function TypewriterText({ text, onDone }: { text: string; onDone: () => void }) 
 // ── Reasoning (chain-of-thought) ──────────────────────────────────────────────
 
 // Split a reasoning model's chain-of-thought (<think>…</think>, some models emit
-// <thinking>) out of the visible answer. Handles an unclosed tag mid-stream:
-// everything after an open <think> with no close yet is "reasoning so far".
-// Without this, react-markdown silently drops the unknown <think> HTML tag AND
-// its contents, so the thinking is invisible.
+// <thinking>) out of the visible answer. Without this, react-markdown silently
+// drops the unknown <think> HTML tag AND its contents, so the thinking is invisible.
+//
+// Deliberately tolerant of how a script emits the tags, because that correctness
+// must NOT be each script's burden to get right — the platform owns it here:
+//   • one block  <think>…all reasoning…</think>answer   (the clean form)
+//   • per chunk  <think>a</think><think>b</think>answer  (naive streaming loop —
+//     reasoning_content arrives token-by-token; a script that wraps each chunk
+//     individually is stitched back into one block instead of showing only "a")
+//   • unclosed   <think>partial            (still streaming → thinking:true)
+// Every <think> block's contents are concatenated into one reasoning string; all
+// non-think text is the answer.
 function splitThink(content: string): { reasoning: string; answer: string; thinking: boolean } {
-  const om = content.match(/<think(?:ing)?>/i);
-  if (!om || om.index === undefined) return { reasoning: "", answer: content, thinking: false };
-  const afterOpen = content.slice(om.index + om[0].length);
-  const before = content.slice(0, om.index);
-  const cm = afterOpen.match(/<\/think(?:ing)?>/i);
-  if (!cm || cm.index === undefined) {
-    // Open tag but no close yet → still thinking.
-    return { reasoning: afterOpen, answer: before, thinking: true };
+  const openRe = /<think(?:ing)?>/gi;
+  const reasoningParts: string[] = [];
+  let answer = "";
+  let thinking = false;
+  let cursor = 0;
+  while (cursor < content.length) {
+    openRe.lastIndex = cursor;
+    const om = openRe.exec(content);
+    if (!om) {
+      answer += content.slice(cursor);
+      break;
+    }
+    answer += content.slice(cursor, om.index); // text before this block is answer
+    const afterOpen = om.index + om[0].length;
+    const cm = content.slice(afterOpen).match(/<\/think(?:ing)?>/i);
+    if (!cm || cm.index === undefined) {
+      // Open tag with no close yet → the rest is reasoning, still streaming.
+      reasoningParts.push(content.slice(afterOpen));
+      thinking = true;
+      break;
+    }
+    reasoningParts.push(content.slice(afterOpen, afterOpen + cm.index));
+    cursor = afterOpen + cm.index + cm[0].length;
   }
-  const reasoning = afterOpen.slice(0, cm.index);
-  const answer = before + afterOpen.slice(cm.index + cm[0].length);
-  return { reasoning: reasoning.trim(), answer: answer.trim(), thinking: false };
+  const reasoning = reasoningParts.join("");
+  return { reasoning: thinking ? reasoning : reasoning.trim(), answer: answer.trim(), thinking };
 }
 
 // Collapsible "thought process" block shown above an assistant answer. Auto-
@@ -507,6 +529,10 @@ function ConverseInner() {
   // Used to decide whether to run the typewriter animation after confirm —
   // if tokens already streamed in, the content is already visible so we skip it.
   const tokenReceivedRef = useRef(false);
+  // Accumulated streamed content for the current assistant turn, so on completion
+  // we can extract the <think> reasoning (absent from the persisted reply) and
+  // both persist it (confirm) and stitch it back onto the finalized content.
+  const streamedContentRef = useRef("");
   // When send() auto-creates a conversation, setActiveConvId triggers the
   // message-load effect which would wipe the optimistic messages. This ref
   // tells the effect to skip one load cycle.
@@ -569,7 +595,10 @@ function ConverseInner() {
       const base: UiMessage[] = conv.messages.map((m) => ({
         id: m.id,
         role: m.role,
-        content: m.content,
+        // Reasoning is persisted separately from content (so it stays out of
+        // model history); re-attach it as the <think> block splitThink expects,
+        // so the thought-process survives reload.
+        content: m.reasoning ? `<think>${m.reasoning}</think>${m.content}` : m.content,
         error: m.error ?? undefined,
         execution_id: m.execution_id ?? undefined,
       }));
@@ -672,6 +701,7 @@ function ConverseInner() {
   const openWebSocket = useCallback((executionId: string, assistantMsgId: string, convId: string) => {
     if (wsRef.current) wsRef.current.close();
     tokenReceivedRef.current = false;
+    streamedContentRef.current = "";
     currentExecIdRef.current = executionId;
 
     const proto = window.location.protocol === "https:" ? "wss" : "ws";
@@ -684,6 +714,7 @@ function ConverseInner() {
 
       if (evt.type === "token") {
         tokenReceivedRef.current = true;
+        streamedContentRef.current += evt.content;
         setMessages((prev) => prev.map((m) =>
           m.id === assistantMsgId
             ? { ...m, content: m.content + evt.content, streaming: true }
@@ -713,26 +744,34 @@ function ConverseInner() {
           ws.close();
           wsRef.current = null;
           currentExecIdRef.current = null;
-          convsApi.confirm(convId, executionId).then((saved) => {
+          // Carry the reasoning we streamed live: output_data (→ saved.content)
+          // omits it, so hand it to confirm to persist for reload and stitch it
+          // back onto the finalized content now (else the block would vanish the
+          // instant the run completes).
+          const streamedReasoning = splitThink(streamedContentRef.current).reasoning;
+          convsApi.confirm(convId, executionId, streamedReasoning || undefined).then((saved) => {
             const wasStreamed = tokenReceivedRef.current;
             const shouldAnimate = !wasStreamed && !saved.error && !!saved.content;
-            setMessages((prev) => prev.map((m) =>
-              m.id === assistantMsgId
-                ? {
-                    ...m,
-                    // Swap the client temp id for the real DB id, otherwise the
-                    // just-finished message keeps a `tmp-…` id and the delete
-                    // button (gated on `!id.startsWith("tmp-")`) never appears
-                    // until a reload.
-                    id: saved.id,
-                    execution_id: saved.execution_id ?? m.execution_id,
-                    content: saved.content,
-                    error: saved.error ?? undefined,
-                    streaming: false,
-                    animating: shouldAnimate,
-                  }
-                : m
-            ));
+            setMessages((prev) => prev.map((m) => {
+              if (m.id !== assistantMsgId) return m;
+              const content =
+                streamedReasoning && !/<think(?:ing)?>/i.test(saved.content)
+                  ? `<think>${streamedReasoning}</think>${saved.content}`
+                  : saved.content;
+              return {
+                ...m,
+                // Swap the client temp id for the real DB id, otherwise the
+                // just-finished message keeps a `tmp-…` id and the delete
+                // button (gated on `!id.startsWith("tmp-")`) never appears
+                // until a reload.
+                id: saved.id,
+                execution_id: saved.execution_id ?? m.execution_id,
+                content,
+                error: saved.error ?? undefined,
+                streaming: false,
+                animating: shouldAnimate,
+              };
+            }));
             if (shouldAnimate) {
               // animatingId must match the new id so onAnimDone fires and clears
               // `animating` (which also gates the delete button).
