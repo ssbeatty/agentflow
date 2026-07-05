@@ -9,12 +9,15 @@ import { DiffEditor } from "@monaco-editor/react";
 import {
   assistant as assistantApi, executions as executionsApi, channels as channelsApi,
 } from "@/lib/api";
-import type { WsEvent } from "@/lib/types";
+import type { Channel, WsEvent } from "@/lib/types";
 import AgentTimeline, {
   reduceEvent, answerFromBlocks, type Block,
 } from "@/components/AgentTimeline";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 export interface ChangedFile { filename: string; before: string; after: string; }
@@ -42,8 +45,33 @@ interface Props {
 const HISTORY_LIMIT = 16;
 const REASONING_LEVELS = ["off", "low", "medium", "high"] as const;
 const REASONING_LABEL: Record<string, string> = { off: "off", low: "low", medium: "med", high: "high" };
+const DEFAULT_MODEL_VALUE = "__agentflow_default_model__";
+
+interface ModelGroup {
+  provider: string;
+  models: string[];
+}
 
 function uid() { return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`; }
+
+function providerLabel(provider: string): string {
+  const clean = (provider || "provider").replace(/[-_]+/g, " ").trim();
+  return clean ? clean.replace(/\b\w/g, (c) => c.toUpperCase()) : "Provider";
+}
+
+function groupModelsByProvider(channels: Channel[]): ModelGroup[] {
+  const groups = new Map<string, string[]>();
+  const seen = new Set<string>();
+  for (const ch of channels) {
+    const provider = ch.provider || "provider";
+    for (const model of ch.models ?? []) {
+      if (!model || seen.has(model)) continue;
+      seen.add(model);
+      groups.set(provider, [...(groups.get(provider) ?? []), model]);
+    }
+  }
+  return Array.from(groups, ([provider, models]) => ({ provider, models }));
+}
 
 function diffLang(filename: string): string {
   if (filename.endsWith(".py")) return "python";
@@ -70,7 +98,7 @@ export default function AssistantPanel({
   const [execId, setExecId] = useState<string | null>(null);
 
   // model + reasoning
-  const [models, setModels] = useState<string[]>([]);
+  const [modelGroups, setModelGroups] = useState<ModelGroup[]>([]);
   const [model, setModel] = useState<string>("");
   const [reasoning, setReasoning] = useState<string>("off");
 
@@ -92,9 +120,10 @@ export default function AssistantPanel({
     assistantApi.info().then(setInfo).catch((e) => setInfoError(String(e)));
     channelsApi.list().then((chs) => {
       const enabled = chs.filter((c) => c.enabled);
-      const list = Array.from(new Set(enabled.flatMap((c) => c.models ?? [])));
+      const groups = groupModelsByProvider(enabled);
+      const list = groups.flatMap((g) => g.models);
       const def = enabled.find((c) => c.is_default)?.default_model || list[0] || "";
-      setModels(list);
+      setModelGroups(groups);
       setModel(def);
     }).catch(() => { /* model list is best-effort; falls back to default */ });
   }, []);
@@ -365,17 +394,40 @@ export default function AssistantPanel({
       {/* Input + controls */}
       <div className="border-t border-border p-2 shrink-0 space-y-1.5">
         <div className="flex items-center gap-1.5">
-          <select
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            title="Model"
-            className="min-w-0 flex-1 h-6 rounded bg-secondary/40 border border-border/60 px-1.5 text-[11px] font-mono text-muted-foreground focus:outline-none"
+          <Select
+            value={model || DEFAULT_MODEL_VALUE}
+            onValueChange={(v) => setModel(v === DEFAULT_MODEL_VALUE ? "" : v)}
           >
-            {models.length === 0 && <option value="">Default model</option>}
-            {models.map((mm) => <option key={mm} value={mm}>{mm}</option>)}
-          </select>
+            <SelectTrigger
+              title="Model"
+              className="min-w-0 flex-1 h-7 rounded-md bg-background/50 border-border/70 px-2 text-[11px] font-mono text-foreground/80 shadow-none hover:bg-muted/40 focus:ring-0 focus:border-primary/45 [&>span]:truncate"
+            >
+              <SelectValue placeholder="Default model" />
+            </SelectTrigger>
+            <SelectContent align="start" className="max-h-72 w-[var(--radix-select-trigger-width)] bg-popover border-border/70">
+              <SelectItem value={DEFAULT_MODEL_VALUE} className="text-xs text-muted-foreground">
+                Default model
+              </SelectItem>
+              {modelGroups.map((group) => (
+                <SelectGroup key={group.provider}>
+                  <SelectLabel className="px-2 py-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
+                    {providerLabel(group.provider)}
+                  </SelectLabel>
+                  {group.models.map((mm) => (
+                    <SelectItem
+                      key={`${group.provider}:${mm}`}
+                      value={mm}
+                      className="pl-7 pr-2 text-xs font-mono text-foreground/85 focus:bg-muted/70 focus:text-foreground truncate"
+                    >
+                      {mm}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              ))}
+            </SelectContent>
+          </Select>
           <button onClick={cycleReasoning} title="Thinking (chain-of-thought) level"
-            className={cn("shrink-0 h-6 px-2 rounded border text-[11px] flex items-center gap-1",
+            className={cn("shrink-0 h-7 px-2 rounded-md border text-[11px] flex items-center gap-1",
               reasoning === "off" ? "border-border/60 text-muted-foreground" : "border-primary/40 text-primary bg-primary/10")}>
             <Brain className="h-3 w-3" />Think: {REASONING_LABEL[reasoning]}
           </button>

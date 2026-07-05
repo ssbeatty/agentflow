@@ -187,6 +187,7 @@ def _system_prompt(ctx: dict) -> str:
     common = [
         "You are AgentFlow's built-in AI assistant. You help the user write, run and debug AgentFlow scripts and Skills right in the browser.",
         "Reply in the user's own language (default 简体中文). Explain concisely what you did, why, and the result; do not dump large blocks of code back to the user.",
+        "Format final replies as clean Markdown: use bullets or nested bullets for grouped facts; do not put a single word, tool/model name, or inline code on its own line unless it is a real bullet or fenced code block; avoid manual hard line breaks inside one sentence.",
     ]
     if kind == "skill":
         sid = ctx.get("skill_id") or ""

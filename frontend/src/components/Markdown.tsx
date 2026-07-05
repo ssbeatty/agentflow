@@ -16,15 +16,21 @@ export function MarkdownContent({ text }: { text: string }) {
         ul: ({ children }) => <ul className="list-disc pl-5 mb-2 space-y-0.5">{children}</ul>,
         ol: ({ children }) => <ol className="list-decimal pl-5 mb-2 space-y-0.5">{children}</ol>,
         li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+        // react-markdown v10 no longer reliably passes the old `inline` flag.
+        // Style code inline by default; the surrounding <pre> resets fenced
+        // blocks below, so `run_python(...)` stays in the sentence instead of
+        // becoming its own awkward line.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        code: ({ inline, children, ...props }: any) =>
-          inline ? (
-            <code className="bg-muted px-1 py-0.5 rounded text-[0.85em] font-mono" {...props}>{children}</code>
-          ) : (
-            <code className="block font-mono text-xs" {...props}>{children}</code>
-          ),
+        code: ({ className, children, ...props }: any) => (
+          <code
+            className={`bg-muted px-1 py-0.5 rounded text-[0.85em] font-mono ${className ?? ""}`.trim()}
+            {...props}
+          >
+            {children}
+          </code>
+        ),
         pre: ({ children }) => (
-          <pre className="bg-muted rounded-lg p-3 mb-2 overflow-x-auto text-xs font-mono">{children}</pre>
+          <pre className="bg-muted rounded-lg p-3 mb-2 overflow-x-auto text-xs font-mono [&_code]:bg-transparent [&_code]:p-0 [&_code]:rounded-none [&_code]:text-xs">{children}</pre>
         ),
         blockquote: ({ children }) => (
           <blockquote className="border-l-2 border-primary/50 pl-3 italic text-muted-foreground mb-2">{children}</blockquote>
