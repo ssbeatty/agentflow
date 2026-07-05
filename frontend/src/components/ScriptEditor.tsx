@@ -12,15 +12,23 @@ export interface LintIssue {
   severity: "error" | "warning";
 }
 
+export interface EditorSelection {
+  text: string;
+  startLine: number;
+  endLine: number;
+}
+
 interface Props {
   value: string;
   onChange: (value: string | undefined) => void;
   readOnly?: boolean;
   issues?: LintIssue[];
   language?: string;
+  /** Fires with the current non-empty selection (or null when nothing selected). */
+  onSelectionChange?: (sel: EditorSelection | null) => void;
 }
 
-export default function ScriptEditor({ value, onChange, readOnly = false, issues = [], language = "python" }: Props) {
+export default function ScriptEditor({ value, onChange, readOnly = false, issues = [], language = "python", onSelectionChange }: Props) {
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const monacoRef = useRef<typeof Monaco | null>(null);
 
@@ -49,6 +57,18 @@ export default function ScriptEditor({ value, onChange, readOnly = false, issues
     });
 
     editor.getModel()?.updateOptions({ tabSize: 4, insertSpaces: true });
+
+    if (onSelectionChange) {
+      editor.onDidChangeCursorSelection((e) => {
+        const model = editor.getModel();
+        if (!model || e.selection.isEmpty()) { onSelectionChange(null); return; }
+        onSelectionChange({
+          text: model.getValueInRange(e.selection),
+          startLine: e.selection.startLineNumber,
+          endLine: e.selection.endLineNumber,
+        });
+      });
+    }
   };
 
   // push lint issues into Monaco as markers (red squiggles)

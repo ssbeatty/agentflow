@@ -447,6 +447,13 @@ export const searchConfig = {
     ),
 };
 
+// ── AI Assistant (in-editor script-writing agent) ──────────────────────────────
+
+export const assistant = {
+  /** The built-in assistant script id + whether its venv is ready. Seeds on demand. */
+  info: () => req<{ script_id: string; venv_ready: boolean }>("/assistant/info"),
+};
+
 // ── Cron Jobs ──────────────────────────────────────────────────────────────────
 
 export const cronJobs = {

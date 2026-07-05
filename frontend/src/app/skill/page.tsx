@@ -1,5 +1,5 @@
 "use client";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Save, Trash2, Loader2, Sparkles } from "lucide-react";
@@ -12,9 +12,10 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
-import ScriptEditor from "@/components/ScriptEditor";
+import ScriptEditor, { type EditorSelection } from "@/components/ScriptEditor";
 import FileTree, { type TreeFile } from "@/components/FileTree";
 import { useResizable } from "@/components/Splitter";
+import AssistantPanel, { type ChangedFile } from "@/components/AssistantPanel";
 
 const MAIN_FILE = "SKILL.md";
 
@@ -66,6 +67,22 @@ function SkillPage() {
     direction: "vertical", initial: 210, min: 140, max: 380,
     storageKey: "ag.skillTreeWidth", side: "start",
   });
+  const [aiWidth, aiHandle] = useResizable({
+    direction: "vertical", initial: 400, min: 320, max: 760,
+    storageKey: "ag.aiWidth", side: "end",
+  });
+
+  // In-editor AI assistant column (default open; persisted, shared key with /script).
+  const [aiOpen, setAiOpen] = useState(true);
+  useEffect(() => {
+    const v = localStorage.getItem("ag.aiOpen");
+    if (v !== null) setAiOpen(v === "1");
+  }, []);
+  const toggleAi = useCallback(() => {
+    setAiOpen(o => { const n = !o; localStorage.setItem("ag.aiOpen", n ? "1" : "0"); return n; });
+  }, []);
+  const assistantBaselineRef = useRef<Map<string, string>>(new Map());
+  const [selection, setSelection] = useState<EditorSelection | null>(null);
 
   useEffect(() => {
     if (!id) { router.push("/tools"); return; }
@@ -247,6 +264,76 @@ function SkillPage() {
     }
   }
 
+  // ── AI assistant turn lifecycle (edits skill files; diff/undo at end of turn) ──
+  function syncFromSkill(s: Skill) {
+    setSkill(s);
+    setName(s.name);
+    setDescription(s.description);
+    setEnabled(s.enabled);
+    setSkillFiles(s.files);
+    setDirs(s.dirs ?? []);
+    setFileContents(new Map(s.files.map(f => [f.filename, f.content])));
+    setDirtyFiles(new Set());
+    setMetaDirty(false);
+  }
+
+  function buildAssistantContext(): Record<string, unknown> {
+    const ctx: Record<string, unknown> = {
+      kind: "skill",
+      skill_id: id,
+      active_file: activeFile,
+      active_content: fileContents.get(activeFile) ?? "",
+    };
+    if (selection?.text) ctx.selection = selection.text;
+    return ctx;
+  }
+
+  async function handleAssistantBeforeTurn() {
+    if (dirty) await handleSave();
+    const base = new Map<string, string>();
+    for (const f of skillFiles) base.set(f.filename, fileContents.get(f.filename) ?? f.content);
+    assistantBaselineRef.current = base;
+  }
+
+  async function handleAssistantAfterTurn(): Promise<ChangedFile[]> {
+    const s = await skills.get(id);
+    syncFromSkill(s);
+    const base = assistantBaselineRef.current;
+    const changed: ChangedFile[] = [];
+    const seen = new Set<string>();
+    for (const f of s.files) {
+      seen.add(f.filename);
+      const before = base.get(f.filename) ?? "";
+      if (before !== f.content) changed.push({ filename: f.filename, before, after: f.content });
+    }
+    for (const [fn, before] of base) {
+      if (!seen.has(fn) && before) changed.push({ filename: fn, before, after: "" });
+    }
+    return changed;
+  }
+
+  async function handleAssistantRevert(filenames: string[]) {
+    const base = assistantBaselineRef.current;
+    const s = await skills.get(id);
+    const want = new Set(filenames);
+    const baseNames = new Set(base.keys());
+    const curNames = new Set(s.files.map(f => f.filename));
+    const ops: Promise<unknown>[] = [];
+    for (const f of s.files) {
+      if (!want.has(f.filename)) continue;
+      if (!baseNames.has(f.filename)) {
+        if (!f.is_main) ops.push(skills.deleteFile(id, f.filename).catch(() => null));  // assistant-created → remove
+      } else if ((base.get(f.filename) ?? "") !== f.content) {
+        ops.push(skills.upsertFile(id, { filename: f.filename, content: base.get(f.filename) ?? "", is_main: f.is_main }));
+      }
+    }
+    for (const [fn, content] of base) {  // assistant-deleted → recreate
+      if (want.has(fn) && !curNames.has(fn)) ops.push(skills.upsertFile(id, { filename: fn, content, is_main: fn === MAIN_FILE }));
+    }
+    await Promise.all(ops);
+    syncFromSkill(await skills.get(id));
+  }
+
   const treeFiles: TreeFile[] = skillFiles.map(f => ({
     filename: f.filename,
     is_main: f.is_main,
@@ -287,6 +374,9 @@ function SkillPage() {
           Enabled
         </label>
         <div className="flex-1" />
+        <Button variant={aiOpen ? "secondary" : "outline"} size="sm" onClick={toggleAi} title="AI 助手 — 帮你写/改这个 Skill">
+          <Sparkles className="h-4 w-4" />AI
+        </Button>
         <Button size="sm" onClick={handleSave} disabled={saving || !dirty}>
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           Save
@@ -341,9 +431,28 @@ function SkillPage() {
                 setFileContents(prev => new Map(prev).set(activeFile, val));
                 markDirty(activeFile);
               }}
+              onSelectionChange={setSelection}
             />
           </div>
         </div>
+
+        {/* Far right: in-editor AI assistant column */}
+        {aiOpen && (
+          <>
+            {aiHandle}
+            <div className="shrink-0 flex flex-col overflow-hidden border-l border-border" style={{ width: `${aiWidth}px` }}>
+              <AssistantPanel
+                buildContext={buildAssistantContext}
+                onBeforeTurn={handleAssistantBeforeTurn}
+                onAfterTurn={handleAssistantAfterTurn}
+                onRevert={handleAssistantRevert}
+                onOpenFile={setActiveFile}
+                onClose={toggleAi}
+                targetLabel="skill"
+              />
+            </div>
+          </>
+        )}
       </div>
 
       {/* Delete confirmation */}

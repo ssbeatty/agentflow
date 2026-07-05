@@ -20,11 +20,18 @@ def build_connection(srv, db) -> dict:
         cfg["env"] = srv.env_vars
 
     headers = dict(srv.headers or {})
-    if getattr(srv, "auth_type", "none") == "oauth2":
+    auth = getattr(srv, "auth_type", "none")
+    if auth == "oauth2":
         from services.mcp_oauth import ensure_access_token
         token = ensure_access_token(srv, db)
         if token:
             headers["Authorization"] = f"Bearer {token}"
+    elif auth == "internal":
+        # The built-in "AI 脚本助手" loopback → our own /mcp gateway. Inject the
+        # internal API key at run time (never stored in the DB headers, so it
+        # can't leak via MCPServerOut). See services/assistant_seed.py.
+        from services.assistant_seed import get_internal_key
+        headers["X-API-Key"] = get_internal_key(db)
     if headers:
         cfg["headers"] = headers
 

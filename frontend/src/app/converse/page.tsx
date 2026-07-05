@@ -13,7 +13,7 @@ import {
 } from "@/lib/api";
 import type { ScriptSummary, ConversationSummary, ArtifactEvent, ExecutionLog, TraceEvent, WsEvent } from "@/lib/types";
 import { ArtifactCard } from "@/components/ArtifactsPanel";
-import AgentNarrative from "@/components/AgentNarrative";
+import AgentTimeline, { reduceEvent, blocksFromTraces, type Block } from "@/components/AgentTimeline";
 import { MarkdownContent } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -168,6 +168,7 @@ interface UiMessage {
   logs?: WsEvent[];
   artifacts?: ArtifactEvent[];
   traces?: TraceEvent[]; // agent internals: tool calls, LLM turns, graph nodes
+  blocks?: Block[];      // chronological timeline built live from token+tool events
   execution_id?: string;
 }
 
@@ -203,6 +204,12 @@ function MessageRow({
   const [copied, setCopied] = useState(false);
   const canDelete = onDelete && !msg.streaming && !msg.animating && !msg.id.startsWith("tmp-");
   const showActions = !msg.streaming && !msg.animating && !msg.error;
+
+  // Timeline: live blocks (built from token+tool events this session) or, on
+  // reload, rebuilt from persisted trace logs. Empty → plain reasoning+answer.
+  const liveBlocks = !!(msg.blocks && msg.blocks.length);
+  const timelineBlocks = liveBlocks ? msg.blocks! : blocksFromTraces(msg.traces ?? []);
+  const hasTimeline = !isUser && timelineBlocks.length > 0;
 
   function copy() {
     navigator.clipboard.writeText(answer).then(() => {
@@ -245,30 +252,40 @@ function MessageRow({
         <Bot className="h-4 w-4" />
       </div>
       <div className="min-w-0 flex-1 space-y-2">
-        {msg.traces && msg.traces.length > 0 && (
-          <AgentNarrative traces={msg.traces} excludeLastLlmText={!!answer && !msg.error} />
+        {/* Chronological transcript: reasoning → text → tool call → text → …
+            (live from token+tool events; reload rebuilds it from trace logs). */}
+        {hasTimeline ? (
+          <AgentTimeline
+            blocks={timelineBlocks}
+            streaming={msg.streaming}
+            leadingReasoning={liveBlocks ? undefined : reasoning}
+          />
+        ) : (
+          <>
+            {reasoning && <ThinkBlock reasoning={reasoning} thinking={thinking} />}
+            <div className={`text-sm ${msg.error ? "rounded-xl border border-destructive/40 bg-destructive/5 px-3 py-2" : ""}`}>
+              {msg.error ? (
+                <span className="text-destructive text-xs font-mono">{msg.error}</span>
+              ) : msg.animating && onAnimDone ? (
+                <TypewriterText text={answer} onDone={onAnimDone} />
+              ) : msg.streaming && !answer ? (
+                thinking ? null : (
+                  <span className="flex items-center gap-1.5 text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span className="text-xs">Generating…</span>
+                  </span>
+                )
+              ) : (
+                <MarkdownContent text={answer} />
+              )}
+            </div>
+          </>
         )}
-        {reasoning && <ThinkBlock reasoning={reasoning} thinking={thinking} />}
-
-        <div className={`text-sm ${msg.error ? "rounded-xl border border-destructive/40 bg-destructive/5 px-3 py-2" : ""}`}>
-          {msg.error ? (
+        {hasTimeline && msg.error && (
+          <div className="text-sm rounded-xl border border-destructive/40 bg-destructive/5 px-3 py-2">
             <span className="text-destructive text-xs font-mono">{msg.error}</span>
-          ) : msg.animating && onAnimDone ? (
-            <TypewriterText text={answer} onDone={onAnimDone} />
-          ) : msg.streaming && !answer ? (
-            // While the model is still emitting reasoning, the ThinkBlock above
-            // shows "Thinking…", so skip the spinner; once reasoning closed but
-            // the answer hasn't started, fall through to "Generating…".
-            thinking ? null : (
-              <span className="flex items-center gap-1.5 text-muted-foreground">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                <span className="text-xs">Generating…</span>
-              </span>
-            )
-          ) : (
-            <MarkdownContent text={answer} />
-          )}
-        </div>
+          </div>
+        )}
 
         {msg.artifacts && msg.artifacts.length > 0 && (
           <div className="flex flex-col gap-2 w-full max-w-[680px]">
@@ -717,7 +734,7 @@ function ConverseInner() {
         streamedContentRef.current += evt.content;
         setMessages((prev) => prev.map((m) =>
           m.id === assistantMsgId
-            ? { ...m, content: m.content + evt.content, streaming: true }
+            ? { ...m, content: m.content + evt.content, blocks: reduceEvent(m.blocks ?? [], evt), streaming: true }
             : m
         ));
       } else if (evt.type === "log") {
@@ -729,7 +746,7 @@ function ConverseInner() {
       } else if (evt.type === "trace") {
         setMessages((prev) => prev.map((m) =>
           m.id === assistantMsgId
-            ? { ...m, traces: [...(m.traces ?? []), evt as TraceEvent] }
+            ? { ...m, traces: [...(m.traces ?? []), evt as TraceEvent], blocks: reduceEvent(m.blocks ?? [], evt) }
             : m
         ));
       } else if (evt.type === "artifact") {
@@ -826,7 +843,7 @@ function ConverseInner() {
     setMessages((prev) => [
       ...prev,
       { id: tempUserId, role: "user", content: msg },
-      { id: assistantId, role: "assistant", content: "", streaming: true, logs: [], traces: [] },
+      { id: assistantId, role: "assistant", content: "", streaming: true, logs: [], traces: [], blocks: [] },
     ]);
 
     try {

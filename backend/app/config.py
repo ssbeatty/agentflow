@@ -27,6 +27,13 @@ class Settings(BaseSettings):
     # will reject the http/internal redirect_uri during client registration.
     public_base_url: str = ""
 
+    # Loopback base URL the in-browser "AI 脚本助手" uses to reach THIS server's
+    # own /mcp gateway (the assistant runs as a script subprocess and pulls the
+    # write→run→debug tools over MCP from us). Defaults to localhost:8000 — the
+    # most reliable target since it skips any reverse proxy / TLS. Override via
+    # SELF_BASE_URL only if uvicorn binds a different port.
+    self_base_url: str = "http://127.0.0.1:8000"
+
     # ── Auth ──────────────────────────────────────────────────────────────────
     # Secret used to sign admin session tokens. If blank, a random key is
     # generated once and persisted to data/.secret_key so tokens survive restart.

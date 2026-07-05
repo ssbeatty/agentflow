@@ -20,7 +20,16 @@ def _validate(transport: str) -> None:
 
 @router.get("", response_model=list[MCPServerOut])
 def list_servers(db: Session = Depends(get_db)):
-    return db.query(MCPServerConfig).order_by(MCPServerConfig.created_at).all()
+    # Hide the built-in "AI 脚本助手" loopback server (auth_type="internal") — it
+    # neither belongs on the Tools page nor should be bindable to user scripts
+    # (binding our own /mcp gateway into an arbitrary script is a recursion
+    # footgun). It's still injected into the assistant script by id at run time.
+    return (
+        db.query(MCPServerConfig)
+        .filter(MCPServerConfig.auth_type != "internal")
+        .order_by(MCPServerConfig.created_at)
+        .all()
+    )
 
 
 @router.post("", response_model=MCPServerOut, status_code=201)

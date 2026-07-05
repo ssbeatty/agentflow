@@ -28,7 +28,16 @@ router = APIRouter()
 
 @router.get("", response_model=list[ScriptSummary])
 def list_scripts(db: Session = Depends(get_db)):
-    return db.query(Script).order_by(Script.updated_at.desc()).all()
+    # Hide the built-in "AI 脚本助手" system script from the dashboard / Chat
+    # picker — it's an internal agent, not a user script. It's still reachable by
+    # id (the AI panel starts it via POST /api/executions).
+    from services.assistant_seed import ASSISTANT_SCRIPT_NAME
+    return (
+        db.query(Script)
+        .filter(Script.name != ASSISTANT_SCRIPT_NAME)
+        .order_by(Script.updated_at.desc())
+        .all()
+    )
 
 
 @router.post("", response_model=ScriptDetail, status_code=201)

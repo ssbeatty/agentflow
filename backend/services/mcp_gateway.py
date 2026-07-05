@@ -337,6 +337,86 @@ def delete_script_file(script_id: str, filename: str) -> dict:
         db.close()
 
 
+# ── Skills (Agent Skills: SKILL.md + supporting files, edited on disk) ──────────
+
+@gateway.tool()
+def list_skills() -> list[dict]:
+    """List all skills. Returns [{skill_id, name, description, enabled}]; skill_id
+    is the folder name — use it with the other skill_* tools."""
+    from services import skill_store
+    return [
+        {"skill_id": s["id"], "name": s["name"], "description": s.get("description", ""),
+         "enabled": s.get("enabled", True)}
+        for s in skill_store.list_skills()
+    ]
+
+
+@gateway.tool()
+def get_skill(skill_id: str) -> dict:
+    """Get a skill's metadata + file list. Returns {skill_id, name, description,
+    enabled, files:[{filename,is_main,bytes}], dirs}."""
+    from services import skill_store
+    try:
+        s = skill_store.get_skill(skill_id)
+    except FileNotFoundError:
+        return {"error": f"skill {skill_id!r} not found"}
+    return {
+        "skill_id": s["id"], "name": s["name"], "description": s.get("description", ""),
+        "enabled": s.get("enabled", True),
+        "files": [{"filename": f["filename"], "is_main": f["is_main"],
+                   "bytes": len(f["content"] or "")} for f in s["files"]],
+        "dirs": s.get("dirs", []),
+    }
+
+
+@gateway.tool()
+def read_skill_file(skill_id: str, filename: str) -> dict:
+    """Read one skill file's content (e.g. SKILL.md or a supporting file)."""
+    from services import skill_store
+    try:
+        s = skill_store.get_skill(skill_id)
+    except FileNotFoundError:
+        return {"error": f"skill {skill_id!r} not found"}
+    for f in s["files"]:
+        if f["filename"] == filename:
+            return {"filename": f["filename"], "is_main": f["is_main"], "content": f["content"] or ""}
+    return {"error": f"file {filename!r} not found in skill {skill_id}"}
+
+
+@gateway.tool()
+def write_skill_file(skill_id: str, filename: str, content: str) -> dict:
+    """Create or overwrite a file inside a skill. SKILL.md is the main instruction
+    file (YAML frontmatter `name`/`description` + markdown); supporting files and
+    nested paths like `references/x.md` are allowed."""
+    from services import skill_store
+    if not skill_store.exists(skill_id):
+        return {"error": f"skill {skill_id!r} not found"}
+    try:
+        r = skill_store.upsert_file(skill_id, filename, content, is_main=(filename == "SKILL.md"))
+    except ValueError as e:
+        return {"error": str(e)}
+    return {"ok": True, "filename": r.get("filename", filename), "is_main": r.get("is_main", False)}
+
+
+@gateway.tool()
+def create_skill(name: str, description: str = "") -> dict:
+    """Create a new skill (folder + a starter SKILL.md). Returns {skill_id, name}."""
+    from services import skill_store
+    s = skill_store.create_skill(name, description)
+    return {"skill_id": s["id"], "name": s["name"]}
+
+
+@gateway.tool()
+def delete_skill_file(skill_id: str, filename: str) -> dict:
+    """Delete a file from a skill (SKILL.md cannot be deleted)."""
+    from services import skill_store
+    try:
+        skill_store.delete_file(skill_id, filename)
+    except Exception as e:
+        return {"error": str(e)}
+    return {"ok": True}
+
+
 # ── Environment ────────────────────────────────────────────────────────────────
 
 @gateway.tool()

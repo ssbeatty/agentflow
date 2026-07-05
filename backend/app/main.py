@@ -19,7 +19,7 @@ from app.auth_deps import require_admin
 from app.routers import (
     scripts, executions, llm_configs, cron_jobs, ws, mcp_servers,
     conversations, files, channels, auth, api_keys, secrets, skills, marketplace,
-    search_config,
+    search_config, assistant,
 )
 from services.scheduler import scheduler_service
 from services.mcp_gateway import MCPGatewayMiddleware, gateway as mcp_gateway
@@ -58,6 +58,17 @@ async def lifespan(app: FastAPI):
             print(f"[agentflow] migrated {n} skill(s) from DB to disk")
     except Exception as exc:  # never let migration block startup
         print(f"[agentflow] skill disk migration skipped: {exc}")
+    finally:
+        db.close()
+
+    # Seed / re-sync the built-in "AI 脚本助手" (internal key + loopback MCP
+    # server + assistant script). Idempotent; keeps main.py authoritative.
+    db = SessionLocal()
+    try:
+        from services.assistant_seed import seed_assistant
+        seed_assistant(db)
+    except Exception as exc:  # never let seeding block startup
+        print(f"[agentflow] assistant seed skipped: {exc}")
     finally:
         db.close()
     scheduler_service.start()
@@ -107,6 +118,7 @@ app.include_router(secrets.router,        prefix="/api/secrets",        tags=["s
 app.include_router(skills.router,         prefix="/api/skills",         tags=["skills"],         dependencies=_admin)
 app.include_router(marketplace.router,     prefix="/api/marketplace",     tags=["marketplace"],     dependencies=_admin)
 app.include_router(search_config.router,   prefix="/api/search-config",   tags=["search-config"],   dependencies=_admin)
+app.include_router(assistant.router,        prefix="/api/assistant",        tags=["assistant"],        dependencies=_admin)
 
 # ── MCP gateway (external coding agents: Claude Code, Cursor, …) ─────────────
 # Streamable HTTP MCP server for developing scripts remotely, intercepted at
