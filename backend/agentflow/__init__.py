@@ -524,6 +524,19 @@ def _final_reasoning_content(response) -> str:
     return ""
 
 
+def _neutralize_think_tags(s: str) -> str:
+    """Defang any literal ``<think>``/``</think>`` (or ``<thinking>``) inside the
+    model's reasoning so it can't close the wrapper early in the frontend's
+    splitThink (which splits on the first ``</think>``). A zero-width space after
+    ``<`` breaks the tag match while rendering identically (the block shows the
+    reasoning as plain pre-wrapped text)."""
+    if not s or "<" not in s:
+        return s
+    zwsp = chr(0x200b)  # invisible in the rendered block; breaks the tag regex match
+    return re.sub(r"</?think(?:ing)?>", lambda m: m.group(0).replace("<", "<" + zwsp), s,
+                  flags=re.IGNORECASE)
+
+
 try:
     from langchain_core.callbacks import BaseCallbackHandler as _BaseCB  # type: ignore
 except ImportError:  # pragma: no cover
@@ -544,6 +557,11 @@ class _ReasoningStreamer(_BaseCB):
         self._open: dict[str, bool] = {}      # run_id → <think> currently open
         self._streamed: dict[str, bool] = {}  # run_id → emitted any reasoning live
 
+    def _close(self, rid: str) -> None:
+        if self._open.get(rid):
+            token("</think>")
+            self._open[rid] = False
+
     def on_llm_new_token(self, *args, **kwargs):
         # LangChain passes the token text positionally in some paths and as the
         # keyword `token=` in others; accept both without shadowing the module's
@@ -558,12 +576,17 @@ class _ReasoningStreamer(_BaseCB):
             if not self._open.get(rid):
                 token("<think>")
                 self._open[rid] = True
-            token(rc)
+            token(_neutralize_think_tags(rc))
             self._streamed[rid] = True
+            # A single chunk can carry BOTH the reasoning delta and answer text
+            # (transition deltas / aggregated chunks on vLLM/OpenRouter/relays).
+            # The script emits that answer text right after us, so close the block
+            # now — otherwise the answer is trapped inside <think>.
+            if text:
+                self._close(rid)
             return
-        if text and self._open.get(rid):   # answer text began → close the block once
-            token("</think>")
-            self._open[rid] = False
+        if text:   # pure answer text → close the block once if still open
+            self._close(rid)
 
     def on_llm_end(self, response, *, run_id=None, **kwargs):
         rid = str(run_id)
@@ -573,7 +596,7 @@ class _ReasoningStreamer(_BaseCB):
             # Non-streaming (invoke): reasoning arrived whole in the final message.
             rc = _final_reasoning_content(response)
             if rc:
-                token(f"<think>{rc}</think>")
+                token(f"<think>{_neutralize_think_tags(rc)}</think>")
         self._streamed.pop(rid, None)
 
     def on_llm_error(self, error, *, run_id=None, **kwargs):
@@ -1203,6 +1226,10 @@ def get_deep_agent(
     Requires the ``deepagents`` package (installed in the baseline venv). Extra
     keyword args (``subagents=``, ``middleware=``, ``checkpointer=``, …) pass
     straight through to ``create_deep_agent``.
+
+    ``reasoning=`` / ``stream_reasoning=True`` behave as on ``get_agent`` (see
+    ``get_llm``): the latter auto-surfaces the chain-of-thought as a ``<think>``
+    block with no reasoning logic in your script.
 
     Example:
         async def run(input: dict) -> dict:

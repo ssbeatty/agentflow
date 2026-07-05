@@ -1,140 +1,189 @@
 # AgentFlow
 
-一个自托管的 LangGraph / LangChain 脚本运行平台。在浏览器里写 Python agent → 自动创建隔离 venv → 一键运行 / 定时触发 / HTTP 调用 / 内置聊天测试。
+**在浏览器里写 LangGraph / LangChain Python 脚本，一键跑成线上 AI Agent。**
 
-> 适合：想给团队/自己搭一个轻量的 AI 脚本中台，不需要 Airflow/Dify 那种重型框架。
+给每个脚本自动建隔离 venv，配好 LLM 就能运行 —— 支持实时日志、内置聊天调试、定时触发、HTTP / MCP 调用，以及 MCP 工具与 Agent Skills 扩展。自托管、单镜像、`docker compose up` 即用。
 
----
+<p align="center">
+  <img src="docs/images/dashboard.png" alt="AgentFlow 首页" width="900">
+</p>
 
-## 核心功能
-
-- **🐍 Web 代码编辑器** — Monaco + Python 语法高亮 + 实时语法错误检查
-- **📦 隔离环境** — 每个脚本自己的 venv，自动预装 `langchain-core / langchain-openai / langgraph`
-- **🔌 多 LLM 支持** — OpenAI / Anthropic / Ollama / DeepSeek / 任何 OpenAI 兼容 API；UI 配置，脚本里 `get_llm()` 即用
-- **▶️ 运行 & 调试** — 实时 WebSocket 日志流、structured logs、Output 面板、历史回看
-- **⏰ 定时触发** — cron 表达式（APScheduler）
-- **💬 内置聊天页** — 选脚本直接聊，自动维护对话历史
-- **🌐 HTTP API** — 同步 / 异步 / WebSocket 三种调用方式，外部服务直接 invoke
-- **🔧 MCP 工具接入** — 配置外部 MCP server，按脚本选择后注入到 `get_tools()` / `get_agent()`
-- **🔐 鉴权** — 管理后台整站登录保护（首次访问设置管理员）；对外运行接口用签发的 API Key 鉴权
-- **🗄️ 多数据库** — SQLite（本地）/ Postgres / MySQL，切 `DATABASE_URL` 即可
-- **🐳 Docker 化** — 单镜像（前端 baked-in） + docker-compose 一键起
+> 适合想给团队 / 自己搭一个轻量 AI 脚本中台的人 —— 不需要 Airflow / Dify 那种重型框架，也不用为每个 agent 单独写 Dockerfile、配环境、搭接口。
 
 ---
 
-## 截图
+## ✨ 能做什么
 
-> 占位 — 主页 / 编辑器 / 聊天页 / API Docs
+| | |
+|---|---|
+| 🐍 **浏览器代码编辑器** | Monaco + Python 语法高亮 + 实时语法检查，写完即存 |
+| 📦 **隔离 venv** | 每个脚本一套独立环境，自动预装 langchain / langgraph 全家桶 |
+| 🔌 **接任何 LLM** | OpenAI / Anthropic / DeepSeek / Ollama / 任何 OpenAI 兼容网关，UI 配置、脚本里 `get_llm()` 即用 |
+| ▶️ **运行 & 调试** | WebSocket 实时日志流、结构化日志、Output / Flow / Artifacts 面板、历史回看 |
+| 💬 **内置聊天页** | 选个脚本直接对话，自动维护上下文；支持流式输出与「思考过程」折叠展示 |
+| 🔧 **MCP 工具 & 🧩 Skills** | 接外部 MCP server、装可复用的 Agent Skill，按脚本勾选后自动注入 agent |
+| ⏰ **定时触发** | cron 表达式（APScheduler）后台跑 |
+| 🌐 **HTTP / MCP 接口** | 外部系统用 API Key 直接 `POST` 调用；也能让 Claude Code / Cursor 连上来开发脚本 |
+| 🔐 **登录鉴权** | 整站管理后台登录保护，对外接口用签发的 API Key |
+| 🗄️ **多数据库** | SQLite（本地零依赖）/ Postgres / MySQL，切 `DATABASE_URL` 即可 |
+| 🐳 **Docker 化** | 前端编译进单镜像，`docker compose` 一键起 |
 
 ---
 
-## 快速开始
+## 🚀 5 分钟上手
 
-### 方式 1：Docker（推荐）
+### 方式 1 · Docker（推荐，本地 / 内网）
 
-直接拉取 GHCR 上由 CI 构建的镜像 `ghcr.io/ssbeatty/agentflow:latest`：
+直接拉 GHCR 上由 CI 构建的镜像 `ghcr.io/ssbeatty/agentflow:latest`：
 
 ```bash
-cp .env.example .env          # 改个 POSTGRES_PASSWORD（生产建议设 SECRET_KEY / COOKIE_SECURE）
+cp .env.example .env      # 想跑 Postgres 就改个 POSTGRES_PASSWORD；用 SQLite 见下方注释
 docker compose pull
 docker compose up -d
 ```
 
-打开 <http://localhost:8000>，首次访问会进入 `/setup` 创建管理员。
+打开 <http://localhost:8000> → 首次访问进入 **创建管理员** 页，设好账号密码就能用。
 
-> 想钉某个版本：`AGENTFLOW_IMAGE=ghcr.io/ssbeatty/agentflow:v1.2.3 docker compose up -d`
-> 想从源码本地构建：`docker build -t agentflow:local . && AGENTFLOW_IMAGE=agentflow:local docker compose up -d`
+<p align="center">
+  <img src="docs/images/setup.png" alt="首次初始化 —— 创建管理员" width="440">
+</p>
 
-### 方式 1b：HTTPS 上线（Traefik + Let's Encrypt）
+> **想更轻量？** 不带 Postgres、只用内置 SQLite：
+> ```bash
+> DATABASE_URL=sqlite:////app/backend/data/agentflow.db docker compose up -d app --no-deps
+> ```
+> **想钉版本 / 本地构建？**
+> ```bash
+> AGENTFLOW_IMAGE=ghcr.io/ssbeatty/agentflow:v1.2.3 docker compose up -d   # 指定版本
+> docker build -t agentflow:local . && AGENTFLOW_IMAGE=agentflow:local docker compose up -d   # 从源码构建
+> ```
 
-公网部署用 `docker-compose.traefik.yml`：Traefik 在前面终结 TLS、自动申请证书（ACME TLS challenge）、`80 → 443` 跳转，并反代到 app。它会自动设好 `PUBLIC_BASE_URL` / `COOKIE_SECURE` / `CORS_ORIGINS`，所以 **MCP OAuth 和登录 Cookie 在 https 下都正常**。
+### 方式 2 · HTTPS 上线（Traefik 自动证书）
 
-前置：域名 A 记录指向本机，开放 80 / 443 端口。
+公网部署最省事的方式：Traefik 在前面终结 TLS、自动申请 Let's Encrypt 证书、`80 → 443` 跳转。
+
+**前置**：一个解析到本机的域名（A 记录），放开 `80` / `443` 端口。
+
+新建 `.env`，**只填两行**：
+
+```env
+DOMAIN=agentflow.example.com
+SSL_EMAIL=you@example.com
+```
+
+然后起：
 
 ```bash
-cp .env.example .env
-# 至少填：DOMAIN=your.domain.com  SSL_EMAIL=you@example.com
-#         POSTGRES_PASSWORD=...   SECRET_KEY=<随机串>
-docker compose -f docker-compose.traefik.yml pull
 docker compose -f docker-compose.traefik.yml up -d
 ```
 
-打开 `https://your.domain.com` → 进入 `/setup` 创建管理员。
+打开 `https://你的域名` → 创建管理员，完事。
 
-> **MCP OAuth 注意**：自托管（非 Traefik）的反代部署，必须设 `PUBLIC_BASE_URL=https://你的域名`，否则 OAuth 注册时会用 http/内网地址、被 Todoist 等 provider 拒绝（400）。
+Traefik 会自动帮你把 `PUBLIC_BASE_URL` / `COOKIE_SECURE` / `CORS_ORIGINS` 设好，所以 **登录 Cookie 和 MCP OAuth 在 https 下都开箱即用**，不用再手动折腾。
 
-### 方式 2：本地开发
+> 🔒 **正式生产**再补两个：`SECRET_KEY=<随机串>`（重启 / 多副本后登录态不失效）、`POSTGRES_PASSWORD=<强密码>`。
+> 🧭 **用别的反代**（Nginx / Caddy，不走 Traefik）时，记得自己设 `PUBLIC_BASE_URL=https://你的域名`，否则 MCP OAuth 回调地址会用到内网 http 地址被拒。
 
-需要：Python 3.12+、Node 20+
+### 方式 3 · 本地开发
+
+需要 Python 3.12+、Node 20+：
 
 ```bash
-# backend
+# 后端
 cd backend
 python -m venv .venv
-.venv\Scripts\activate           # Windows
-# source .venv/bin/activate      # macOS/Linux
+.venv\Scripts\activate           # Windows；macOS/Linux 用 source .venv/bin/activate
 pip install -r requirements.txt
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+uvicorn app.main:app --port 8000
 
-# 另开一个终端 — 前端 dev server（热更新）
+# 另开一个终端 —— 前端 dev server（热更新，:3000）
 cd frontend
 npm install
 npm run dev
-# 访问 http://localhost:3000
 ```
 
-如果只想跑生产模式（前端编译进后端 serve）：
-```bash
-cd frontend && npm run build      # 产物在 frontend/out
-cd ../backend && uvicorn app.main:app --port 8000
-# 访问 http://localhost:8000
-```
-
-### 方式 3：VS Code 一键调试
-
-按 `F5` 启动 Backend 配置 — 会先执行 `Build Frontend` task 编译前端，再启动 uvicorn + debugpy。
+> VS Code 用户：直接按 `F5`，会先编译前端再启动带 debugpy 的后端。
 
 ---
 
-## 写一个脚本
+## 🖥️ 界面速览
 
-UI 上 `New Script` → 编辑器里粘代码：
+<table>
+  <tr>
+    <td width="50%">
+      <b>① 写脚本</b> —— 从模板起步：ReAct Agent / 流式聊天 / Deep Agent / LangGraph 循环 …<br>
+      <img src="docs/images/new-script.png" alt="新建脚本，内置多种模板">
+    </td>
+    <td width="50%">
+      <b>② 编辑 & 运行</b> —— Monaco 编辑器 + 右侧配置面板 + 底部日志 / Output / Flow。<br>
+      <img src="docs/images/editor.png" alt="脚本编辑器">
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <b>③ 聊天调试</b> —— 选脚本直接对话，Markdown 渲染 + 折叠「思考过程」。<br>
+      <img src="docs/images/chat.png" alt="内置聊天页">
+    </td>
+    <td width="50%">
+      <b>④ 配 LLM 渠道</b> —— 一个渠道 = 一个供应商端点 + 一组模型，按优先级择优。<br>
+      <img src="docs/images/settings.png" alt="LLM 渠道设置">
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <b>⑤ 工具 & 技能</b> —— 内置 web 搜索、接 MCP server、装 Agent Skill。<br>
+      <img src="docs/images/tools.png" alt="工具 / MCP / 技能">
+    </td>
+    <td width="50%">
+      <b>⑥ 对外接口</b> —— HTTP 同步调用，或让 Claude Code / Cursor 连 MCP 进来开发。<br>
+      <img src="docs/images/api-docs.png" alt="API 参考页">
+    </td>
+  </tr>
+</table>
+
+---
+
+## ✍️ 写第一个脚本
+
+点右上角 **New Script** → 选个模板（或空白）→ 编辑器里就是一个 `run(input)` 函数：
 
 ```python
 from agentflow import log, get_llm
 
 def run(input: dict) -> dict:
     msg = input.get("message", "hello")
-    log("Got message", data={"msg": msg}, step="recv")
+    log("收到消息", data={"msg": msg}, step="recv")
 
-    llm = get_llm()  # 拿 is_default=True 的那条 LLM 配置
+    llm = get_llm()                 # 取默认渠道的默认模型
     if llm is None:
-        return {"reply": "no LLM configured"}
+        return {"reply": "还没配置 LLM，去 Settings 加一个渠道"}
 
-    resp = llm.invoke(f"Repeat back in uppercase: {msg}")
+    resp = llm.invoke(f"用大写复述这句话：{msg}")
     return {"reply": resp.content}
 ```
 
-底部 **Dependencies** → `Create venv`（自动预装 baseline）→ `Run`。
+右侧面板点 **Create venv**（自动装 baseline 依赖）→ **Run**。日志、返回值会实时出现在底部面板。
 
-### Agentflow SDK
+> 入口函数默认叫 `run`、签名 `def run(input: dict) -> Any`，返回值就是这次执行的输出。可在脚本配置里改入口名。
+
+### 想要一个能用工具的 Agent？
+
+`get_agent()` 一行拿到带内置工具（web 搜索 / 抓网页）、以及你为该脚本勾选的 MCP 工具、Skill 的 ReAct agent：
 
 ```python
-from agentflow import log, get_llm, list_llms
+from agentflow import get_agent
 
-log("message", data={...}, level="info", step="step-name")
-# level: info / warning / error / node / debug
-
-llm = get_llm()                  # is_default=True 那条
-llm = get_llm("my-config-name")  # 按 name 查找（大小写不敏感）
-list_llms()                      # → ["deepseek", "claude", ...]
+def run(input: dict) -> dict:
+    agent = get_agent(system_prompt="你是研究助手，用 web_search 查资料并给出来源。")
+    result = agent.invoke({"messages": [("human", input["question"])]})
+    return {"answer": result["messages"][-1].content}
 ```
 
-### LangGraph 例子
+### 一个 LangGraph 例子
 
 ```python
 from typing import TypedDict
-from agentflow import log, get_llm
+from agentflow import get_llm
 from langgraph.graph import StateGraph, END
 
 class State(TypedDict):
@@ -154,58 +203,15 @@ def run(input):
     return build().invoke({"count": 0})
 ```
 
----
-
-## 鉴权与安全
-
-整个管理后台（所有 UI 页面 + `/api/*` 管理接口）都在**管理员登录**之后。
-
-- **首次启动** 访问站点会自动进入 `/setup` 创建管理员（用户名 + 密码，密码经 PBKDF2 哈希存库）。之后用 `/login` 登录，会话用 httpOnly Cookie 维持。
-- **修改密码 / 签发 API Key** 在导航栏 🛡️ → **安全设置**（`/security`）。
-- **API Key 仅显示一次**，请创建后立即保存；服务端只存 SHA-256 哈希，丢失只能重新签发，可随时吊销。
-- 生产环境用 HTTPS 时设 `COOKIE_SECURE=true`；多副本部署时显式设置 `SECRET_KEY`（否则各副本各自生成、会话不互通）。
-
-**外部系统调用脚本**用 API Key 走同步运行接口（无需登录）：
-
-```bash
-curl -X POST 'http://localhost:8000/api/executions/run?timeout=120' \
-  -H 'X-API-Key: af_xxxxxxxx' \
-  -H 'Content-Type: application/json' \
-  -d '{"script_id":"<UUID>","input_data":{"message":"hi"}}'
-```
+内置 SDK 常用函数：`log()` 打日志、`get_llm()` / `get_agent()` / `get_deep_agent()` 拿模型和 agent、`get_tools()` 拿工具、`get_secret()` 读密钥、`web_search()` / `web_fetch()` 联网、`markdown()` / `table()` / `image()` 在聊天里渲染卡片。完整清单见平台内 `/docs` 页。
 
 ---
 
-## HTTP API
+## 🔌 配置 LLM 渠道
 
-详细文档在平台内置的 `/docs` 页面。除对外的 `/api/executions/run`（用 API Key）外，下列管理接口都需要管理员登录态（浏览器里自动带 Cookie；脚本里加 `Authorization: Bearer <登录返回的 token>`）：
+进 **Settings** → **Add channel**。一个「渠道」= 一个供应商端点（key + base_url）服务一组模型；脚本用 `get_llm("<模型 id>")` 取，`get_llm()` 取默认。同一个模型被多个渠道服务时，按 `priority` 择优。
 
-```bash
-# 同步执行（等结果）— 对外接口，用 API Key 鉴权
-curl -X POST 'http://localhost:8000/api/executions/run?timeout=120' \
-  -H 'X-API-Key: af_xxxxxxxx' \
-  -H 'Content-Type: application/json' \
-  -d '{"script_id":"<UUID>","input_data":{"message":"hi"}}'
-
-# 异步触发 + 轮询（管理接口，需登录态）
-curl -X POST http://localhost:8000/api/executions \
-  -H 'Authorization: Bearer <TOKEN>' \
-  -d '{"script_id":"<UUID>","input_data":{}}'
-curl http://localhost:8000/api/executions/<EXECUTION_ID> -H 'Authorization: Bearer <TOKEN>'
-
-# 实时日志（WebSocket）— 浏览器同源握手自动带 Cookie
-ws://localhost:8000/ws/executions/<EXECUTION_ID>
-```
-
-`script_id` 从编辑器顶栏 📋 复制按钮获取。`<TOKEN>` 来自 `POST /api/auth/login` 的返回。
-
----
-
-## 配置 LLM
-
-侧栏 **Settings** → 添加 LLM 配置：
-
-| 提供商 | provider | base_url 示例 |
+| 供应商 | provider | base_url 示例 |
 |---|---|---|
 | OpenAI | `openai` | 留空 |
 | DeepSeek | `openai` | `https://api.deepseek.com/v1` |
@@ -214,146 +220,118 @@ ws://localhost:8000/ws/executions/<EXECUTION_ID>
 | Anthropic | `anthropic` | — |
 | Ollama | `ollama` | `http://localhost:11434` |
 
-国内大多数 LLM 平台都是 OpenAI 兼容协议，provider 选 `openai` 即可（`anthropic` 和 `ollama` 用独立分支）。
-
-勾选 **is_default** 那条会被 `get_llm()` 默认取到。
+国内大多数平台都是 OpenAI 兼容协议，`provider` 选 `openai` 填 `base_url` 即可（`anthropic` / `ollama` 走独立分支）。渠道卡片上标 ⭐ 的模型就是 `get_llm()` 的默认返回。
 
 ---
 
-## 数据库切换
+## 🔐 鉴权与对外调用
+
+整个管理后台（所有页面 + `/api/*` 管理接口）都在**管理员登录**之后。首次访问自动进入创建管理员页；密码经 PBKDF2 哈希存库，会话用 httpOnly Cookie 维持。改密码 / 签发 API Key 在导航栏 🛡️ **安全设置**。
+
+**外部系统调用脚本** —— 用 API Key 走同步运行接口，无需登录：
+
+```bash
+curl -X POST 'http://localhost:8000/api/executions/run?timeout=120' \
+  -H 'X-API-Key: af_xxxxxxxx' \
+  -H 'Content-Type: application/json' \
+  -d '{"script_id":"<脚本 UUID>","input_data":{"message":"hi"}}'
+# 阻塞直到脚本跑完，返回 {id,status,output_data,error,...}
+```
+
+`script_id` 从编辑器顶栏 📋 复制。API Key **只显示一次**，服务端只存哈希，丢了重新签发即可。
+
+**让 Claude Code / Cursor 连进来开发脚本** —— AgentFlow 自身暴露一个 MCP 端点，编程 agent 可以直接建/改脚本、装 venv、跑脚本、读报错：
+
+```bash
+claude mcp add --transport http agentflow http://localhost:8000/mcp --header "X-API-Key: af_…"
+```
+
+> 生产 HTTPS 记得 `COOKIE_SECURE=true`；多副本部署显式设 `SECRET_KEY`（否则各副本会话不互通）。
+
+---
+
+## 🗄️ 数据库切换
 
 环境变量 `DATABASE_URL` 控制，**无需改代码**：
 
 ```bash
-# SQLite (默认，零依赖)
-DATABASE_URL=sqlite:///./data/agentflow.db
-
-# Postgres
-DATABASE_URL=postgresql+psycopg2://user:pass@host:5432/dbname
-
-# MySQL (取消 requirements.txt 里的 pymysql)
-DATABASE_URL=mysql+pymysql://user:pass@host/dbname
+DATABASE_URL=sqlite:///./data/agentflow.db                              # SQLite（默认，零依赖）
+DATABASE_URL=postgresql+psycopg2://user:pass@host:5432/dbname           # Postgres
+DATABASE_URL=mysql+pymysql://user:pass@host/dbname                      # MySQL（取消 requirements 里 pymysql 注释）
 ```
 
-表结构由 **Alembic** 管理，应用启动时自动 `upgrade head`（sqlite / postgres 通用）。首次接入的旧库（有表但没有 Alembic 版本记录）会被自动 `stamp` 到基线再增量升级,无需手工干预。变更 schema：改模型后 `cd backend && alembic revision --autogenerate -m "..."`,检查生成的迁移文件,重启即自动应用。
+表结构由 **Alembic** 管理，应用启动时自动 `upgrade head`（sqlite / postgres 通用）。旧库、空库都能自愈接管，无需手工干预。
 
 ---
 
-## 架构
+## ⚙️ 配置项参考
 
-```
-┌─────────────────────────────────────────────┐
-│  Next.js (static export → served by FastAPI)│
-│  ├ /          Dashboard                     │
-│  ├ /script    Editor + Logs + Runs          │
-│  ├ /converse  Chat with any script          │
-│  ├ /docs      API reference                 │
-│  └ /settings  LLM configs                   │
-└───────────────────┬─────────────────────────┘
-                    │ REST + WebSocket
-┌───────────────────▼─────────────────────────┐
-│  FastAPI (uvicorn)                          │
-│  ├ /api/scripts        CRUD + venv/install  │
-│  ├ /api/executions     run / stop / list    │
-│  ├ /api/llm-configs    LLM CRUD             │
-│  ├ /api/cron-jobs      schedule             │
-│  └ /ws/executions/*    log streaming        │
-└───────┬──────────────────┬──────────────────┘
-        │                  │
-   ┌────▼─────┐      ┌─────▼──────────────────┐
-   │ DB       │      │ subprocess.Popen        │
-   │ (SQL*)   │      │ per-script .venv/python │
-   └──────────┘      │ + thread queue pump     │
-                     └─────────────────────────┘
-```
-
-- **每次 run** 在脚本自己的 venv 里 fork 一个 python 子进程（隔离依赖）
-- 子进程 stdout/stderr 通过后台线程 → asyncio.Queue → WebSocket 实时推
-- 结构化日志走 `__AGENTFLOW__<json>` 前缀协议，自动 persist 到 DB
-- 重启 backend 不影响正在跑的脚本（`CREATE_NEW_PROCESS_GROUP` 隔离）
-
----
-
-## 项目结构
-
-```
-.
-├── backend/
-│   ├── app/
-│   │   ├── main.py              # FastAPI app + catch-all serving frontend/out
-│   │   ├── config.py            # pydantic-settings
-│   │   ├── database.py          # SQLAlchemy engine, multi-DB aware
-│   │   ├── models.py            # ORM: Script / Execution / LLMConfig / CronJob
-│   │   ├── schemas.py           # Pydantic IO models
-│   │   └── routers/             # scripts / executions / llm_configs / cron_jobs / ws
-│   ├── services/
-│   │   ├── venv_manager.py      # uv/pip venv + install + package list
-│   │   ├── execution_engine.py  # subprocess runner + WS broadcast + replay buffer
-│   │   └── scheduler.py         # APScheduler cron triggers
-│   ├── agentflow/__init__.py    # In-script SDK: log / get_llm / list_llms
-│   ├── data/                    # ⚠ runtime: db file + per-script venvs
-│   └── requirements.txt
-├── frontend/
-│   └── src/app/                 # Next.js App Router
-│       ├── page.tsx             # dashboard
-│       ├── script/page.tsx      # editor
-│       ├── chat/page.tsx        # chat
-│       ├── docs/page.tsx        # API reference
-│       └── settings/page.tsx    # LLM configs
-├── .vscode/
-│   ├── launch.json              # F5 → Build Frontend → start backend
-│   └── tasks.json
-├── Dockerfile                   # multi-stage: node build → python runtime
-├── docker-compose.yml           # app + postgres
-└── .env.example
-```
-
----
-
-## 配置项参考
-
-通过环境变量 / `.env` 文件设置：
+通过环境变量 / `.env` 设置：
 
 | key | 默认 | 说明 |
 |---|---|---|
 | `DATABASE_URL` | sqlite 本地文件 | SQLAlchemy URL |
 | `DATA_DIR` | `./data/scripts` | 每脚本 venv 存放目录 |
-| `CORS_ORIGINS` | `http://localhost:3000` | 逗号分隔 |
-| `APP_ENV` | `development` | 标识用 |
+| `CORS_ORIGINS` | `*` | 逗号分隔的允许来源，或 `*` |
 | `APP_PORT` | `8000` | 仅 docker-compose 用 |
-| `SECRET_KEY` | 自动生成并存 `data/.secret_key` | 签发管理员会话 Cookie 的密钥；多副本部署需显式设置 |
+| `SECRET_KEY` | 自动生成并存 `data/.secret_key` | 签发登录 Cookie 的密钥；多副本部署需显式设置 |
 | `SESSION_TTL_HOURS` | `168` | 登录有效期（小时） |
-| `COOKIE_SECURE` | `false` | HTTPS 部署设 `true`，会话 Cookie 标记为 Secure |
-| `PUBLIC_BASE_URL` | 空（用请求地址） | 反代/HTTPS 部署必填，如 `https://域名`；用于拼 MCP OAuth 回调地址 |
+| `COOKIE_SECURE` | `false` | HTTPS 部署设 `true` |
+| `PUBLIC_BASE_URL` | 空（用请求地址） | **非 Traefik 的反代/HTTPS 部署必填**，如 `https://域名`；用于拼 MCP OAuth 回调地址（Traefik 版会自动设） |
 | `DOMAIN` / `SSL_EMAIL` | — | 仅 `docker-compose.traefik.yml` 用：域名 + Let's Encrypt 邮箱 |
+| `POSTGRES_PASSWORD` | `agentflow` | 用 Postgres 时改成强密码 |
 
 ---
 
-## 常见问题
+## 🧱 架构一览
 
-**venv 创建很慢？**
-镜像内置了 `uv`，会优先用它替代 pip（快 10×）。如果本地没装 uv，会回落到内置 `python -m venv` + `pip install`。
+```
+┌─────────────────────────────────────────────┐
+│  Next.js 前端（静态导出，由 FastAPI 托管）    │
+│  首页 · 编辑器 · 聊天 · 工具 · 设置 · API 文档 │
+└───────────────────┬─────────────────────────┘
+                    │ REST + WebSocket
+┌───────────────────▼─────────────────────────┐
+│  FastAPI（uvicorn）                          │
+│  scripts / executions / channels / cron /    │
+│  mcp-servers / skills / ws 日志流 …          │
+└───────┬──────────────────┬──────────────────┘
+        │                  │
+   ┌────▼─────┐      ┌─────▼──────────────────┐
+   │ 数据库    │      │ subprocess.Popen         │
+   │ (SQL*)   │      │ 每脚本独立 .venv/python  │
+   └──────────┘      │ + 线程队列 → WS 实时推送 │
+                     └──────────────────────────┘
+```
 
-**Windows 上 `NotImplementedError: subprocess`？**
-asyncio 子进程在 Windows 需要 ProactorEventLoop。我们已经绕开 asyncio，全部用同步 `subprocess.Popen` + 线程队列。如果还有问题检查是不是 debugpy 注入了 SelectorEventLoop —— launch.json 已设 `subProcess: false` 防止注入。
+- 每次 run 在脚本自己的 venv 里 fork 一个 python 子进程，依赖隔离
+- 子进程 stdout / 结构化日志经后台线程 → asyncio 队列 → WebSocket 实时推
+- 重启 backend 不影响正在跑的脚本（进程组隔离）
 
-**改了 backend 代码，正在跑的脚本被杀？**
-开发模式 `--reload` 会重启 backend；子进程虽然用 `CREATE_NEW_PROCESS_GROUP` 隔离信号不会被杀，但 DB 记录可能停在 `running` 状态。测试脚本时建议不开 `--reload`，或在 UI 上点 Stop 强制清理。
-
-**国内访问慢/网络问题？**
-- pip 慢：镜像里加 `PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple` 环境变量
-- LLM 调用慢：`ChatOpenAI` 默认 `timeout=60`，可在 LLM 配置 `extra_config` 里加 `{"timeout": 120}` 覆盖
+后端两个 Python 运行时的分工、子进程细节、迁移策略等更深入的说明见仓库根目录的 [`CLAUDE.md`](CLAUDE.md)。
 
 ---
 
-## 技术栈
+## ❓ 常见问题
+
+**venv 创建很慢？** 镜像内置 `uv`，优先用它替代 pip（快 ~10×）；没装 uv 会回落到 `python -m venv` + `pip`。
+
+**Windows 上 `NotImplementedError: subprocess`？** 已全程绕开 asyncio 子进程，用同步 `subprocess.Popen` + 线程队列，正常不会遇到。
+
+**改了 backend 代码、正在跑的脚本 DB 状态卡在 `running`？** 开发模式 `--reload` 会重启后端；子进程虽不被杀但 DB 记录可能停在 running。测试脚本时别开 `--reload`，或在 UI 点 Stop。
+
+**国内网络慢？** pip 慢 → 给容器加 `PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple`；LLM 调用慢 → 渠道 `extra_config` 里加 `{"timeout": 120}`。
+
+---
+
+## 🧰 技术栈
 
 | 层 | 选型 |
 |---|---|
-| 前端 | Next.js 15 / React 19 / TailwindCSS 4 / shadcn-style UI / Monaco Editor |
-| 后端 | FastAPI / SQLAlchemy 2 / APScheduler / pydantic-settings |
-| Python SDK | LangChain / LangGraph |
-| 包管理 | uv（fallback to pip） |
+| 前端 | Next.js 15 / React 19 / TailwindCSS 4 / shadcn 风格 UI / Monaco Editor |
+| 后端 | FastAPI / SQLAlchemy 2 / Alembic / APScheduler / pydantic-settings |
+| Agent SDK | LangChain / LangGraph / deepagents / langchain-mcp-adapters |
+| 包管理 | uv（回落 pip） |
 | 数据库 | SQLite / Postgres / MySQL |
 
 ---
