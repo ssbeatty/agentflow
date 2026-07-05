@@ -784,14 +784,31 @@ def _get_builtin_tools() -> list:
 #     agent = get_agent(tools=get_tools() + [bash_tool()])   # bash only
 #
 # Isolation (env-scrub of all AGENTFLOW_* secrets, rlimits, timeout, throwaway
-# cwd) lives in agentflow/_sandbox.py.
+# cwd) lives in agentflow/_sandbox.py. By default the sandbox cwd is an empty
+# throwaway dir; bind the tools to real data with `files=` (copy inputs into
+# the sandbox cwd) or `cwd=` (run in a persistent dir, e.g. the workspace):
+#
+#     ws = os.environ["AGENTFLOW_WORKSPACE_DIR"]
+#     agent = get_agent(tools=get_tools() + exec_tools(cwd=ws))
 
-def bash_tool(*, timeout: float | None = None):
+def _cwd_hint(cwd: str | None) -> str:
+    if not cwd:
+        return ""
+    return (f'\n\nYour working directory is "{cwd}"; it is persistent, and '
+            f"relative paths resolve there — read and write files in it directly.")
+
+
+def bash_tool(*, timeout: float | None = None, cwd: str | None = None,
+              files: dict | None = None):
     """Return a LangChain `bash` tool that runs a shell command in the sandbox.
 
     Opt-in: add it to an agent's tools yourself (it is never auto-included)::
 
         agent = get_agent(tools=get_tools() + [bash_tool()])
+
+    ``cwd=`` runs every call in that persistent directory (advertised to the
+    agent in the tool description); ``files=`` copies inputs into the sandbox
+    cwd before each call (see `run_bash`).
     """
     from langchain_core.tools import tool
     from agentflow._sandbox import run_bash, format_exec_result, DEFAULT_TIMEOUT
@@ -807,19 +824,26 @@ def bash_tool(*, timeout: float | None = None):
         Example: bash("ls -la && python3 -c 'print(2**10)'")
         """
         try:
-            return format_exec_result(run_bash(command, timeout=_to), timeout=_to)
+            return format_exec_result(
+                run_bash(command, timeout=_to, cwd=cwd, files=files), timeout=_to)
         except Exception as e:
             return f"Sandbox error: {e}"
 
+    bash.description += _cwd_hint(cwd)
     return bash
 
 
-def python_tool(*, timeout: float | None = None):
+def python_tool(*, timeout: float | None = None, cwd: str | None = None,
+                files: dict | None = None):
     """Return a LangChain `python` tool that runs Python code in the sandbox.
 
     Opt-in: add it to an agent's tools yourself (it is never auto-included)::
 
         agent = get_agent(tools=get_tools() + [python_tool()])
+
+    ``cwd=`` runs every call in that persistent directory (advertised to the
+    agent in the tool description); ``files=`` copies inputs into the sandbox
+    cwd before each call (see `run_python`).
     """
     from langchain_core.tools import tool
     from agentflow._sandbox import run_python, format_exec_result, DEFAULT_TIMEOUT
@@ -837,21 +861,29 @@ def python_tool(*, timeout: float | None = None):
         Example: python("import statistics; statistics.stdev([2,4,4,4,5,5,7,9])")
         """
         try:
-            return format_exec_result(run_python(code, timeout=_to), timeout=_to)
+            return format_exec_result(
+                run_python(code, timeout=_to, cwd=cwd, files=files), timeout=_to)
         except Exception as e:
             return f"Sandbox error: {e}"
 
+    python.description += _cwd_hint(cwd)
     return python
 
 
-def exec_tools(*, timeout: float | None = None) -> list:
+def exec_tools(*, timeout: float | None = None, cwd: str | None = None,
+               files: dict | None = None) -> list:
     """Return both opt-in sandbox tools ``[bash_tool(), python_tool()]``.
 
     Convenience for the common case::
 
         agent = get_agent(tools=get_tools() + exec_tools())
+
+    Pass ``cwd=os.environ["AGENTFLOW_WORKSPACE_DIR"]`` to let the agent work on
+    persistent workspace files, or ``files={...}`` to copy inputs into each
+    sandbox call's cwd.
     """
-    return [bash_tool(timeout=timeout), python_tool(timeout=timeout)]
+    return [bash_tool(timeout=timeout, cwd=cwd, files=files),
+            python_tool(timeout=timeout, cwd=cwd, files=files)]
 
 
 # ── Public tool API ────────────────────────────────────────────────────────────

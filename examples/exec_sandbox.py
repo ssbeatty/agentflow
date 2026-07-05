@@ -22,6 +22,15 @@ the whole process group, and a throwaway working directory. It is *process*-leve
 isolation, not a language jail — the code can still read/write files in its temp
 cwd — so only enable it for scripts you trust to have that capability.
 
+Giving the sandbox access to files (both knobs work on run_bash/run_python and
+on the tool factories):
+  - files={"data.csv": path_or_bytes} copies inputs into the sandbox cwd —
+    the code reads "data.csv" by relative path; originals stay untouched.
+  - cwd=os.environ["AGENTFLOW_WORKSPACE_DIR"] runs in the persistent workspace
+    instead of a throwaway dir (the agent is told its working directory in the
+    tool description). The sandboxed code can then modify those files — trade
+    isolation for access deliberately.
+
 Prerequisites:
   - Configure an LLM channel in Settings (get_agent needs a default LLM).
 

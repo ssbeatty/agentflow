@@ -21,7 +21,20 @@ the filesystem; the guarantees are:
 2. **POSIX rlimits** — CPU time, address space (memory), file size, no core
    dumps, plus `os.setsid()` so a timeout kills the whole process group.
 3. **Wall-clock timeout** — SIGKILL the group when it's exceeded.
-4. **Isolated temp cwd** — a throwaway directory, deleted afterwards.
+4. **Isolated temp cwd by default** — a throwaway directory, deleted afterwards.
+
+Because of (1) and (4), sandboxed code can't see the run's files: relative
+paths resolve against the empty throwaway cwd, and the AGENTFLOW_* path env
+vars are scrubbed. Two per-call escape hatches open that up explicitly:
+
+- ``files={"dest.csv": "/abs/src.csv"}`` — copy inputs INTO the sandbox cwd
+  before running (str value = source path, bytes value = raw content). The
+  sandbox works on copies; originals are untouched and guarantee (4) holds.
+- ``cwd="/some/dir"`` — run in a caller-chosen persistent directory (e.g.
+  ``os.environ["AGENTFLOW_WORKSPACE_DIR"]``) instead of a throwaway one. That
+  directory is NOT deleted afterwards; you are trading guarantee (4) for
+  read/write access, so only point it at a directory you're happy to let the
+  sandboxed code modify.
 
 The Python sandbox reuses whatever Python is running the current script (the
 per-script venv when there is one), so packages the user installed via
@@ -111,6 +124,34 @@ def _clip(s: str) -> str:
     return s
 
 
+def _materialize_files(files: dict, dest_root: str) -> str | None:
+    """Write/copy ``files`` ({dest_relative_name: source}) into ``dest_root``.
+    A str source is a filesystem path to copy; bytes are written verbatim.
+    Returns an error message, or None on success."""
+    root_abs = os.path.abspath(dest_root)
+    for name, src in files.items():
+        if not isinstance(name, str) or not name.strip():
+            return f"files: invalid destination name {name!r}"
+        dest_abs = os.path.abspath(os.path.join(root_abs, name))
+        try:
+            inside = os.path.commonpath([dest_abs, root_abs]) == root_abs and dest_abs != root_abs
+        except ValueError:  # different drives on Windows
+            inside = False
+        if os.path.isabs(name) or not inside:
+            return f"files: destination must be a relative path inside the sandbox dir: {name!r}"
+        os.makedirs(os.path.dirname(dest_abs), exist_ok=True)
+        if isinstance(src, (bytes, bytearray)):
+            with open(dest_abs, "wb") as fh:
+                fh.write(src)
+        elif isinstance(src, str):
+            if not os.path.isfile(src):
+                return f"files: source file not found: {src!r}"
+            shutil.copyfile(src, dest_abs)
+        else:
+            return f"files: value for {name!r} must be a source path (str) or content (bytes)"
+    return None
+
+
 def _run_sandboxed(
     build_argv,
     *,
@@ -118,13 +159,43 @@ def _run_sandboxed(
     mem_mb: int | None,
     fsize_mb: int,
     allow_network: bool,
+    cwd: str | None = None,
+    files: dict | None = None,
 ) -> dict:
-    """Core sandbox runner. `build_argv(workdir)` writes any needed files into
-    the throwaway `workdir` and returns the argv to run. Returns
-    ``{"stdout", "stderr", "returncode", "timed_out"}``."""
-    workdir = tempfile.mkdtemp(prefix="af_exec_")
+    """Core sandbox runner. `build_argv(staging_dir)` writes any needed harness
+    files into the throwaway `staging_dir` (always separate from the working
+    directory, so a caller's `files` can never clash with harness files) and
+    returns the argv to run. The child's working directory is `cwd` if a
+    non-empty one is given (kept afterwards), else its own throwaway directory
+    (deleted afterwards). `files` are materialized into the working directory
+    first. Returns ``{"stdout", "stderr", "returncode", "timed_out"}``."""
+    if files is not None and not isinstance(files, dict):
+        return {"stdout": "", "stderr": "files must be a dict of {name: source_path_or_bytes}",
+                "returncode": 1, "timed_out": False}
+
+    staging = tempfile.mkdtemp(prefix="af_exec_")
+    own_workdir = None
     try:
-        argv = build_argv(workdir)
+        if cwd:
+            workdir = os.path.abspath(cwd)
+            if not os.path.isdir(workdir):
+                return {"stdout": "", "stderr": f"cwd is not a directory: {cwd!r}",
+                        "returncode": 1, "timed_out": False}
+        else:
+            # Default: a throwaway working dir, distinct from `staging` so
+            # harness files (written into staging) never collide with `files`.
+            own_workdir = tempfile.mkdtemp(prefix="af_cwd_")
+            workdir = own_workdir
+
+        if files:
+            try:
+                err = _materialize_files(files, workdir)
+            except OSError as e:
+                err = f"files: failed to materialize: {e}"
+            if err:
+                return {"stdout": "", "stderr": err, "returncode": 1, "timed_out": False}
+
+        argv = build_argv(staging)
         if not allow_network and os.name == "posix" and shutil.which("unshare"):
             argv = ["unshare", "-rn", *argv]
 
@@ -153,9 +224,10 @@ def _run_sandboxed(
             proc = _spawn(argv)
         except OSError as e:
             # e.g. `unshare` present but not permitted → retry without it once.
+            # The prefix is exactly ["unshare", "-rn"] (2 tokens), so strip 2.
             if argv and argv[0] == "unshare":
                 try:
-                    proc = _spawn(argv[3:])
+                    proc = _spawn(argv[2:])
                 except OSError as e2:
                     return {"stdout": "", "stderr": f"failed to launch sandbox: {e2}",
                             "returncode": 1, "timed_out": False}
@@ -181,7 +253,9 @@ def _run_sandboxed(
             "timed_out": timed_out,
         }
     finally:
-        shutil.rmtree(workdir, ignore_errors=True)
+        shutil.rmtree(staging, ignore_errors=True)
+        if own_workdir is not None:
+            shutil.rmtree(own_workdir, ignore_errors=True)
 
 
 # ── Python sandbox ─────────────────────────────────────────────────────────────
@@ -211,6 +285,8 @@ def run_python(
     mem_mb: int | None = DEFAULT_MEM_MB,
     fsize_mb: int = DEFAULT_FSIZE_MB,
     allow_network: bool = True,
+    cwd: str | None = None,
+    files: dict | None = None,
 ) -> dict:
     """Execute Python ``code`` in the sandbox (see module docstring).
 
@@ -218,6 +294,12 @@ def run_python(
     expression (if any) is printed REPL-style. Runs under the per-script venv
     python via ``python -I`` (isolated mode), so installed packages are
     importable while PYTHON* env vars and user site-packages are ignored.
+
+    ``files={"data.csv": src_path_or_bytes}`` copies inputs into the sandbox
+    cwd so the code can ``open("data.csv")``; ``cwd=`` runs in a persistent
+    directory of your choice instead of a throwaway one (see module docstring).
+    The harness/code files stay in a separate staging dir, so a custom ``cwd``
+    is never polluted with them.
     """
     if not isinstance(code, str) or not code.strip():
         return {"stdout": "", "stderr": "empty code", "returncode": 1, "timed_out": False}
@@ -225,9 +307,9 @@ def run_python(
         return {"stdout": "", "stderr": f"code too long (max {DEFAULT_MAX_INPUT} chars)",
                 "returncode": 1, "timed_out": False}
 
-    def _build(workdir):
-        code_path = os.path.join(workdir, "_user_code.py")
-        harness_path = os.path.join(workdir, "_harness.py")
+    def _build(staging):
+        code_path = os.path.join(staging, "_user_code.py")
+        harness_path = os.path.join(staging, "_harness.py")
         with open(code_path, "w", encoding="utf-8") as fh:
             fh.write(code)
         with open(harness_path, "w", encoding="utf-8") as fh:
@@ -236,7 +318,7 @@ def run_python(
 
     return _run_sandboxed(
         _build, timeout=timeout, mem_mb=mem_mb, fsize_mb=fsize_mb,
-        allow_network=allow_network,
+        allow_network=allow_network, cwd=cwd, files=files,
     )
 
 
@@ -253,12 +335,19 @@ def run_bash(
     mem_mb: int | None = DEFAULT_MEM_MB,
     fsize_mb: int = DEFAULT_FSIZE_MB,
     allow_network: bool = True,
+    cwd: str | None = None,
+    files: dict | None = None,
 ) -> dict:
     """Execute a shell ``command`` in the sandbox (see module docstring).
 
     Returns ``{"stdout", "stderr", "returncode", "timed_out"}``. Runs via
     ``bash -c <command>`` (falls back to ``sh``) in a throwaway working
     directory with a scrubbed environment, resource limits and a timeout.
+
+    ``files={"data.csv": src_path_or_bytes}`` copies inputs into the sandbox
+    cwd so the command can read them by relative path; ``cwd=`` runs in a
+    persistent directory of your choice (e.g.
+    ``os.environ["AGENTFLOW_WORKSPACE_DIR"]``) instead of a throwaway one.
     """
     if not isinstance(command, str) or not command.strip():
         return {"stdout": "", "stderr": "empty command", "returncode": 1, "timed_out": False}
@@ -266,12 +355,12 @@ def run_bash(
         return {"stdout": "", "stderr": f"command too long (max {DEFAULT_MAX_INPUT} chars)",
                 "returncode": 1, "timed_out": False}
 
-    def _build(workdir):
+    def _build(staging):
         return [_shell(), "-c", command]
 
     return _run_sandboxed(
         _build, timeout=timeout, mem_mb=mem_mb, fsize_mb=fsize_mb,
-        allow_network=allow_network,
+        allow_network=allow_network, cwd=cwd, files=files,
     )
 
 

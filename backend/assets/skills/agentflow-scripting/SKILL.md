@@ -71,6 +71,13 @@ Sandboxed execution (opt-in, never in default get_tools()):
 from agentflow import run_bash, run_python, bash_tool, python_tool, exec_tools
 r = run_python("2**10")             # {"stdout","stderr","returncode","timed_out"}
 agent = get_agent(tools=get_tools() + exec_tools())   # give the agent bash+python
+
+# The sandbox cwd is an empty throwaway dir and AGENTFLOW_* env vars are
+# scrubbed, so sandboxed code can't see the run's files by default. Opt in:
+r = run_python("open('data.csv').read()", files={"data.csv": some_path})
+r = run_bash("ls", cwd=os.environ["AGENTFLOW_WORKSPACE_DIR"])  # persistent dir
+agent = get_agent(tools=get_tools()                            # agent works on
+                  + exec_tools(cwd=os.environ["AGENTFLOW_WORKSPACE_DIR"]))  # workspace
 ```
 
 Secrets & HTTP (secrets are stored by the admin; list keys via `get_platform_context`):
