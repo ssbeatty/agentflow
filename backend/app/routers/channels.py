@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from loguru import logger
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
@@ -31,6 +32,7 @@ def create_channel(body: ChannelCreate, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(409, "channel could not be created")
     db.refresh(ch)
+    logger.info("Channel created: {} ({}, provider={})", ch.id, ch.name, ch.provider)
     return ch
 
 
@@ -41,6 +43,7 @@ def update_channel(cid: str, body: ChannelUpdate, db: Session = Depends(get_db))
         setattr(ch, k, v)
     db.commit()
     db.refresh(ch)
+    logger.info("Channel updated: {} ({})", cid, ch.name)
     return ch
 
 
@@ -49,6 +52,7 @@ def delete_channel(cid: str, db: Session = Depends(get_db)):
     ch = _get_or_404(cid, db)
     db.delete(ch)
     db.commit()
+    logger.info("Channel deleted: {} ({})", cid, ch.name)
 
 
 @router.post("/{cid}/set-default", response_model=ChannelOut)
@@ -67,6 +71,7 @@ def set_default(cid: str, body: ChannelSetDefault, db: Session = Depends(get_db)
     ch.default_model = model
     db.commit()
     db.refresh(ch)
+    logger.info("Default LLM set: {} (channel={})", model, ch.name)
     return ch
 
 

@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import type { ExecutionLog } from "@/lib/types";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn, toLocalDate } from "@/lib/utils";
@@ -27,6 +28,7 @@ interface Props {
 }
 
 export default function LogPanel({ logs }: Props) {
+  const { t } = useTranslation("scriptEditor");
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -37,7 +39,7 @@ export default function LogPanel({ logs }: Props) {
     <ScrollArea className="h-full">
       <div className="px-3 py-2 space-y-0.5 font-mono text-xs">
         {logs.length === 0 ? (
-          <p className="text-muted-foreground py-4 text-center">Run the script to see logs</p>
+          <p className="text-muted-foreground py-4 text-center">{t("logPanel.empty")}</p>
         ) : (
           logs.map((log) => (
             <LogEntry key={log.id} log={log} />
@@ -50,6 +52,7 @@ export default function LogPanel({ logs }: Props) {
 }
 
 function LogEntry({ log }: { log: ExecutionLog }) {
+  const { t } = useTranslation("scriptEditor");
   const color = LEVEL_STYLES[log.level] ?? "text-foreground";
   const tag = LEVEL_TAG[log.level] ?? log.level.toUpperCase().slice(0, 4).padEnd(4);
   const time = toLocalDate(log.timestamp).toLocaleTimeString(undefined, {
@@ -71,7 +74,7 @@ function LogEntry({ log }: { log: ExecutionLog }) {
       <div className={cn("text-xs whitespace-pre-wrap break-all pl-[2px]", color)}>{log.message}</div>
       {hasData && (
         <details className="mt-0.5 pl-[2px]">
-          <summary className="cursor-pointer text-muted-foreground/60 text-[10px]">data</summary>
+          <summary className="cursor-pointer text-muted-foreground/60 text-[10px]">{t("logPanel.dataLabel")}</summary>
           <pre className="mt-1 text-muted-foreground text-xs whitespace-pre-wrap break-words overflow-auto bg-secondary/30 rounded px-2 py-1">
             {JSON.stringify(log.data, null, 2)}
           </pre>

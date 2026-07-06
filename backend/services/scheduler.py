@@ -56,6 +56,7 @@ class SchedulerService:
                     self.upsert_job(j.id, j.script_id, j.cron_expression, j.input_data or {})
                 except Exception as e:
                     log.warning("Failed to load cron job %s: %s", j.id, e)
+            log.info("Loaded %d enabled cron job(s)", len(jobs))
         finally:
             db.close()
 
@@ -77,6 +78,7 @@ class SchedulerService:
         finally:
             db.close()
 
+        log.info("Cron job %s fired -> execution %s (script=%s)", cron_job_id, execution_id, script_id)
         spawn_execution(execution_id)
 
 

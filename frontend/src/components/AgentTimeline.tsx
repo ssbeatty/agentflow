@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { Wrench, BookOpen, ChevronRight, ChevronDown, Loader2, Check, AlertTriangle } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type { TraceEvent, WsEvent } from "@/lib/types";
 import { buildRows, type TraceRow } from "@/components/FlowPanel";
 import { MarkdownContent } from "@/components/Markdown";
@@ -120,11 +121,12 @@ function Detail({ label, value, error }: { label: string; value: unknown; error?
 }
 
 export function ToolCard({ block }: { block: ToolBlock }) {
+  const { t } = useTranslation("scriptPanels");
   const [open, setOpen] = useState(false);
   const isSkill = block.kind === "skill";
   const a = isSkill
-    ? { border: "border-fuchsia-500/25", bg: "bg-fuchsia-500/[0.04]", icon: "text-fuchsia-400", Icon: BookOpen, label: "Skill" }
-    : { border: "border-emerald-500/25", bg: "bg-emerald-500/[0.04]", icon: "text-emerald-400", Icon: Wrench, label: "Tool" };
+    ? { border: "border-fuchsia-500/25", bg: "bg-fuchsia-500/[0.04]", icon: "text-fuchsia-400", Icon: BookOpen, label: t("agentTimeline.toolCard.skillLabel") }
+    : { border: "border-emerald-500/25", bg: "bg-emerald-500/[0.04]", icon: "text-emerald-400", Icon: Wrench, label: t("agentTimeline.toolCard.toolLabel") };
   return (
     <div className={cn("rounded-lg border w-full max-w-[680px]", a.border, a.bg)}>
       <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left">
@@ -143,9 +145,9 @@ export function ToolCard({ block }: { block: ToolBlock }) {
       </button>
       {open && (
         <div className="px-3 pb-2 pt-1.5 space-y-1.5 border-t border-border/20">
-          <Detail label="Arguments" value={block.input} />
-          <Detail label="Result" value={block.output} />
-          {block.error && <Detail label="Error" value={block.error} error />}
+          <Detail label={t("agentTimeline.toolCard.argumentsLabel")} value={block.input} />
+          <Detail label={t("agentTimeline.toolCard.resultLabel")} value={block.output} />
+          {block.error && <Detail label={t("agentTimeline.toolCard.errorLabel")} value={block.error} error />}
         </div>
       )}
     </div>
@@ -160,6 +162,7 @@ export default function AgentTimeline({
   /** Reasoning to show as a leading block (reload path, where it isn't inline). */
   leadingReasoning?: string;
 }) {
+  const { t } = useTranslation("scriptPanels");
   const visible = blocks.some((b) => b.type === "tool" || (b.type === "text" && b.content.trim()));
   return (
     <div className="space-y-2">
@@ -177,7 +180,7 @@ export default function AgentTimeline({
       })}
       {streaming && !visible && !leadingReasoning && (
         <span className="flex items-center gap-1.5 text-muted-foreground">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" /><span className="text-xs">Generating…</span>
+          <Loader2 className="h-3.5 w-3.5 animate-spin" /><span className="text-xs">{t("agentTimeline.generating")}</span>
         </span>
       )}
     </div>

@@ -1,0 +1,22 @@
+{
+  "header": {
+    "title": "Initialize AgentFlow",
+    "subtitle": "Create the admin account. It is used to sign in to the entire admin console."
+  },
+  "form": {
+    "username": "Username",
+    "usernamePlaceholder": "admin",
+    "usernameError": "Username must be at least 3 characters",
+    "password": "Password",
+    "passwordPlaceholder": "At least 6 characters",
+    "passwordError": "Password must be at least 6 characters",
+    "confirm": "Confirm Password",
+    "confirmPlaceholder": "Re-enter password",
+    "mismatch": "Passwords do not match",
+    "submit": "Create and sign in"
+  },
+  "toast": {
+    "created": "Admin account created",
+    "failed": "Setup failed"
+  }
+}

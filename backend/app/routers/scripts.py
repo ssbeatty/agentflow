@@ -2,6 +2,7 @@ import json
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse
+from loguru import logger
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
@@ -55,6 +56,7 @@ def create_script(body: ScriptCreate, db: Session = Depends(get_db)):
     db.add(main_file)
     db.commit()
     db.refresh(script)
+    logger.info("Script created: {} ({})", script.id, script.name)
     return script
 
 
@@ -87,6 +89,7 @@ def delete_script(script_id: str, db: Session = Depends(get_db)):
     script = _get_or_404(script_id, db)
     db.delete(script)
     db.commit()
+    logger.info("Script deleted: {} ({})", script_id, script.name)
 
 
 # ── File management ────────────────────────────────────────────────────────────

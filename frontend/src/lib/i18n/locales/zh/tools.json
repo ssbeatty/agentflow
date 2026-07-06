@@ -1,0 +1,233 @@
+{
+  "page": {
+    "title": "工具与 MCP 服务器"
+  },
+  "builtinTools": {
+    "heading": "内置工具(始终可用)",
+    "description": {
+      "prefix": "自动注入每次运行,无需为脚本单独配置。",
+      "suffix": "的提供方在下方配置。"
+    },
+    "webFetch": {
+      "tavilyConnected": "抓取网页文本(Tavily → HTTP)",
+      "default": "抓取网页文本"
+    },
+    "webSearchTool": {
+      "tavilyConnected": "Tavily 搜索(回退至 DuckDuckGo)",
+      "default": "DuckDuckGo 搜索"
+    },
+    "usageLabel": "脚本中的用法:"
+  },
+  "webSearch": {
+    "heading": "网络搜索提供方",
+    "description": {
+      "prefix": "决定",
+      "suffix": "使用哪个搜索提供方。DuckDuckGo(无需密钥)始终作为回退,因此该设置是可选的。"
+    },
+    "providerLabel": "提供方",
+    "tavilyOption": "Tavily(需要 API 密钥)",
+    "duckduckgoOption": "DuckDuckGo(无需密钥)",
+    "tavilyKeyLabel": "Tavily 密钥",
+    "tavilyKeyPlaceholderSaved": "已保存({{preview}})—— 输入以替换",
+    "tavilyKeyPlaceholderDefault": "tvly-…",
+    "keySetBadge": "已设置",
+    "saveButton": "保存",
+    "testButton": "测试",
+    "removeKeyButton": "移除密钥",
+    "toast": {
+      "loadFailed": "加载搜索配置失败",
+      "saved": "搜索设置已保存",
+      "keyRemoved": "已移除 Tavily 密钥",
+      "tavilyOk_other": "Tavily 测试正常({{count}} 条结果)",
+      "tavilyError": "Tavily:{{error}}",
+      "testFailedFallback": "失败"
+    }
+  },
+  "mcpServers": {
+    "heading": "MCP 服务器",
+    "description": {
+      "prefix": "在此启用一个服务器,然后在各脚本(其右侧面板)中选择它。工具通过",
+      "suffix": "注入,且仅注入该脚本选中(且已启用)的服务器 —— 并非全局注入。"
+    },
+    "addButton": "添加",
+    "empty": "尚未配置 MCP 服务器。添加一个以扩展脚本的外部工具。",
+    "disabledBadge": "已禁用",
+    "authorizedBadge": "已授权",
+    "notConnectedBadge": "未连接",
+    "testTitle": "测试连接并列出工具",
+    "testButton": "测试",
+    "reauthorizeTitle": "重新授权",
+    "signInTitle": "登录",
+    "reconnectButton": "重新连接",
+    "connectButton": "连接",
+    "disconnectTitle": "断开连接",
+    "disableTitle": "禁用",
+    "enableTitle": "启用",
+    "editButton": "编辑",
+    "oauth2Label": "OAuth 2.0",
+    "usageHint": {
+      "heading": "脚本用法"
+    },
+    "confirm": {
+      "message": "删除此 MCP 服务器?",
+      "confirmLabel": "删除"
+    },
+    "toast": {
+      "loadFailed": "加载 MCP 服务器失败",
+      "nameRequired": "请输入名称",
+      "urlRequired": "该传输方式需要填写 URL",
+      "commandRequired": "stdio 需要填写命令",
+      "headersInvalid": "请求头必须是合法的 JSON",
+      "envVarsInvalid": "环境变量必须是合法的 JSON",
+      "updated": "已更新",
+      "created": "已创建",
+      "deleted": "已删除",
+      "deleteFailed": "删除失败",
+      "updateFailed": "更新失败",
+      "testFound": "{{name}}:发现 {{count}} 个工具",
+      "testAuthRequired": "{{name}}:需要身份验证",
+      "testFailed": "{{name}}:连接失败",
+      "popupBlocked": "弹窗被拦截 —— 请允许本站点弹窗",
+      "oauthError": "OAuth:{{error}}",
+      "disconnected": "已断开连接",
+      "disconnectFailed": "断开连接失败",
+      "oauthConnected": "已连接",
+      "oauthFailed": "授权失败",
+      "oauthFailedDetail": "授权失败:{{detail}}"
+    },
+    "dialog": {
+      "editTitle": "编辑 MCP 服务器",
+      "addTitle": "添加 MCP 服务器",
+      "name": "名称",
+      "namePlaceholder": "my-server",
+      "transport": "传输方式",
+      "transportHttp": "http(可流式传输的 HTTP)",
+      "transportSse": "sse(服务器发送事件)",
+      "transportStdio": "stdio(本地进程)",
+      "transportWebsocket": "websocket",
+      "url": "URL",
+      "urlPlaceholder": "http://localhost:8001/mcp",
+      "command": "命令",
+      "commandPlaceholder": "python",
+      "args": "参数",
+      "argsHint": "(每行一个)",
+      "argsPlaceholder": "/path/to/server.py\n--port\n8001",
+      "envVars": "环境变量",
+      "envVarsHint": "(JSON 对象,可选)",
+      "envVarsPlaceholder": "{\"MY_API_KEY\": \"...\"}",
+      "authentication": "身份验证",
+      "authNone": "无 / 静态请求头",
+      "authOauth2": "OAuth 2.0(浏览器登录)",
+      "oauthScope": "OAuth 权限范围",
+      "optional": "(可选)",
+      "oauthScopePlaceholder": "以空格分隔的权限范围",
+      "oauthHint": {
+        "prefix": "保存服务器后,点击",
+        "suffix": "以登录。系统会自动发现相关端点(RFC 9728 / 8414),并在支持时动态注册客户端。"
+      },
+      "headers": "请求头",
+      "headersHint": "(JSON 对象,可选)",
+      "headersPlaceholder": "{\"Authorization\": \"Bearer ...\"}",
+      "enabledCheckbox": "已启用(注入到所有脚本运行中)",
+      "cancel": "取消",
+      "saving": "保存中…",
+      "save": "保存"
+    },
+    "probeDialog": {
+      "title": "{{name}} —— 连接测试",
+      "connectedCount": "已连接 · {{count}} 个工具",
+      "noTools": "该服务器未暴露任何工具。",
+      "authRequiredHint": {
+        "prefix": "该服务器需要身份验证。请编辑它,将“身份验证”设置为",
+        "suffix": ",或添加一个",
+        "suffix2": "请求头。"
+      },
+      "close": "关闭"
+    }
+  },
+  "skills": {
+    "heading": "技能",
+    "description": {
+      "prefix": "可复用的指令(SKILL.md + 文件),供智能体按需加载。将其绑定到具体脚本;",
+      "middle": "通过一个",
+      "suffix": "工具将其暴露出来。"
+    },
+    "browseMarketplace": "浏览市场",
+    "newSkill": "新建技能",
+    "empty": "还没有技能。创建一个以打包可复用的智能体指令和文件。",
+    "disabledBadge": "已禁用",
+    "noDescription": "暂无描述",
+    "disableTitle": "禁用",
+    "enableTitle": "启用",
+    "editTitle": "编辑",
+    "usageHint": {
+      "heading": "脚本用法",
+      "intro": "在脚本的右侧面板中绑定技能,然后:",
+      "examplesPrefix": "完整示例:",
+      "loadedPrefix": "技能加载时,运行日志中会出现一行",
+      "loadedSuffix": "。"
+    },
+    "confirm": {
+      "message": "删除此技能?",
+      "confirmLabel": "删除"
+    },
+    "toast": {
+      "loadFailed": "加载技能失败",
+      "nameRequired": "请输入名称",
+      "updateFailed": "更新失败",
+      "deleted": "已删除",
+      "deleteFailed": "删除失败"
+    },
+    "dialog": {
+      "title": "新建技能",
+      "name": "名称",
+      "namePlaceholder": "pdf-processing",
+      "description": "描述",
+      "descriptionHint": "(展示给智能体)",
+      "descriptionPlaceholder": "这个技能做什么、什么时候使用",
+      "hint": {
+        "prefix": "系统会创建一个初始的",
+        "suffix": ",之后可编辑并添加更多文件。"
+      },
+      "cancel": "取消",
+      "creating": "创建中…",
+      "createAndEdit": "创建并编辑"
+    }
+  },
+  "marketplace": {
+    "title": "技能市场",
+    "tabs": {
+      "official": "官方 anthropics/skills",
+      "skillsmp": "社区 SkillsMP",
+      "skillssh": "社区 skills.sh"
+    },
+    "back": "返回",
+    "refreshTitle": "刷新",
+    "choice": {
+      "bundlesHint": "包含多个技能 —— 请选择一个:"
+    },
+    "official": {
+      "tokenWarning": "未设置 GITHUB_TOKEN —— 匿名 GitHub 请求限制为每小时 60 次。设置后可提高限额。",
+      "noSkillsFound": "未找到技能。"
+    },
+    "card": {
+      "openOnGithub": "在 GitHub 上打开",
+      "noDescription": "暂无描述",
+      "installed": "已安装",
+      "install": "安装"
+    },
+    "toast": {
+      "alreadyInstalled": "“{{label}}” 已安装",
+      "installed": "已安装 “{{name}}”"
+    },
+    "registry": {
+      "searchPlaceholder": "搜索社区技能,例如 pdf、网页抓取…",
+      "searchButton": "搜索",
+      "skillsshAuthWarning": "skills.sh 搜索需要 Vercel OIDC 令牌 —— 请设置 SKILLS_SH_TOKEN(或 VERCEL_OIDC_TOKEN)环境变量后使用。SkillsMP 无需令牌。",
+      "remainingQuota": "今日剩余配额:{{rate}}",
+      "raiseQuotaHint": " —— 设置 SKILLSMP_API_KEY 可将其提高到 500/天",
+      "noResults": "没有结果。",
+      "searchHint": "按关键词搜索社区技能。安装会从其 GitHub 仓库拉取该技能。"
+    }
+  }
+}

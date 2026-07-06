@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { Loader2, Save, Trash2, Plus, ChevronDown } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { inputPresets } from "@/lib/api";
 import type { ScriptInputPreset } from "@/lib/types";
@@ -18,6 +19,7 @@ interface Props {
 }
 
 export default function InputPresetEditor({ scriptId, value, onChange, error, onError }: Props) {
+  const { t } = useTranslation("scriptPanels");
   const [presets, setPresets] = useState<ScriptInputPreset[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
   const [saving, setSaving] = useState(false);
@@ -57,7 +59,7 @@ export default function InputPresetEditor({ scriptId, value, onChange, error, on
       onChange(JSON.stringify(JSON.parse(value), null, 2));
       onError("");
     } catch {
-      onError("Invalid JSON");
+      onError(t("inputPresetEditor.invalidJson"));
     }
   }
 
@@ -67,7 +69,7 @@ export default function InputPresetEditor({ scriptId, value, onChange, error, on
     try {
       JSON.parse(value || "{}");
     } catch {
-      onError("Invalid JSON");
+      onError(t("inputPresetEditor.invalidJson"));
       return;
     }
     setSaving(true);
@@ -77,7 +79,7 @@ export default function InputPresetEditor({ scriptId, value, onChange, error, on
       setSelectedId(p.id);
       setNewName("");
       setCreateOpen(false);
-      toast.success(`Saved preset "${name}"`);
+      toast.success(t("inputPresetEditor.toast.saved", { name }));
     } catch (e: unknown) {
       toast.error(String(e));
     } finally { setSaving(false); }
@@ -88,14 +90,14 @@ export default function InputPresetEditor({ scriptId, value, onChange, error, on
     try {
       JSON.parse(value || "{}");
     } catch {
-      onError("Invalid JSON");
+      onError(t("inputPresetEditor.invalidJson"));
       return;
     }
     setSaving(true);
     try {
       const p = await inputPresets.update(scriptId, selected.id, { input_json: value });
       setPresets(prev => prev.map(x => x.id === p.id ? p : x));
-      toast.success("Preset updated");
+      toast.success(t("inputPresetEditor.toast.updated"));
     } catch (e: unknown) {
       toast.error(String(e));
     } finally { setSaving(false); }
@@ -103,12 +105,12 @@ export default function InputPresetEditor({ scriptId, value, onChange, error, on
 
   async function deleteCurrent() {
     if (!selected) return;
-    if (!(await confirm(`Delete preset "${selected.name}"?`, { confirmLabel: "Delete", destructive: true }))) return;
+    if (!(await confirm(t("inputPresetEditor.confirm.deleteMessage", { name: selected.name }), { confirmLabel: t("inputPresetEditor.confirm.deleteLabel"), destructive: true }))) return;
     try {
       await inputPresets.delete(scriptId, selected.id);
       setPresets(prev => prev.filter(x => x.id !== selected.id));
       setSelectedId("");
-      toast.success("Preset deleted");
+      toast.success(t("inputPresetEditor.toast.deleted"));
     } catch (e: unknown) {
       toast.error(String(e));
     }
@@ -118,13 +120,13 @@ export default function InputPresetEditor({ scriptId, value, onChange, error, on
     <div className="space-y-1.5">
       <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/70 flex items-center justify-between">
         <span className="flex items-center gap-2">
-          Input JSON
+          {t("inputPresetEditor.heading")}
           {error && <span className="text-destructive normal-case font-normal">{error}</span>}
-          {selected && dirty && <span className="text-amber-400 normal-case font-normal">modified</span>}
+          {selected && dirty && <span className="text-amber-400 normal-case font-normal">{t("inputPresetEditor.modified")}</span>}
         </span>
         <button onClick={formatJson}
           className="text-[10px] normal-case font-normal text-muted-foreground hover:text-foreground transition-colors">
-          Format
+          {t("inputPresetEditor.format")}
         </button>
       </p>
 
@@ -137,7 +139,7 @@ export default function InputPresetEditor({ scriptId, value, onChange, error, on
             className="w-full h-7 px-2.5 flex items-center gap-1.5 rounded-md border border-border bg-secondary/30 hover:bg-secondary/50 transition-colors text-xs text-left"
           >
             <span className="truncate flex-1">
-              {selected ? selected.name : <span className="text-muted-foreground">No preset</span>}
+              {selected ? selected.name : <span className="text-muted-foreground">{t("inputPresetEditor.noPreset")}</span>}
             </span>
             <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0" />
           </button>
@@ -147,10 +149,10 @@ export default function InputPresetEditor({ scriptId, value, onChange, error, on
                 onClick={() => { setSelectedId(""); setMenuOpen(false); }}
                 className="w-full text-left px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-secondary/50"
               >
-                — None (manual input) —
+                {t("inputPresetEditor.noneOption")}
               </button>
               {presets.length === 0 && (
-                <div className="px-2.5 py-1.5 text-xs text-muted-foreground italic">No saved presets</div>
+                <div className="px-2.5 py-1.5 text-xs text-muted-foreground italic">{t("inputPresetEditor.noSavedPresets")}</div>
               )}
               {presets.map(p => (
                 <button key={p.id} onClick={() => loadPreset(p)}
@@ -167,18 +169,18 @@ export default function InputPresetEditor({ scriptId, value, onChange, error, on
         {selected && (
           <>
             <Button variant="outline" size="sm" className="h-7 px-2"
-              onClick={updateCurrent} disabled={saving || !dirty} title="Update preset with current input">
+              onClick={updateCurrent} disabled={saving || !dirty} title={t("inputPresetEditor.updateTitle")}>
               {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
             </Button>
             <Button variant="outline" size="sm" className="h-7 px-2 text-muted-foreground hover:text-destructive"
-              onClick={deleteCurrent} title="Delete preset">
+              onClick={deleteCurrent} title={t("inputPresetEditor.deleteTitle")}>
               <Trash2 className="h-3 w-3" />
             </Button>
           </>
         )}
 
         <Button variant="outline" size="sm" className="h-7 px-2"
-          onClick={() => { setCreateOpen(v => !v); setNewName(""); }} title="Save as new preset">
+          onClick={() => { setCreateOpen(v => !v); setNewName(""); }} title={t("inputPresetEditor.saveAsNewTitle")}>
           <Plus className="h-3 w-3" />
         </Button>
       </div>
@@ -188,7 +190,7 @@ export default function InputPresetEditor({ scriptId, value, onChange, error, on
           <Input
             value={newName}
             onChange={e => setNewName(e.target.value)}
-            placeholder="Preset name (e.g. edge case)"
+            placeholder={t("inputPresetEditor.namePlaceholder")}
             className="h-7 text-xs flex-1"
             autoFocus
             onKeyDown={e => {
@@ -197,7 +199,7 @@ export default function InputPresetEditor({ scriptId, value, onChange, error, on
             }}
           />
           <Button size="sm" className="h-7 px-2" onClick={saveAsNew} disabled={saving || !newName.trim()}>
-            {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save"}
+            {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : t("inputPresetEditor.save")}
           </Button>
         </div>
       )}

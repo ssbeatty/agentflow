@@ -1,0 +1,41 @@
+{
+  "toast": {
+    "loadFailed": "加载脚本失败"
+  },
+  "heading": "脚本",
+  "subtitle_other": "{{count}} 个 LangGraph 智能体",
+  "newScript": "新建脚本",
+  "empty": {
+    "text": "还没有脚本",
+    "cta": "创建你的第一个脚本"
+  },
+  "card": {
+    "chat": "对话",
+    "open": "打开"
+  },
+  "dialog": {
+    "template": "模板",
+    "name": "名称",
+    "description": "描述",
+    "optional": "(可选)",
+    "namePlaceholder": "我的 LangGraph 智能体",
+    "descriptionPlaceholder": "这个智能体是做什么的?",
+    "cancel": "取消",
+    "create": "创建",
+    "creating": "创建中…",
+    "nameRequired": "请输入名称",
+    "created": "脚本已创建"
+  },
+  "templates": {
+    "blank": { "label": "空白", "description": "空的 run() 起始模板" },
+    "simple-chat": { "label": "简单对话", "description": "适用于对话页面的极简多轮聊天" },
+    "streaming-chat": { "label": "流式对话", "description": "流式 LLM 输出,打字机效果,支持推理展示" },
+    "rich-chat": { "label": "富媒体对话", "description": "LLM 通过工具调用渲染 Markdown / 表格 / 图表 / 图片" },
+    "react-agent": { "label": "ReAct 智能体", "description": "使用 web_search + web_fetch 的 get_agent" },
+    "skills-mcp": { "label": "技能 + MCP", "description": "使用绑定的技能和 MCP 服务器工具" },
+    "deep-agent": { "label": "深度智能体", "description": "get_deep_agent:规划、子智能体、技能文件系统" },
+    "graph-loop": { "label": "LangGraph 循环", "description": "带循环和条件边的多节点图" },
+    "secrets-http": { "label": "密钥 + HTTP", "description": "读取密钥并调用外部 API" },
+    "file-workspace": { "label": "文件 + 工作区", "description": "处理上传的文件并跨运行持久化状态" }
+  }
+}

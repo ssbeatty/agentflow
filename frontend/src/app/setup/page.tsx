@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslation } from "react-i18next";
 import { Zap, Loader2, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { auth } from "@/lib/api";
@@ -10,6 +11,7 @@ import { Label } from "@/components/ui/label";
 
 export default function SetupPage() {
   const router = useRouter();
+  const { t } = useTranslation("setup");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -27,10 +29,10 @@ export default function SetupPage() {
     setBusy(true);
     try {
       await auth.setup(username, password);
-      toast.success("Admin account created");
+      toast.success(t("toast.created"));
       router.replace("/");
     } catch (err) {
-      toast.error(String(err instanceof Error ? err.message : err) || "Setup failed");
+      toast.error(String(err instanceof Error ? err.message : err) || t("toast.failed"));
       setBusy(false);
     }
   }
@@ -42,52 +44,52 @@ export default function SetupPage() {
           <div className="h-12 w-12 rounded-2xl bg-primary/15 flex items-center justify-center mb-3">
             <Zap className="h-6 w-6 text-primary" />
           </div>
-          <h1 className="text-xl font-semibold">Initialize AgentFlow</h1>
+          <h1 className="text-xl font-semibold">{t("header.title")}</h1>
           <p className="text-sm text-muted-foreground mt-1 text-center">
-            Create the admin account. It is used to sign in to the entire admin console.
+            {t("header.subtitle")}
           </p>
         </div>
 
         <form onSubmit={submit} className="rounded-xl border border-border bg-secondary/20 p-6 space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="username" className="text-xs">Username</Label>
+            <Label htmlFor="username" className="text-xs">{t("form.username")}</Label>
             <Input
               id="username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               autoFocus
               autoComplete="username"
-              placeholder="admin"
+              placeholder={t("form.usernamePlaceholder")}
             />
-            {tooShortUser && <p className="text-[11px] text-destructive">Username must be at least 3 characters</p>}
+            {tooShortUser && <p className="text-[11px] text-destructive">{t("form.usernameError")}</p>}
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="password" className="text-xs">Password</Label>
+            <Label htmlFor="password" className="text-xs">{t("form.password")}</Label>
             <Input
               id="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="new-password"
-              placeholder="At least 6 characters"
+              placeholder={t("form.passwordPlaceholder")}
             />
-            {tooShortPass && <p className="text-[11px] text-destructive">Password must be at least 6 characters</p>}
+            {tooShortPass && <p className="text-[11px] text-destructive">{t("form.passwordError")}</p>}
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="confirm" className="text-xs">Confirm Password</Label>
+            <Label htmlFor="confirm" className="text-xs">{t("form.confirm")}</Label>
             <Input
               id="confirm"
               type="password"
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
               autoComplete="new-password"
-              placeholder="Re-enter password"
+              placeholder={t("form.confirmPlaceholder")}
             />
-            {mismatch && <p className="text-[11px] text-destructive">Passwords do not match</p>}
+            {mismatch && <p className="text-[11px] text-destructive">{t("form.mismatch")}</p>}
           </div>
           <Button type="submit" className="w-full gap-2" disabled={!valid || busy}>
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-            Create and sign in
+            {t("form.submit")}
           </Button>
         </form>
       </div>

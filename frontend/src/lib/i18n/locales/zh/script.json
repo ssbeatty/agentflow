@@ -1,0 +1,115 @@
+{
+  "toast": {
+    "scriptNotFound": "未找到脚本",
+    "idCopied": "脚本 ID 已复制",
+    "invalidJson": "无效的 JSON",
+    "executionFailed": "失败:{{error}}",
+    "executionCompleted": "执行已完成",
+    "stopFailed": "停止失败:{{error}}",
+    "saved": "已保存",
+    "deleted": "脚本已删除"
+  },
+  "status": {
+    "idle": "空闲",
+    "queued": "排队中",
+    "running": "运行中",
+    "completed": "已完成",
+    "failed": "失败",
+    "cancelled": "已取消",
+    "pending": "等待中"
+  },
+  "header": {
+    "copyIdTitle": "复制脚本 ID",
+    "deleteTitle": "删除脚本",
+    "revisionLoaded": "版本 #{{number}}{{label}} 已加载 — 保存以应用",
+    "unsaved": "未保存",
+    "issueCount_other": "{{count}} 个问题",
+    "save": "保存",
+    "stop": "停止",
+    "run": "运行"
+  },
+  "tabs": {
+    "logs": "日志",
+    "flow": "流程",
+    "output": "输出",
+    "artifacts": "产物",
+    "schedule": "定时",
+    "runs": "运行记录"
+  },
+  "run": {
+    "noOutput": "暂无输出。"
+  },
+  "rightPanel": {
+    "config": "配置",
+    "history": "历史"
+  },
+  "config": {
+    "entryFunction": {
+      "label": "入口函数",
+      "placeholder": "run"
+    },
+    "maxExec": {
+      "label": "保留的执行记录数",
+      "placeholder": "50",
+      "hint": "超出此数量的最旧记录将在每次运行后自动删除。0 表示不限制。"
+    },
+    "mcp": {
+      "label": "MCP 服务器"
+    },
+    "skills": {
+      "label": "技能"
+    }
+  },
+  "dialog": {
+    "delete": {
+      "title": "删除脚本?",
+      "description": "及其所有运行记录都将被永久删除。",
+      "cancel": "取消",
+      "confirm": "删除"
+    }
+  },
+  "schedule": {
+    "presets": {
+      "every5m": "每 5 分钟",
+      "hourly": "每小时",
+      "daily": "每天",
+      "weekly": "每周",
+      "monthly": "每月"
+    },
+    "invalidJson": "无效的 JSON",
+    "newSchedule": "新建定时任务",
+    "cronPlaceholder": "0 * * * *",
+    "labelPlaceholder": "标签",
+    "inputJsonLabel": "输入 JSON",
+    "presetTitle": "从预设填充",
+    "fromPreset": "从预设选择…",
+    "schedulesLabel": "定时任务",
+    "enable": "启用",
+    "disable": "禁用",
+    "inputBadge": "输入",
+    "editInputTitle": "编辑输入",
+    "inputToggleOpen": "输入",
+    "inputToggleClose": "收起",
+    "cancel": "取消",
+    "save": "保存",
+    "empty": "暂无定时任务"
+  },
+  "runs": {
+    "toast": {
+      "cleared": "已清除 {{count}} 条记录"
+    },
+    "recordCount": "{{count}} 条记录",
+    "clearConfirm": {
+      "question": "清除全部?",
+      "confirm": "确认",
+      "cancel": "取消"
+    },
+    "clearTitle": "删除所有已结束的执行记录",
+    "clearButton": "清除",
+    "loading": "加载中…",
+    "empty": "暂无运行记录。",
+    "confirmDeleteTitle": "确认删除",
+    "cancelTitle": "取消",
+    "deleteRecordTitle": "删除此记录"
+  }
+}

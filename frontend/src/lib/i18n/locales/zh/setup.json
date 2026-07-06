@@ -1,0 +1,22 @@
+{
+  "header": {
+    "title": "初始化 AgentFlow",
+    "subtitle": "创建管理员账号,用于登录整个管理控制台。"
+  },
+  "form": {
+    "username": "用户名",
+    "usernamePlaceholder": "admin",
+    "usernameError": "用户名至少需要 3 个字符",
+    "password": "密码",
+    "passwordPlaceholder": "至少 6 个字符",
+    "passwordError": "密码至少需要 6 个字符",
+    "confirm": "确认密码",
+    "confirmPlaceholder": "重新输入密码",
+    "mismatch": "两次输入的密码不一致",
+    "submit": "创建并登录"
+  },
+  "toast": {
+    "created": "管理员账号已创建",
+    "failed": "初始化失败"
+  }
+}

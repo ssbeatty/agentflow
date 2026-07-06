@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, BookOpen, Check, Copy } from "lucide-react";
 import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
 import { scripts as scriptsApi } from "@/lib/api";
 import type { ScriptSummary } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,7 @@ import {
 } from "@/components/ui/select";
 
 export default function DocsPage() {
+  const { t } = useTranslation("docs");
   const [items, setItems] = useState<ScriptSummary[]>([]);
   const [scriptId, setScriptId] = useState<string>("<SCRIPT_ID>");
   const [origin, setOrigin] = useState("http://localhost:8000");
@@ -32,13 +34,13 @@ export default function DocsPage() {
           </Button>
         </Link>
         <BookOpen className="h-4 w-4 text-primary" />
-        <span className="text-sm font-medium">API Reference</span>
+        <span className="text-sm font-medium">{t("header.title")}</span>
 
         <div className="ml-auto flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">Examples for:</span>
+          <span className="text-xs text-muted-foreground">{t("header.examplesFor")}</span>
           <Select value={scriptId} onValueChange={setScriptId}>
             <SelectTrigger className="h-8 w-56 text-xs">
-              <SelectValue placeholder="Pick a script" />
+              <SelectValue placeholder={t("header.pickScriptPlaceholder")} />
             </SelectTrigger>
             <SelectContent>
               {items.map((s) => (
@@ -47,7 +49,7 @@ export default function DocsPage() {
                 </SelectItem>
               ))}
               {items.length === 0 && (
-                <div className="px-2 py-1 text-xs text-muted-foreground">No scripts yet</div>
+                <div className="px-2 py-1 text-xs text-muted-foreground">{t("header.noScripts")}</div>
               )}
             </SelectContent>
           </Select>
@@ -58,17 +60,17 @@ export default function DocsPage() {
         <Intro origin={origin} />
 
         <Section
-          title="Connect a coding agent (MCP)"
-          desc="AgentFlow exposes an MCP server so Claude Code, Cursor or any MCP client can develop scripts on this instance directly: create/edit script files, set up the venv, run scripts and read the failing traceback — the full write→run→debug loop. Auth is an issued API key (create one on the /security page). Note: unlike /api/executions/run, the MCP endpoint gives an API key full script-management scope, not just run."
+          title={t("mcp.title")}
+          desc={t("mcp.desc")}
         >
           <Endpoint method="POST" path="/mcp  (Streamable HTTP)" />
           <Code
-            label="Claude Code"
+            label={t("mcp.labelClaudeCode")}
             code={`claude mcp add --transport http agentflow ${origin}/mcp \\
   --header "X-API-Key: af_…"`}
           />
           <Code
-            label="Cursor / generic mcpServers JSON"
+            label={t("mcp.labelCursorJson")}
             code={`{
   "mcpServers": {
     "agentflow": {
@@ -79,13 +81,13 @@ export default function DocsPage() {
 }`}
           />
           <Code
-            label="Install the companion skill (teaches the agent the script conventions)"
+            label={t("mcp.labelInstallSkill")}
             code={`mkdir -p ~/.claude/skills/agentflow-scripting
 curl -s ${origin}/mcp/skill \\
   -o ~/.claude/skills/agentflow-scripting/SKILL.md`}
           />
           <p className="text-xs text-muted-foreground">
-            Tools exposed: <code className="text-foreground">get_platform_context</code>,{" "}
+            {t("mcp.toolsExposedLabel")} <code className="text-foreground">get_platform_context</code>,{" "}
             <code className="text-foreground">get_scripting_guide</code>,{" "}
             <code className="text-foreground">list_scripts</code>,{" "}
             <code className="text-foreground">get_script</code>,{" "}
@@ -97,16 +99,14 @@ curl -s ${origin}/mcp/skill \\
             <code className="text-foreground">setup_script_env</code>,{" "}
             <code className="text-foreground">run_script</code>,{" "}
             <code className="text-foreground">list_executions</code>,{" "}
-            <code className="text-foreground">get_execution_logs</code>. The same skill text
-            is also available to the agent at runtime via{" "}
-            <code className="text-foreground">get_scripting_guide</code>, so installing it
-            locally is optional — it just helps the agent pick the right approach sooner.
+            <code className="text-foreground">get_execution_logs</code>. {t("mcp.toolsExposedTrailing1")}{" "}
+            <code className="text-foreground">get_scripting_guide</code>{t("mcp.toolsExposedTrailing2")}
           </p>
         </Section>
 
         <Section
-          title="Run synchronously"
-          desc="Blocks until the script finishes and returns the final output_data. Best for external service-to-service calls — this is the one endpoint you can call with an X-API-Key (default timeout 300s)."
+          title={t("runSync.title")}
+          desc={t("runSync.desc")}
         >
           <Endpoint method="POST" path="/api/executions/run?timeout=120" />
           <Code
@@ -120,7 +120,7 @@ curl -s ${origin}/mcp/skill \\
   }'`}
           />
           <Code
-            label="response"
+            label={t("runSync.labelResponse")}
             code={`{
   "id": "uuid…",
   "status": "completed",         // or "failed" / "cancelled"
@@ -133,8 +133,8 @@ curl -s ${origin}/mcp/skill \\
         </Section>
 
         <Section
-          title="Upload a file"
-          desc="Admin only. Upload arbitrary binaries (PDFs, CSVs, images, etc.) that scripts can read by reference. Files persist until you delete them. Optionally tag with script_id for filtering."
+          title={t("uploadFile.title")}
+          desc={t("uploadFile.desc")}
         >
           <Endpoint method="POST" path="/api/files/upload" />
           <Code
@@ -149,8 +149,8 @@ curl -X POST ${origin}/api/files/upload \\
         </Section>
 
         <Section
-          title="Run a script with file input"
-          desc='Pass a file reference anywhere in input_data using the marker {"$file": "<FILE_ID>"}. The execution engine resolves it before launch; your script receives an AgentFlowFile object in its place. Markers can be nested in objects / arrays.'
+          title={t("runWithFile.title")}
+          desc={t("runWithFile.desc")}
         >
           <Endpoint method="POST" path="/api/executions/run" />
           <Code
@@ -167,7 +167,7 @@ curl -X POST ${origin}/api/files/upload \\
   }'`}
           />
           <Code
-            label="python (script side)"
+            label={t("runWithFile.labelPythonScriptSide")}
             code={`from agentflow import paths, AgentFlowFile
 
 def run(input):
@@ -186,8 +186,8 @@ def run(input):
         </Section>
 
         <Section
-          title="List / delete files"
-          desc="Admin only. Filter by script_id to show files tagged to a script plus untagged globals."
+          title={t("listDeleteFiles.title")}
+          desc={t("listDeleteFiles.desc")}
         >
           <Endpoint method="GET" path="/api/files?script_id=..." />
           <Endpoint method="GET" path="/api/files/{file_id}" />
@@ -202,8 +202,8 @@ curl -X DELETE ${origin}/api/files/<FILE_ID>`}
         </Section>
 
         <Section
-          title="Run asynchronously"
-          desc="Admin only. Returns immediately with an execution id; poll GET /executions/{id} or subscribe via WebSocket for logs. Better for long jobs and fan-out."
+          title={t("runAsync.title")}
+          desc={t("runAsync.desc")}
         >
           <Endpoint method="POST" path="/api/executions" />
           <Code
@@ -223,8 +223,8 @@ curl ${origin}/api/executions/<EXECUTION_ID>
         </Section>
 
         <Section
-          title="Stop a running execution"
-          desc="Admin only. Force-stops the subprocess and marks the execution as cancelled. Always returns 200."
+          title={t("stopExecution.title")}
+          desc={t("stopExecution.desc")}
         >
           <Endpoint method="POST" path="/api/executions/{id}/stop" />
           <Code
@@ -235,8 +235,8 @@ curl ${origin}/api/executions/<EXECUTION_ID>
         </Section>
 
         <Section
-          title="List executions"
-          desc="Admin only. Optionally filtered by script_id. Newest first."
+          title={t("listExecutions.title")}
+          desc={t("listExecutions.desc")}
         >
           <Endpoint method="GET" path="/api/executions?script_id=...&limit=50" />
           <Code
@@ -246,8 +246,8 @@ curl ${origin}/api/executions/<EXECUTION_ID>
         </Section>
 
         <Section
-          title="Python example"
-          desc="Anything that speaks HTTP works. Here's a minimal chat loop hitting /executions/run with client-side history."
+          title={t("pythonExample.title")}
+          desc={t("pythonExample.desc")}
         >
           <Code
             label="python"
@@ -278,76 +278,69 @@ while True:
         </Section>
 
         <Section
-          title="Script contract"
-          desc="What the platform passes in and expects back."
+          title={t("contract.title")}
+          desc={t("contract.desc")}
         >
           <ul className="text-sm space-y-2 text-muted-foreground list-disc pl-5">
             <li>
-              <b className="text-foreground">Entry function</b>: receives one dict argument
-              (whatever you put in <code className="text-foreground">input_data</code>) and returns any
-              JSON-serialisable value.
+              <b className="text-foreground">{t("contract.entryFunction.label")}</b>{t("contract.entryFunction.pre")}{" "}
+              <code className="text-foreground">input_data</code>{t("contract.entryFunction.post")}
             </li>
             <li>
-              <b className="text-foreground">Conventions for the /converse chat page</b>: input has
-              <code className="text-foreground"> {"{message, history}"}</code>; return
-              <code className="text-foreground"> {"{reply}"}</code>. Other return shapes
-              still work — the chat UI falls back to <code className="text-foreground">message</code> /
-              <code className="text-foreground">response</code> / <code className="text-foreground">result</code>,
-              and then to a JSON dump.
+              <b className="text-foreground">{t("contract.converseConventions.label")}</b>{t("contract.converseConventions.t1")}
+              <code className="text-foreground"> {"{message, history}"}</code>{t("contract.converseConventions.t2")}
+              <code className="text-foreground"> {"{reply}"}</code>{t("contract.converseConventions.t3")}{" "}
+              <code className="text-foreground">message</code> /{" "}
+              <code className="text-foreground">response</code> / <code className="text-foreground">result</code>
+              {t("contract.converseConventions.t4")}
             </li>
             <li>
-              <b className="text-foreground">LLMs</b>: configured as channels in Settings.
-              <code className="text-foreground"> get_llm()</code> returns the model flagged as default there;
-              <code className="text-foreground"> get_llm(&quot;model-id&quot;)</code> picks a model by its id (case-insensitive);
-              <code className="text-foreground"> list_llms()</code> enumerates the available model ids.
+              <b className="text-foreground">{t("contract.llms.label")}</b>{t("contract.llms.t1")}
+              <code className="text-foreground"> get_llm()</code> {t("contract.llms.t2")}
+              <code className="text-foreground"> get_llm(&quot;model-id&quot;)</code> {t("contract.llms.t3")}
+              <code className="text-foreground"> list_llms()</code> {t("contract.llms.t4")}
             </li>
             <li>
-              <b className="text-foreground">Tools and agents</b>:
-              <code className="text-foreground"> get_tools()</code> returns the built-in
-              <code className="text-foreground"> web_search</code> /
-              <code className="text-foreground"> web_fetch</code> plus the MCP-server tools this
-              script selects; <code className="text-foreground">get_agent()</code> builds a ready
-              agent over them (and any bound skills, reachable via a
-              <code className="text-foreground"> read_skill</code> tool). Configure the search
-              provider and MCP servers on the <code className="text-foreground">/tools</code> page.
+              <b className="text-foreground">{t("contract.toolsAgents.label")}</b>{t("contract.toolsAgents.t1")}
+              <code className="text-foreground"> get_tools()</code> {t("contract.toolsAgents.t2")}
+              <code className="text-foreground"> web_search</code> /{" "}
+              <code className="text-foreground"> web_fetch</code> {t("contract.toolsAgents.t3")}{" "}
+              <code className="text-foreground">get_agent()</code> {t("contract.toolsAgents.t4")}
+              <code className="text-foreground"> read_skill</code> {t("contract.toolsAgents.t5")}{" "}
+              <code className="text-foreground">/tools</code> {t("contract.toolsAgents.t6")}
             </li>
             <li>
-              <b className="text-foreground">Logging</b>: use
-              <code className="text-foreground"> from agentflow import log</code>. Structured logs go to the Logs panel
-              and are persisted to the run history.
+              <b className="text-foreground">{t("contract.logging.label")}</b>{t("contract.logging.t1")}
+              <code className="text-foreground"> from agentflow import log</code>{t("contract.logging.t2")}
             </li>
             <li>
-              <b className="text-foreground">Secrets</b>: store credentials once on the
-              <code className="text-foreground"> /secrets</code> page, then read them with
-              <code className="text-foreground"> get_secret(&quot;BARK_KEY&quot;)</code> (keys are case-insensitive).
-              Values are injected into the run&apos;s environment and never appear in your code, input,
-              or the frontend. <code className="text-foreground"> list_secrets()</code> enumerates the keys.
+              <b className="text-foreground">{t("contract.secrets.label")}</b>{t("contract.secrets.t1")}
+              <code className="text-foreground"> /secrets</code> {t("contract.secrets.t2")}
+              <code className="text-foreground"> get_secret(&quot;BARK_KEY&quot;)</code> {t("contract.secrets.t3")}{" "}
+              <code className="text-foreground"> list_secrets()</code> {t("contract.secrets.t4")}
             </li>
             <li>
-              <b className="text-foreground">HTTP helpers</b>:
-              <code className="text-foreground"> http_get(url)</code> /
-              <code className="text-foreground"> http_post(url, json=…)</code> /
-              <code className="text-foreground"> http_request(method, url, …)</code> are thin
-              <code className="text-foreground"> httpx</code> wrappers with sane defaults
-              (timeout, follow-redirects, raise-for-status). They return the
-              <code className="text-foreground"> httpx.Response</code> and pass any
-              <code className="text-foreground"> json= / params= / headers= / auth=</code> straight through —
-              so you don&apos;t re-write request boilerplate in every script.
+              <b className="text-foreground">{t("contract.httpHelpers.label")}</b>{t("contract.httpHelpers.t1")}
+              <code className="text-foreground"> http_get(url)</code> /{" "}
+              <code className="text-foreground"> http_post(url, json=…)</code> /{" "}
+              <code className="text-foreground"> http_request(method, url, …)</code> {t("contract.httpHelpers.t2")}
+              <code className="text-foreground"> httpx</code> {t("contract.httpHelpers.t3")}
+              <code className="text-foreground"> httpx.Response</code> {t("contract.httpHelpers.t4")}
+              <code className="text-foreground"> json= / params= / headers= / auth=</code> {t("contract.httpHelpers.t5")}
             </li>
             <li>
-              <b className="text-foreground">File inputs</b>: upload via
-              <code className="text-foreground"> /api/files/upload</code>, then reference in
-              <code className="text-foreground"> input_data</code> as
-              <code className="text-foreground"> {`{"$file": "<id>"}`}</code> at any depth.
-              The script receives an <code className="text-foreground">AgentFlowFile</code> with
+              <b className="text-foreground">{t("contract.fileInputs.label")}</b>{t("contract.fileInputs.t1")}
+              <code className="text-foreground"> /api/files/upload</code>{t("contract.fileInputs.t2")}
+              <code className="text-foreground"> input_data</code> {t("contract.fileInputs.t3")}
+              <code className="text-foreground"> {`{"$file": "<id>"}`}</code> {t("contract.fileInputs.t4")}{" "}
+              <code className="text-foreground">AgentFlowFile</code> {t("contract.fileInputs.t5")}
               <code className="text-foreground"> .name / .mime / .size / .path / .read_text() / .read_bytes() / .open()</code>.
             </li>
             <li>
-              <b className="text-foreground">Working directories</b>: import
-              <code className="text-foreground"> paths</code> from <code className="text-foreground">agentflow</code>.
-              <code className="text-foreground"> paths.run_dir</code> is this run&apos;s cwd (fresh each run, auto-pruned);
-              <code className="text-foreground"> paths.workspace</code> persists across runs of the same script
-              (good for caches, vector indexes, sqlite files).
+              <b className="text-foreground">{t("contract.workingDirs.label")}</b>{t("contract.workingDirs.t1")}
+              <code className="text-foreground"> paths</code> {t("contract.workingDirs.t2")} <code className="text-foreground">agentflow</code>.
+              <code className="text-foreground"> paths.run_dir</code> {t("contract.workingDirs.t3")}
+              <code className="text-foreground"> paths.workspace</code> {t("contract.workingDirs.t4")}
             </li>
           </ul>
         </Section>
@@ -359,25 +352,24 @@ while True:
 // ── helpers ─────────────────────────────────────────────────────────────────
 
 function Intro({ origin }: { origin: string }) {
+  const { t } = useTranslation("docs");
   return (
     <section>
-      <h1 className="text-2xl font-semibold mb-2">API Reference</h1>
+      <h1 className="text-2xl font-semibold mb-2">{t("intro.title")}</h1>
       <p className="text-sm text-muted-foreground">
-        HTTP endpoints are served from
+        {t("intro.servedFrom")}
         <code className="font-mono text-foreground mx-1 px-1 py-0.5 rounded bg-secondary/40">{origin}</code>.
-        Pick a script in the top-right to substitute its real id into the examples below.
+        {t("intro.pickScript")}
       </p>
       <p className="text-sm text-muted-foreground mt-3">
-        <b className="text-foreground">Authentication.</b> Everything sits behind a single admin
-        login. Management endpoints (files, async executions, listing, stop) require an admin
-        session — the logged-in UI attaches it as a cookie automatically, or send
+        <b className="text-foreground">{t("intro.authLabel")}</b> {t("intro.authText1")}
         <code className="font-mono text-foreground mx-1 px-1 py-0.5 rounded bg-secondary/40">Authorization: Bearer &lt;admin-token&gt;</code>.
-        The one endpoint meant for external systems,
+        {t("intro.authText2")}
         <code className="font-mono text-foreground mx-1 px-1 py-0.5 rounded bg-secondary/40">POST /api/executions/run</code>,
-        also accepts an issued API key via
+        {t("intro.authText3")}
         <code className="font-mono text-foreground mx-1 px-1 py-0.5 rounded bg-secondary/40">X-API-Key: af_…</code> —
-        create and manage keys on the
-        <code className="font-mono text-foreground mx-1 px-1 py-0.5 rounded bg-secondary/40">/security</code> page.
+        {t("intro.authText4")}
+        <code className="font-mono text-foreground mx-1 px-1 py-0.5 rounded bg-secondary/40">/security</code> {t("intro.pageSuffix")}
       </p>
     </section>
   );
@@ -408,6 +400,7 @@ function Endpoint({ method, path }: { method: string; path: string }) {
 }
 
 function Code({ label, code }: { label: string; code: string }) {
+  const { t } = useTranslation("docs");
   const [copied, setCopied] = useState(false);
   return (
     <div className="rounded-lg border border-border bg-secondary/20 overflow-hidden">
@@ -416,14 +409,14 @@ function Code({ label, code }: { label: string; code: string }) {
         <button
           onClick={() => {
             navigator.clipboard.writeText(code);
-            toast.success("Copied");
+            toast.success(t("code.copied"));
             setCopied(true);
             setTimeout(() => setCopied(false), 1500);
           }}
           className="hover:text-foreground transition-colors flex items-center gap-1"
         >
           {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-          {copied ? "copied" : "copy"}
+          {copied ? t("code.copiedLabel") : t("code.copyLabel")}
         </button>
       </div>
       <pre className="p-3 text-xs font-mono text-foreground overflow-x-auto whitespace-pre">{code}</pre>

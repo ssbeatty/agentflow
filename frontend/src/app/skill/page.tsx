@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Save, Trash2, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
 import { skills } from "@/lib/api";
 import type { Skill, SkillFile } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,7 @@ export default function SkillPageWrapper() {
 }
 
 function SkillPage() {
+  const { t } = useTranslation("skill");
   const router = useRouter();
   const params = useSearchParams();
   const id = params.get("id") ?? "";
@@ -98,7 +100,7 @@ function SkillPage() {
         const main = s.files.find(f => f.is_main)?.filename ?? s.files[0]?.filename ?? MAIN_FILE;
         setActiveFile(main);
       })
-      .catch(() => toast.error("Failed to load skill"))
+      .catch(() => toast.error(t("toast.loadFailed")))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
@@ -165,7 +167,7 @@ function SkillPage() {
   async function handleRenameFile(oldName: string, newName: string) {
     const content = fileContents.get(oldName) ?? "";
     const oldFile = skillFiles.find(f => f.filename === oldName);
-    if (oldFile?.is_main) { toast.error("Cannot rename SKILL.md"); return; }
+    if (oldFile?.is_main) { toast.error(t("toast.renameMainForbidden")); return; }
     await skills.upsertFile(id, { filename: newName, content, is_main: false });
     await skills.deleteFile(id, oldName);
     setSkillFiles(prev => prev.map(f => f.filename === oldName ? { ...f, filename: newName } : f));
@@ -219,7 +221,7 @@ function SkillPage() {
   // ── Save / delete ───────────────────────────────────────────────────────────
 
   async function handleSave() {
-    if (!name.trim()) return toast.error("Name is required");
+    if (!name.trim()) return toast.error(t("toast.nameRequired"));
     setSaving(true);
     try {
       // Write file edits first, then apply name/description — the latter rewrites
@@ -243,7 +245,7 @@ function SkillPage() {
       }
       setDirtyFiles(new Set());
       setMetaDirty(false);
-      toast.success("Saved");
+      toast.success(t("toast.saved"));
     } catch (e: unknown) {
       toast.error(String(e));
     } finally {
@@ -255,7 +257,7 @@ function SkillPage() {
     setDeleting(true);
     try {
       await skills.delete(id);
-      toast.success("Skill deleted");
+      toast.success(t("toast.deleted"));
       router.push("/tools");
     } catch (e: unknown) {
       toast.error(String(e));
@@ -362,7 +364,7 @@ function SkillPage() {
           value={name}
           onChange={e => { setName(e.target.value); setMetaDirty(true); }}
           className="max-w-xs h-8 font-medium"
-          placeholder="skill-name"
+          placeholder={t("header.namePlaceholder")}
         />
         <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer shrink-0">
           <input
@@ -371,14 +373,14 @@ function SkillPage() {
             onChange={e => { setEnabled(e.target.checked); setMetaDirty(true); }}
             className="rounded"
           />
-          Enabled
+          {t("header.enabled")}
         </label>
         <div className="flex-1" />
         <Button size="sm" onClick={handleSave} disabled={saving || !dirty}>
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          Save
+          {t("header.save")}
         </Button>
-        <Button variant="ghost" size="icon" onClick={() => setDeleteOpen(true)} title="Delete skill">
+        <Button variant="ghost" size="icon" onClick={() => setDeleteOpen(true)} title={t("header.deleteTitle")}>
           <Trash2 className="h-4 w-4 text-destructive" />
         </Button>
       </header>
@@ -388,7 +390,7 @@ function SkillPage() {
         <Textarea
           value={description}
           onChange={e => { setDescription(e.target.value); setMetaDirty(true); }}
-          placeholder="Description — what this skill does and when to use it (shown to the agent)"
+          placeholder={t("description.placeholder")}
           rows={1}
           className="text-xs resize-none min-h-0 h-8 py-1.5"
         />
@@ -439,16 +441,15 @@ function SkillPage() {
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Delete skill?</DialogTitle>
+            <DialogTitle>{t("deleteDialog.title")}</DialogTitle>
             <DialogDescription>
-              This permanently removes “{skill.name}” and all its files. Scripts bound to it
-              will simply stop loading it.
+              {t("deleteDialog.description", { name: skill.name })}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)}>{t("deleteDialog.cancel")}</Button>
             <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
-              {deleting ? "Deleting…" : "Delete"}
+              {deleting ? t("deleteDialog.deleting") : t("deleteDialog.delete")}
             </Button>
           </DialogFooter>
         </DialogContent>

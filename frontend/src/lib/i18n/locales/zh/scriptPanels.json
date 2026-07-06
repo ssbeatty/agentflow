@@ -1,0 +1,165 @@
+{
+  "dependencyManager": {
+    "status": {
+      "venv": "venv · {{count}} 个包",
+      "noVenv": "无 venv"
+    },
+    "actions": {
+      "recreateVenvTitle": "重建 venv",
+      "deleteVenvTitle": "删除 venv",
+      "createVenv": "创建 venv",
+      "install": "安装",
+      "hide": "隐藏",
+      "list": "列表"
+    },
+    "hint": {
+      "before": "在文件树中编辑 ",
+      "after": ",然后创建 venv 并安装。"
+    },
+    "search": {
+      "placeholder": "搜索…"
+    },
+    "packages": {
+      "empty": "暂无包",
+      "noMatch": "无匹配项"
+    },
+    "toast": {
+      "pipListError": "pip list:{{error}}",
+      "venvReady": "venv 已就绪",
+      "packagesInstalled": "包已安装",
+      "venvDeleted": "venv 已删除"
+    },
+    "confirmDialog": {
+      "deleteTitle": "删除 venv?",
+      "recreateTitle": "重建 venv?",
+      "deleteDescription": "此操作将永久删除该脚本的 .venv 目录。",
+      "recreateDescription": "删除现有的 .venv 并创建一个新的。重新运行安装以恢复依赖包。",
+      "cancel": "取消",
+      "deleteConfirm": "删除",
+      "recreateConfirm": "重建"
+    }
+  },
+  "revisionPanel": {
+    "loading": "加载中…",
+    "empty": "还没有版本记录。保存后将创建第一个版本。",
+    "labelEditHint": "点击编辑标签",
+    "addLabelPlaceholder": "添加标签…",
+    "actions": {
+      "diff": "对比",
+      "load": "加载",
+      "fork": "复刻"
+    },
+    "forkNameSuffix": "{{name}}(副本)",
+    "diffDialog": {
+      "title": "版本 #{{number}}",
+      "labelSuffix": "— {{label}}",
+      "legend": "左侧:历史版本 · 右侧:当前编辑器"
+    },
+    "rollbackDialog": {
+      "title": "加载版本 #{{number}}?",
+      "withLabelPrefix": "此操作将加载 ",
+      "withLabelSuffix": " 到编辑器。",
+      "withoutLabel": "此操作将把版本 #{{number}} 加载到编辑器。",
+      "unsavedNote": "在保存之前,你当前未保存的更改仍会保留。",
+      "cancel": "取消",
+      "confirm": "加载到编辑器"
+    },
+    "forkDialog": {
+      "title": "复刻版本 #{{number}}",
+      "description": "基于此快照创建一个新脚本。",
+      "namePlaceholder": "新脚本名称",
+      "cancel": "取消",
+      "confirm": "复刻"
+    },
+    "toast": {
+      "forked": "已创建 \"{{name}}\""
+    }
+  },
+  "artifactsPanel": {
+    "empty": {
+      "prefix": "在脚本中调用 ",
+      "suffix": " 即可在此处渲染。"
+    }
+  },
+  "flowPanel": {
+    "empty": "运行脚本时,追踪事件将显示在此处。",
+    "row": {
+      "running": "运行中…",
+      "error": "错误",
+      "durationMs": "{{ms}} 毫秒"
+    },
+    "kindLabels": {
+      "node": "节点",
+      "tool": "工具",
+      "skill": "技能",
+      "agent_action": "智能体",
+      "agent_finish": "完成",
+      "llm": "大模型"
+    },
+    "jsonBlock": {
+      "chars": "{{count}} 字符",
+      "copyTitle": "复制完整内容",
+      "collapse": "收起",
+      "expand": "展开",
+      "truncated": "已截断 · 显示 {{shown}} 字符",
+      "clickToExpand": "点击展开"
+    }
+  },
+  "agentTimeline": {
+    "toolCard": {
+      "skillLabel": "技能",
+      "toolLabel": "工具",
+      "argumentsLabel": "参数",
+      "resultLabel": "结果",
+      "errorLabel": "错误"
+    },
+    "generating": "生成中…"
+  },
+  "inputPresetEditor": {
+    "heading": "输入 JSON",
+    "invalidJson": "无效的 JSON",
+    "modified": "已修改",
+    "format": "格式化",
+    "noPreset": "无预设",
+    "noneOption": "— 无(手动输入) —",
+    "noSavedPresets": "暂无已保存的预设",
+    "updateTitle": "用当前输入更新预设",
+    "deleteTitle": "删除预设",
+    "saveAsNewTitle": "另存为新预设",
+    "namePlaceholder": "预设名称(例如 边界情况)",
+    "save": "保存",
+    "toast": {
+      "saved": "已保存预设 \"{{name}}\"",
+      "updated": "预设已更新",
+      "deleted": "预设已删除"
+    },
+    "confirm": {
+      "deleteMessage": "删除预设 \"{{name}}\"?",
+      "deleteLabel": "删除"
+    }
+  },
+  "fileUploadPanel": {
+    "heading": "文件",
+    "uploadedCount": "已上传 {{count}} 个",
+    "dropZone": {
+      "uploading": "上传中…",
+      "prompt": "拖拽文件或点击上传"
+    },
+    "insertTitle": "将 {$file} 引用插入输入 JSON",
+    "copyTitleWithId": "复制 {\"$file\":\"{{id}}\"} 到剪贴板",
+    "copyRefTitle": "复制 {$file} 引用",
+    "deleteFileTitle": "删除文件",
+    "toast": {
+      "listFailed": "获取文件列表失败:{{error}}",
+      "uploadedOne": "已上传 {{name}}",
+      "uploadedMany": "已上传 {{count}} 个文件",
+      "uploadFailed": "上传失败:{{error}}",
+      "deleteFailed": "删除失败:{{error}}",
+      "copied": "已复制 {{name}} 的引用"
+    },
+    "confirm": {
+      "deleteMessage": "删除 \"{{name}}\"?",
+      "deleteLabel": "删除"
+    }
+  }
+}

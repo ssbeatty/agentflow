@@ -3,6 +3,7 @@ import mimetypes
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
+from loguru import logger
 from sqlalchemy.orm import Session
 
 from app.database import get_db, SessionLocal
@@ -135,6 +136,7 @@ def clear_executions(script_id: str, db: Session = Depends(get_db)):
         db.delete(r)  # cascade removes ExecutionLog rows
         deleted += 1
     db.commit()
+    logger.info("Cleared {} execution record(s) for script {}", deleted, script_id)
     return {"deleted": deleted}
 
 

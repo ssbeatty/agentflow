@@ -13,6 +13,7 @@ A single admin account gates the whole management UI/API. The login is stateless
 file downloads and the WebSocket handshake on the same origin.
 """
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from loguru import logger
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -51,13 +52,14 @@ def auth_status(request: Request, db: Session = Depends(get_db)):
 @router.post("/setup", response_model=AuthResult)
 def setup_admin(body: AdminSetup, response: Response, db: Session = Depends(get_db)):
     if db.query(AdminUser).count() > 0:
-        raise HTTPException(409, "管理员账户已初始化")
+        raise HTTPException(409, "Admin account already initialized")
     user = AdminUser(
         username=body.username.strip(),
         password_hash=hash_password(body.password),
     )
     db.add(user)
     db.commit()
+    logger.info("Admin account created: {}", user.username)
     token = create_session_token(user.username)
     _set_session_cookie(response, token)
     return AuthResult(username=user.username, token=token)
@@ -67,7 +69,9 @@ def setup_admin(body: AdminSetup, response: Response, db: Session = Depends(get_
 def login(body: AdminLogin, response: Response, db: Session = Depends(get_db)):
     user = db.query(AdminUser).filter_by(username=body.username.strip()).first()
     if not user or not verify_password(body.password, user.password_hash):
-        raise HTTPException(401, "用户名或密码错误")
+        logger.warning("Login failed for username: {}", body.username.strip())
+        raise HTTPException(401, "Invalid username or password")
+    logger.info("Login succeeded: {}", user.username)
     token = create_session_token(user.username)
     _set_session_cookie(response, token)
     return AuthResult(username=user.username, token=token)
@@ -88,9 +92,10 @@ def change_password(
 ):
     user = db.query(AdminUser).filter_by(username=username).first()
     if not user or not verify_password(body.old_password, user.password_hash):
-        raise HTTPException(400, "原密码错误")
+        raise HTTPException(400, "Current password is incorrect")
     user.password_hash = hash_password(body.new_password)
     db.commit()
+    logger.info("Password changed: {}", user.username)
     # Re-issue the cookie so the current session stays valid.
     _set_session_cookie(response, create_session_token(user.username))
     return {"ok": True}

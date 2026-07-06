@@ -16,6 +16,8 @@ import type {
   MarketplaceSkill, RegistrySkill,
 } from "./types";
 
+import { translateApiError } from "./i18n/errorMessages";
+
 const BASE = "/api";
 
 /** On a 401 (session expired / not logged in), bounce to the login page —
@@ -30,6 +32,24 @@ function handleUnauthorized(path: string) {
   }
 }
 
+/** Extract a readable message from a failed response: FastAPI's error body is
+ *  `{"detail": "..."}` JSON — parse it out instead of throwing the raw JSON
+ *  text — then translate known stable backend error strings for display. */
+async function extractErrorMessage(res: Response): Promise<string> {
+  const raw = await res.text().catch(() => "");
+  let message = raw || res.statusText || `HTTP ${res.status}`;
+  if (raw) {
+    try {
+      const body = JSON.parse(raw);
+      if (typeof body?.detail === "string") message = body.detail;
+      else if (body?.detail != null) message = JSON.stringify(body.detail);
+    } catch {
+      // not JSON — use the raw text as-is
+    }
+  }
+  return translateApiError(message);
+}
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(BASE + path, {
     headers: { "Content-Type": "application/json" },
@@ -38,8 +58,7 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     if (res.status === 401) handleUnauthorized(path);
-    const detail = await res.text().catch(() => res.statusText);
-    throw new Error(detail || `HTTP ${res.status}`);
+    throw new Error(await extractErrorMessage(res));
   }
   if (res.status === 204) return undefined as T;
   return res.json();
@@ -373,8 +392,7 @@ export const files = {
     if (scriptId) fd.append("script_id", scriptId);
     const res = await fetch(`${BASE}/files/upload`, { method: "POST", body: fd });
     if (!res.ok) {
-      const detail = await res.text().catch(() => res.statusText);
-      throw new Error(detail || `HTTP ${res.status}`);
+      throw new Error(await extractErrorMessage(res));
     }
     return res.json();
   },

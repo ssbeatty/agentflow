@@ -2,6 +2,7 @@
 import { useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useTranslation } from "react-i18next";
 
 import type { ArtifactEvent } from "@/lib/types";
 import MermaidView from "@/components/MermaidView";
@@ -11,10 +12,11 @@ interface Props {
 }
 
 export default function ArtifactsPanel({ items }: Props) {
+  const { t } = useTranslation("scriptPanels");
   if (!items.length) {
     return (
       <div className="h-full flex items-center justify-center text-xs text-muted-foreground">
-        <p>Call <code className="font-mono">markdown()</code> / <code className="font-mono">image()</code> / <code className="font-mono">table()</code> / <code className="font-mono">html()</code> / <code className="font-mono">mermaid()</code> from your script to render here.</p>
+        <p>{t("artifactsPanel.empty.prefix")}<code className="font-mono">markdown()</code> / <code className="font-mono">image()</code> / <code className="font-mono">table()</code> / <code className="font-mono">html()</code> / <code className="font-mono">mermaid()</code>{t("artifactsPanel.empty.suffix")}</p>
       </div>
     );
   }

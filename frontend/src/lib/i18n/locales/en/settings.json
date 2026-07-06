@@ -1,0 +1,78 @@
+{
+  "header": {
+    "title": "Settings"
+  },
+  "general": {
+    "title": "General",
+    "language": "Language"
+  },
+  "channels": {
+    "title": "LLM Channels",
+    "addChannel": "Add channel",
+    "description": {
+      "part1": "A channel is one provider endpoint (key + base URL) serving a set of models. Call a model from a script with",
+      "part2": ". If the same model lives in several channels, the highest",
+      "priorityWord": "priority",
+      "part3": "wins (ties → first). The",
+      "part4": "model is what",
+      "part5": "returns by default."
+    },
+    "emptyState": {
+      "prefix": "No channels yet. Click",
+      "suffix": "to connect a provider and pick its models."
+    },
+    "disabled": "disabled",
+    "priorityTitle": "Priority — higher wins",
+    "disableTitle": "Disable",
+    "enableTitle": "Enable",
+    "editTitle": "Edit",
+    "deleteTitle": "Delete",
+    "noModels": "No models — click",
+    "noModelsSuffix": "to add some.",
+    "defaultModelTitle": "Default model for get_llm()",
+    "setDefaultTitle": "Set as default"
+  },
+  "confirm": {
+    "deleteMessage": "Delete this channel?",
+    "deleteLabel": "Delete"
+  },
+  "toast": {
+    "loadFailed": "Failed to load channels",
+    "nameRequired": "Channel name is required",
+    "modelsRequired": "Select at least one model",
+    "updated": "Updated",
+    "created": "Created",
+    "deleted": "Deleted",
+    "deleteFailed": "Failed to delete",
+    "updateFailed": "Failed to update",
+    "setDefaultFailed": "Failed to set default",
+    "defaultModel": "Default model: {{model}}"
+  },
+  "dialog": {
+    "editTitle": "Edit channel",
+    "addTitle": "Add channel",
+    "nameLabel": "Name",
+    "namePlaceholder": "e.g. OpenAI main",
+    "priorityLabel": "Priority",
+    "priorityHint": "(higher wins)",
+    "providerLabel": "Provider",
+    "baseUrlLabel": "Base URL",
+    "optional": "(optional)",
+    "apiKeyLabel": "API Key",
+    "apiKeyKeepHint": "(blank = keep existing)",
+    "apiKeyPlaceholderEdit": "••••••••",
+    "apiKeyPlaceholderCreate": "sk-...",
+    "loadModels": "Load models",
+    "noModelsReturned": "No models returned",
+    "modelsLabel": "Models",
+    "modelsSelected": "({{count}} selected)",
+    "addModelLabel": "Add a model manually",
+    "addModelHint": "(if not listed)",
+    "addModelPlaceholder": "gpt-4o",
+    "add": "Add",
+    "enabledLabel": "Enabled (models available to scripts)",
+    "cancel": "Cancel",
+    "save": "Save",
+    "saving": "Saving…"
+  }
+}

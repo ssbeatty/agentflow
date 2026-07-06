@@ -1,0 +1,135 @@
+{
+  "header": {
+    "title": "API 参考",
+    "examplesFor": "示例脚本:",
+    "pickScriptPlaceholder": "选择一个脚本",
+    "noScripts": "还没有脚本"
+  },
+  "intro": {
+    "title": "API 参考",
+    "servedFrom": "HTTP 接口由",
+    "pickScript": "提供服务。在右上角选择一个脚本,即可将其真实 id 代入下方示例中。",
+    "authLabel": "鉴权。",
+    "authText1": "整个平台位于单一管理员登录之下。管理类接口(文件、异步执行、列表查询、停止)需要管理员会话 — 已登录的界面会自动附带 Cookie,或发送",
+    "authText2": "面向外部系统的唯一接口",
+    "authText3": "同样可以通过",
+    "authText4": "在",
+    "pageSuffix": "页面创建和管理密钥。"
+  },
+  "mcp": {
+    "title": "接入编码智能体(MCP)",
+    "desc": "AgentFlow 提供了一个 MCP 服务,让 Claude Code、Cursor 或任意 MCP 客户端可以直接在本实例上开发脚本:创建/编辑脚本文件、搭建虚拟环境、运行脚本并读取失败时的堆栈信息 — 完整的编写→运行→调试闭环。鉴权方式是已签发的 API 密钥(在 /security 页面创建一个)。注意:与 /api/executions/run 不同,MCP 接口会赋予该 API 密钥完整的脚本管理权限,而不只是运行权限。",
+    "labelClaudeCode": "Claude Code",
+    "labelCursorJson": "Cursor / 通用 mcpServers JSON",
+    "labelInstallSkill": "安装配套技能(教会智能体脚本约定)",
+    "toolsExposedLabel": "暴露的工具:",
+    "toolsExposedTrailing1": "同样的技能文本也可以在运行时通过",
+    "toolsExposedTrailing2": "供智能体获取,因此本地安装是可选的 — 它只是帮助智能体更快选对方案。"
+  },
+  "runSync": {
+    "title": "同步运行",
+    "desc": "阻塞直到脚本执行完成,并返回最终的 output_data。最适合外部服务间调用 — 这是唯一可以用 X-API-Key 调用的接口(默认超时 300 秒)。",
+    "labelResponse": "响应"
+  },
+  "uploadFile": {
+    "title": "上传文件",
+    "desc": "仅限管理员。上传任意二进制文件(PDF、CSV、图片等),脚本可以通过引用读取它们。文件会一直保留,直到你删除为止。可选地用 script_id 打标签以便筛选。"
+  },
+  "runWithFile": {
+    "title": "以文件作为输入运行脚本",
+    "desc": "使用 {\"$file\": \"<FILE_ID>\"} 这个标记,可以在 input_data 中任意位置引用文件。执行引擎会在启动前解析它;脚本会在对应位置收到一个 AgentFlowFile 对象。标记可以嵌套在对象/数组中。",
+    "labelPythonScriptSide": "python(脚本端)"
+  },
+  "listDeleteFiles": {
+    "title": "列出/删除文件",
+    "desc": "仅限管理员。通过 script_id 筛选,可查看打标签到某个脚本的文件以及未打标签的全局文件。"
+  },
+  "runAsync": {
+    "title": "异步运行",
+    "desc": "仅限管理员。立即返回一个执行 id;通过轮询 GET /executions/{id} 或订阅 WebSocket 获取日志。更适合长任务和批量分发。"
+  },
+  "stopExecution": {
+    "title": "停止一次正在运行的执行",
+    "desc": "仅限管理员。强制停止子进程,并将该次执行标记为已取消。始终返回 200。"
+  },
+  "listExecutions": {
+    "title": "列出执行记录",
+    "desc": "仅限管理员。可选按 script_id 筛选。按最新时间排列。"
+  },
+  "pythonExample": {
+    "title": "Python 示例",
+    "desc": "任何支持 HTTP 的语言都能调用。这是一个调用 /executions/run、并在客户端维护历史记录的最简聊天循环。"
+  },
+  "contract": {
+    "title": "脚本约定",
+    "desc": "平台传入什么、又期望返回什么。",
+    "entryFunction": {
+      "label": "入口函数",
+      "pre": ":接收一个 dict 参数(也就是你放进",
+      "post": "里的内容),并返回任意可 JSON 序列化的值。"
+    },
+    "converseConventions": {
+      "label": "/converse 对话页面的约定",
+      "t1": ":输入为",
+      "t2": ";返回",
+      "t3": "。其他返回结构同样可用 — 对话界面会依次回退到",
+      "t4": ",最后再回退到 JSON 原文输出。"
+    },
+    "llms": {
+      "label": "LLM",
+      "t1": ":在设置页面中以 channel(渠道)的形式配置。",
+      "t2": "返回该处标记为默认的模型;",
+      "t3": "按 id 选取模型(大小写不敏感);",
+      "t4": "枚举所有可用的模型 id。"
+    },
+    "toolsAgents": {
+      "label": "工具与智能体",
+      "t1": ":",
+      "t2": "返回内置的",
+      "t3": "以及该脚本选定的 MCP 服务器工具;",
+      "t4": "在它们之上(以及任何绑定的技能,可通过",
+      "t5": "工具访问)构建出一个可直接使用的智能体。在",
+      "t6": "页面配置搜索服务商和 MCP 服务器。"
+    },
+    "logging": {
+      "label": "日志",
+      "t1": ":使用",
+      "t2": "。结构化日志会显示在日志面板中,并保存到运行历史记录里。"
+    },
+    "secrets": {
+      "label": "密钥",
+      "t1": ":在",
+      "t2": "页面统一存储凭据,然后通过",
+      "t3": "读取(键名大小写不敏感)。值会被注入到运行环境中,不会出现在你的代码、输入或前端里。",
+      "t4": "枚举所有键名。"
+    },
+    "httpHelpers": {
+      "label": "HTTP 辅助函数",
+      "t1": ":",
+      "t2": "是轻量的",
+      "t3": "封装,带有合理的默认值(超时、自动跟随重定向、raise-for-status)。它们返回",
+      "t4": "并原样透传任何",
+      "t5": "参数 — 这样你就不用在每个脚本里重复编写请求样板代码。"
+    },
+    "fileInputs": {
+      "label": "文件输入",
+      "t1": ":通过",
+      "t2": "上传,然后在",
+      "t3": "中以",
+      "t4": "的形式在任意深度引用。脚本会收到一个",
+      "t5": "对象,带有"
+    },
+    "workingDirs": {
+      "label": "工作目录",
+      "t1": ":从",
+      "t2": "导入",
+      "t3": "是本次运行的 cwd(每次运行都是全新的,会自动清理);",
+      "t4": "则会跨同一脚本的多次运行持久保存(适合缓存、向量索引、sqlite 文件等)。"
+    }
+  },
+  "code": {
+    "copied": "已复制",
+    "copiedLabel": "已复制",
+    "copyLabel": "复制"
+  }
+}

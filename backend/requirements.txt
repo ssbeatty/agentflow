@@ -8,6 +8,7 @@ python-multipart>=0.0.20
 apscheduler>=3.10.4
 python-dotenv>=1.0.0
 websockets>=14.0
+loguru>=0.7.0
 
 # MCP "test connection" probe + OAuth flow run in the backend process, and the
 # outward /mcp gateway (services/mcp_gateway.py) — the gateway's FastMCP

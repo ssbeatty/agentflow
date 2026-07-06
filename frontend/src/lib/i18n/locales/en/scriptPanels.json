@@ -1,0 +1,165 @@
+{
+  "dependencyManager": {
+    "status": {
+      "venv": "venv · {{count}} pkgs",
+      "noVenv": "no venv"
+    },
+    "actions": {
+      "recreateVenvTitle": "Recreate venv",
+      "deleteVenvTitle": "Delete venv",
+      "createVenv": "Create venv",
+      "install": "Install",
+      "hide": "Hide",
+      "list": "List"
+    },
+    "hint": {
+      "before": "Edit ",
+      "after": " in the file tree, then create a venv and install."
+    },
+    "search": {
+      "placeholder": "Search…"
+    },
+    "packages": {
+      "empty": "no packages",
+      "noMatch": "no match"
+    },
+    "toast": {
+      "pipListError": "pip list: {{error}}",
+      "venvReady": "Venv ready",
+      "packagesInstalled": "Packages installed",
+      "venvDeleted": "Venv deleted"
+    },
+    "confirmDialog": {
+      "deleteTitle": "Delete venv?",
+      "recreateTitle": "Recreate venv?",
+      "deleteDescription": "This permanently deletes the script's .venv directory.",
+      "recreateDescription": "Deletes the existing .venv and creates a fresh one. Re-run Install to restore packages.",
+      "cancel": "Cancel",
+      "deleteConfirm": "Delete",
+      "recreateConfirm": "Recreate"
+    }
+  },
+  "revisionPanel": {
+    "loading": "Loading…",
+    "empty": "No revisions yet. Save to create the first one.",
+    "labelEditHint": "Click to edit label",
+    "addLabelPlaceholder": "add label…",
+    "actions": {
+      "diff": "Diff",
+      "load": "Load",
+      "fork": "Fork"
+    },
+    "forkNameSuffix": "{{name}} (copy)",
+    "diffDialog": {
+      "title": "Revision #{{number}}",
+      "labelSuffix": "— {{label}}",
+      "legend": "Left: revision · Right: current editor"
+    },
+    "rollbackDialog": {
+      "title": "Load revision #{{number}}?",
+      "withLabelPrefix": "This will load ",
+      "withLabelSuffix": " into the editor.",
+      "withoutLabel": "This will load revision #{{number}} into the editor.",
+      "unsavedNote": "Your current unsaved changes will remain until you save.",
+      "cancel": "Cancel",
+      "confirm": "Load into editor"
+    },
+    "forkDialog": {
+      "title": "Fork revision #{{number}}",
+      "description": "Create a new script from this snapshot.",
+      "namePlaceholder": "New script name",
+      "cancel": "Cancel",
+      "confirm": "Fork"
+    },
+    "toast": {
+      "forked": "Created \"{{name}}\""
+    }
+  },
+  "artifactsPanel": {
+    "empty": {
+      "prefix": "Call ",
+      "suffix": " from your script to render here."
+    }
+  },
+  "flowPanel": {
+    "empty": "Trace events will appear here while the script runs.",
+    "row": {
+      "running": "running…",
+      "error": "error",
+      "durationMs": "{{ms}} ms"
+    },
+    "kindLabels": {
+      "node": "node",
+      "tool": "tool",
+      "skill": "skill",
+      "agent_action": "agent",
+      "agent_finish": "finish",
+      "llm": "llm"
+    },
+    "jsonBlock": {
+      "chars": "{{count}} chars",
+      "copyTitle": "Copy full content",
+      "collapse": "collapse",
+      "expand": "expand",
+      "truncated": "truncated · {{shown}} shown",
+      "clickToExpand": "click to expand"
+    }
+  },
+  "agentTimeline": {
+    "toolCard": {
+      "skillLabel": "Skill",
+      "toolLabel": "Tool",
+      "argumentsLabel": "Arguments",
+      "resultLabel": "Result",
+      "errorLabel": "Error"
+    },
+    "generating": "Generating…"
+  },
+  "inputPresetEditor": {
+    "heading": "Input JSON",
+    "invalidJson": "Invalid JSON",
+    "modified": "modified",
+    "format": "Format",
+    "noPreset": "No preset",
+    "noneOption": "— None (manual input) —",
+    "noSavedPresets": "No saved presets",
+    "updateTitle": "Update preset with current input",
+    "deleteTitle": "Delete preset",
+    "saveAsNewTitle": "Save as new preset",
+    "namePlaceholder": "Preset name (e.g. edge case)",
+    "save": "Save",
+    "toast": {
+      "saved": "Saved preset \"{{name}}\"",
+      "updated": "Preset updated",
+      "deleted": "Preset deleted"
+    },
+    "confirm": {
+      "deleteMessage": "Delete preset \"{{name}}\"?",
+      "deleteLabel": "Delete"
+    }
+  },
+  "fileUploadPanel": {
+    "heading": "Files",
+    "uploadedCount": "{{count}} uploaded",
+    "dropZone": {
+      "uploading": "Uploading…",
+      "prompt": "Drop files or click to upload"
+    },
+    "insertTitle": "Insert {$file} ref into input JSON",
+    "copyTitleWithId": "Copy {\"$file\":\"{{id}}\"} to clipboard",
+    "copyRefTitle": "Copy {$file} ref",
+    "deleteFileTitle": "Delete file",
+    "toast": {
+      "listFailed": "Failed to list files: {{error}}",
+      "uploadedOne": "Uploaded {{name}}",
+      "uploadedMany": "Uploaded {{count}} files",
+      "uploadFailed": "Upload failed: {{error}}",
+      "deleteFailed": "Delete failed: {{error}}",
+      "copied": "Copied ref for {{name}}"
+    },
+    "confirm": {
+      "deleteMessage": "Delete \"{{name}}\"?",
+      "deleteLabel": "Delete"
+    }
+  }
+}

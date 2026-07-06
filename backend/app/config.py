@@ -44,6 +44,12 @@ class Settings(BaseSettings):
     # Mark the session cookie Secure (https-only). Enable in production over TLS.
     cookie_secure: bool = False
 
+    # ── Logging ───────────────────────────────────────────────────────────────
+    # loguru level for the backend's own operational log (console + rotating
+    # file under data/logs/). Does NOT affect user-script execution logs, which
+    # are a separate, unrelated pipeline (see services/execution_engine.py).
+    log_level: str = "INFO"
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
     @property

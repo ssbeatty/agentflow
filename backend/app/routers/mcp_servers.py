@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
+from loguru import logger
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
@@ -43,6 +44,7 @@ def create_server(body: MCPServerCreate, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(409, f"MCP server name {body.name!r} already exists")
     db.refresh(srv)
+    logger.info("MCP server created: {} ({}, transport={})", srv.id, srv.name, srv.transport)
     return srv
 
 
@@ -71,6 +73,7 @@ def update_server(srv_id: str, body: MCPServerUpdate, db: Session = Depends(get_
         db.rollback()
         raise HTTPException(409, f"MCP server name already exists")
     db.refresh(srv)
+    logger.info("MCP server updated: {} ({})", srv.id, srv.name)
     return srv
 
 
@@ -79,6 +82,7 @@ def delete_server(srv_id: str, db: Session = Depends(get_db)):
     srv = _get_or_404(srv_id, db)
     db.delete(srv)
     db.commit()
+    logger.info("MCP server deleted: {} ({})", srv_id, srv.name)
 
 
 # ── connection test ──────────────────────────────────────────────────────────────
@@ -91,7 +95,12 @@ def probe_server_endpoint(srv_id: str, db: Session = Depends(get_db)):
     from services.mcp_config import build_connection
     from services.mcp_probe import probe_server
     cfg = build_connection(srv, db)
-    return probe_server(cfg)
+    result = probe_server(cfg)
+    if result.get("ok"):
+        logger.info("MCP probe ok: {} ({}) -> {} tool(s)", srv_id, srv.name, len(result.get("tools") or []))
+    else:
+        logger.warning("MCP probe failed: {} ({}) -> {}", srv_id, srv.name, result.get("error"))
+    return result
 
 
 # ── OAuth 2.0 ──────────────────────────────────────────────────────────────────────
@@ -113,7 +122,9 @@ def oauth_authorize_url(srv_id: str, request: Request, db: Session = Depends(get
     try:
         url, _ = build_authorize_url(srv, redirect_uri, db)
     except Exception as e:  # noqa: BLE001 - surface discovery/registration failures
+        logger.warning("OAuth authorize-url setup failed for {} ({}): {}", srv_id, srv.name, e)
         raise HTTPException(400, f"OAuth setup failed: {e}")
+    logger.info("OAuth authorize-url issued for {} ({})", srv_id, srv.name)
     return {"authorize_url": url}
 
 
@@ -135,7 +146,9 @@ def oauth_callback(
     try:
         handle_callback(state, code, db)
     except Exception as e:  # noqa: BLE001
+        logger.warning("OAuth callback failed for {}: {}", srv_id, e)
         return HTMLResponse(_callback_html(False, str(e)))
+    logger.info("OAuth connected: {}", srv_id)
     return HTMLResponse(_callback_html(True, None))
 
 
@@ -145,6 +158,7 @@ def oauth_disconnect(srv_id: str, db: Session = Depends(get_db)):
     from services.mcp_oauth import disconnect
     disconnect(srv, db)
     db.refresh(srv)
+    logger.info("OAuth disconnected: {} ({})", srv_id, srv.name)
     return srv
 
 

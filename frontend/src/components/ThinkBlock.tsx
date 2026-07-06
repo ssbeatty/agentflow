@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Loader2, Brain, ChevronDown, ChevronRight } from "lucide-react";
 
 // Shared reasoning ("chain-of-thought") helpers, used by both the Chat page
@@ -52,6 +53,7 @@ export function splitThink(content: string): { reasoning: string; answer: string
 // expands while the model is actively thinking, then collapses (unless the user
 // toggled it) once the answer starts.
 export function ThinkBlock({ reasoning, thinking }: { reasoning: string; thinking: boolean }) {
+  const { t } = useTranslation("assistant");
   const [userOpen, setUserOpen] = useState<boolean | null>(null);
   const open = userOpen ?? thinking;
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -71,7 +73,7 @@ export function ThinkBlock({ reasoning, thinking }: { reasoning: string; thinkin
         {thinking
           ? <Loader2 className="h-3.5 w-3.5 text-blue-400 animate-spin" />
           : <Brain className="h-3.5 w-3.5 text-primary/70" />}
-        <span className="font-medium text-foreground/80">{thinking ? "Thinking…" : "Thought process"}</span>
+        <span className="font-medium text-foreground/80">{thinking ? t("thinkBlock.thinking") : t("thinkBlock.thoughtProcess")}</span>
         {open
           ? <ChevronDown className="h-3.5 w-3.5 ml-auto text-muted-foreground" />
           : <ChevronRight className="h-3.5 w-3.5 ml-auto text-muted-foreground" />}

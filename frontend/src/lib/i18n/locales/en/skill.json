@@ -1,0 +1,25 @@
+{
+  "toast": {
+    "loadFailed": "Failed to load skill",
+    "renameMainForbidden": "Cannot rename SKILL.md",
+    "nameRequired": "Name is required",
+    "saved": "Saved",
+    "deleted": "Skill deleted"
+  },
+  "header": {
+    "namePlaceholder": "skill-name",
+    "enabled": "Enabled",
+    "save": "Save",
+    "deleteTitle": "Delete skill"
+  },
+  "description": {
+    "placeholder": "Description — what this skill does and when to use it (shown to the agent)"
+  },
+  "deleteDialog": {
+    "title": "Delete skill?",
+    "description": "This permanently removes “{{name}}” and all its files. Scripts bound to it will simply stop loading it.",
+    "cancel": "Cancel",
+    "deleting": "Deleting…",
+    "delete": "Delete"
+  }
+}

@@ -1,0 +1,234 @@
+{
+  "page": {
+    "title": "Tools & MCP Servers"
+  },
+  "builtinTools": {
+    "heading": "Built-in tools (always available)",
+    "description": {
+      "prefix": "Injected into every run automatically — no per-script setup. The",
+      "suffix": "provider is configured below."
+    },
+    "webFetch": {
+      "tavilyConnected": "Fetch webpage text (Tavily → HTTP)",
+      "default": "Fetch webpage text"
+    },
+    "webSearchTool": {
+      "tavilyConnected": "Tavily search (DuckDuckGo fallback)",
+      "default": "DuckDuckGo search"
+    },
+    "usageLabel": "Usage in scripts:"
+  },
+  "webSearch": {
+    "heading": "Web search provider",
+    "description": {
+      "prefix": "Which provider",
+      "suffix": "use. DuckDuckGo (no key) is always the fallback, so this is optional."
+    },
+    "providerLabel": "Provider",
+    "tavilyOption": "Tavily (needs API key)",
+    "duckduckgoOption": "DuckDuckGo (no key)",
+    "tavilyKeyLabel": "Tavily key",
+    "tavilyKeyPlaceholderSaved": "saved ({{preview}}) — type to replace",
+    "tavilyKeyPlaceholderDefault": "tvly-…",
+    "keySetBadge": "set",
+    "saveButton": "Save",
+    "testButton": "Test",
+    "removeKeyButton": "Remove key",
+    "toast": {
+      "loadFailed": "Failed to load search config",
+      "saved": "Search settings saved",
+      "keyRemoved": "Tavily key removed",
+      "tavilyOk_one": "Tavily OK ({{count}} result)",
+      "tavilyOk_other": "Tavily OK ({{count}} results)",
+      "tavilyError": "Tavily: {{error}}",
+      "testFailedFallback": "failed"
+    }
+  },
+  "mcpServers": {
+    "heading": "MCP Servers",
+    "description": {
+      "prefix": "Enable a server here, then select it per script (its right panel). Tools are injected via",
+      "suffix": "only for the servers a script selects (and that are enabled) — not globally."
+    },
+    "addButton": "Add",
+    "empty": "No MCP servers configured. Add one to extend your scripts with external tools.",
+    "disabledBadge": "disabled",
+    "authorizedBadge": "authorized",
+    "notConnectedBadge": "not connected",
+    "testTitle": "Test connection & list tools",
+    "testButton": "Test",
+    "reauthorizeTitle": "Re-authorize",
+    "signInTitle": "Sign in",
+    "reconnectButton": "Reconnect",
+    "connectButton": "Connect",
+    "disconnectTitle": "Disconnect",
+    "disableTitle": "Disable",
+    "enableTitle": "Enable",
+    "editButton": "Edit",
+    "oauth2Label": "OAuth 2.0",
+    "usageHint": {
+      "heading": "Script usage"
+    },
+    "confirm": {
+      "message": "Delete this MCP server?",
+      "confirmLabel": "Delete"
+    },
+    "toast": {
+      "loadFailed": "Failed to load MCP servers",
+      "nameRequired": "Name is required",
+      "urlRequired": "URL is required for this transport",
+      "commandRequired": "Command is required for stdio",
+      "headersInvalid": "Headers must be valid JSON",
+      "envVarsInvalid": "Env vars must be valid JSON",
+      "updated": "Updated",
+      "created": "Created",
+      "deleted": "Deleted",
+      "deleteFailed": "Failed to delete",
+      "updateFailed": "Failed to update",
+      "testFound": "{{name}}: {{count}} tool(s) found",
+      "testAuthRequired": "{{name}}: authentication required",
+      "testFailed": "{{name}}: connection failed",
+      "popupBlocked": "Popup blocked — allow popups for this site",
+      "oauthError": "OAuth: {{error}}",
+      "disconnected": "Disconnected",
+      "disconnectFailed": "Failed to disconnect",
+      "oauthConnected": "Connected",
+      "oauthFailed": "Authorization failed",
+      "oauthFailedDetail": "Authorization failed: {{detail}}"
+    },
+    "dialog": {
+      "editTitle": "Edit MCP Server",
+      "addTitle": "Add MCP Server",
+      "name": "Name",
+      "namePlaceholder": "my-server",
+      "transport": "Transport",
+      "transportHttp": "http (Streamable HTTP)",
+      "transportSse": "sse (Server-Sent Events)",
+      "transportStdio": "stdio (local process)",
+      "transportWebsocket": "websocket",
+      "url": "URL",
+      "urlPlaceholder": "http://localhost:8001/mcp",
+      "command": "Command",
+      "commandPlaceholder": "python",
+      "args": "Args",
+      "argsHint": "(one per line)",
+      "argsPlaceholder": "/path/to/server.py\n--port\n8001",
+      "envVars": "Env vars",
+      "envVarsHint": "(JSON object, optional)",
+      "envVarsPlaceholder": "{\"MY_API_KEY\": \"...\"}",
+      "authentication": "Authentication",
+      "authNone": "None / static headers",
+      "authOauth2": "OAuth 2.0 (browser sign-in)",
+      "oauthScope": "OAuth scope",
+      "optional": "(optional)",
+      "oauthScopePlaceholder": "space-separated scopes",
+      "oauthHint": {
+        "prefix": "Save the server, then click",
+        "suffix": "to sign in. Endpoints are auto-discovered (RFC 9728 / 8414) and a client is registered dynamically when supported."
+      },
+      "headers": "Headers",
+      "headersHint": "(JSON object, optional)",
+      "headersPlaceholder": "{\"Authorization\": \"Bearer ...\"}",
+      "enabledCheckbox": "Enabled (inject into all script runs)",
+      "cancel": "Cancel",
+      "saving": "Saving…",
+      "save": "Save"
+    },
+    "probeDialog": {
+      "title": "{{name}} — connection test",
+      "connectedCount": "Connected · {{count}} tool(s)",
+      "noTools": "This server exposes no tools.",
+      "authRequiredHint": {
+        "prefix": "This server requires authentication. Edit it and set Authentication to",
+        "suffix": ", or add an",
+        "suffix2": "header."
+      },
+      "close": "Close"
+    }
+  },
+  "skills": {
+    "heading": "Skills",
+    "description": {
+      "prefix": "Reusable instructions (SKILL.md + files) an agent loads on demand. Bind them per script;",
+      "middle": "exposes them via a",
+      "suffix": "tool."
+    },
+    "browseMarketplace": "Browse Marketplace",
+    "newSkill": "New skill",
+    "empty": "No skills yet. Create one to package reusable agent instructions and files.",
+    "disabledBadge": "disabled",
+    "noDescription": "No description",
+    "disableTitle": "Disable",
+    "enableTitle": "Enable",
+    "editTitle": "Edit",
+    "usageHint": {
+      "heading": "Script usage",
+      "intro": "Bind skills to a script in its right panel, then:",
+      "examplesPrefix": "Full examples:",
+      "loadedPrefix": "When a skill loads you'll see a",
+      "loadedSuffix": "line in the run log."
+    },
+    "confirm": {
+      "message": "Delete this skill?",
+      "confirmLabel": "Delete"
+    },
+    "toast": {
+      "loadFailed": "Failed to load skills",
+      "nameRequired": "Name is required",
+      "updateFailed": "Failed to update",
+      "deleted": "Deleted",
+      "deleteFailed": "Failed to delete"
+    },
+    "dialog": {
+      "title": "New skill",
+      "name": "Name",
+      "namePlaceholder": "pdf-processing",
+      "description": "Description",
+      "descriptionHint": "(shown to the agent)",
+      "descriptionPlaceholder": "What this skill does and when to use it",
+      "hint": {
+        "prefix": "A starter",
+        "suffix": "is created — edit it and add files next."
+      },
+      "cancel": "Cancel",
+      "creating": "Creating…",
+      "createAndEdit": "Create & edit"
+    }
+  },
+  "marketplace": {
+    "title": "Skill Marketplace",
+    "tabs": {
+      "official": "Official anthropics/skills",
+      "skillsmp": "Community SkillsMP",
+      "skillssh": "Community skills.sh"
+    },
+    "back": "Back",
+    "refreshTitle": "Refresh",
+    "choice": {
+      "bundlesHint": "bundles several skills — choose one:"
+    },
+    "official": {
+      "tokenWarning": "GITHUB_TOKEN not set — anonymous GitHub requests are rate-limited to 60/hour. Set it to raise the limit.",
+      "noSkillsFound": "No skills found."
+    },
+    "card": {
+      "openOnGithub": "Open on GitHub",
+      "noDescription": "No description",
+      "installed": "Installed",
+      "install": "Install"
+    },
+    "toast": {
+      "alreadyInstalled": "“{{label}}” already installed",
+      "installed": "Installed “{{name}}”"
+    },
+    "registry": {
+      "searchPlaceholder": "Search community skills, e.g. pdf, web scraping…",
+      "searchButton": "Search",
+      "skillsshAuthWarning": "skills.sh search requires a Vercel OIDC token — set the SKILLS_SH_TOKEN (or VERCEL_OIDC_TOKEN) env var to use it. SkillsMP needs no token.",
+      "remainingQuota": "Remaining quota today: {{rate}}",
+      "raiseQuotaHint": " — set SKILLSMP_API_KEY to raise it to 500/day",
+      "noResults": "No results.",
+      "searchHint": "Search for community skills by keyword. Installing pulls the skill from its GitHub repo."
+    }
+  }
+}

@@ -6,6 +6,8 @@ import sys
 import threading
 from pathlib import Path
 
+from loguru import logger
+
 from app.config import DATA_DIR
 
 
@@ -82,6 +84,7 @@ async def stream_create_venv(script_id: str, force: bool = False):
     If the venv already exists and force is False, short-circuit with a notice.
     """
     venv_dir = get_script_dir(script_id) / ".venv"
+    logger.info("[script {}] venv create requested (force={})", script_id, force)
 
     if venv_exists(script_id) and not force:
         yield f"venv already exists at {venv_dir}; skipping (delete it to recreate)"
@@ -93,6 +96,7 @@ async def stream_create_venv(script_id: str, force: bool = False):
         try:
             shutil.rmtree(venv_dir)
         except Exception as e:
+            logger.warning("[script {}] failed to remove existing venv: {}", script_id, e)
             yield f"ERROR: failed to remove existing venv: {e}"
             return
 
@@ -107,6 +111,7 @@ async def stream_create_venv(script_id: str, force: bool = False):
     async for line in _run_and_stream(cmd):
         if line.startswith("ERROR:"):
             create_ok = False
+            logger.warning("[script {}] venv creation failed: {}", script_id, line)
             yield line
             return
         if line == "DONE":
@@ -129,8 +134,12 @@ async def stream_create_venv(script_id: str, force: bool = False):
             "--disable-pip-version-check", "--no-input", "--progress-bar", "off",
             *BASELINE_PACKAGES,
         ]
+    install_ok = True
     async for line in _run_and_stream(base_cmd):
+        if line.startswith("ERROR:"):
+            install_ok = False
         yield line
+    logger.info("[script {}] venv create {}", script_id, "ready" if install_ok else "baseline install failed")
 
 
 _LIST_PKGS_SCRIPT = r"""
@@ -192,6 +201,7 @@ def delete_venv(script_id: str) -> bool:
     if not venv_dir.exists():
         return False
     shutil.rmtree(venv_dir, ignore_errors=False)
+    logger.info("[script {}] venv deleted", script_id)
     return True
 
 
@@ -275,6 +285,7 @@ async def stream_install(script_id: str, requirements: str):
 
     python = get_venv_python(script_id)
     if not python.exists():
+        logger.warning("[script {}] requirements install requested but venv missing", script_id)
         yield "ERROR: venv not found; create it first"
         return
 
@@ -290,5 +301,9 @@ async def stream_install(script_id: str, requirements: str):
             "-r", str(req_file),
         ]
 
+    install_ok = True
     async for line in _run_and_stream(cmd):
+        if line.startswith("ERROR:"):
+            install_ok = False
         yield line
+    logger.info("[script {}] requirements install {}", script_id, "succeeded" if install_ok else "failed")

@@ -1,0 +1,79 @@
+{
+  "sidebar": {
+    "backToHome": "返回首页",
+    "scriptLabel": "脚本",
+    "selectScriptPlaceholder": "选择一个脚本",
+    "newConversation": "新建对话",
+    "searchPlaceholder": "搜索对话",
+    "noMatching": "没有匹配的对话",
+    "noConversations": "还没有对话",
+    "collapseSidebar": "收起侧边栏",
+    "expandSidebar": "展开侧边栏"
+  },
+  "header": {
+    "chatFallback": "对话",
+    "newShort": "新建",
+    "editScript": "编辑脚本",
+    "deleteConversation": "删除"
+  },
+  "message": {
+    "copy": "复制",
+    "delete": "删除",
+    "generating": "生成中…",
+    "logCount_other": "{{count}} 条日志",
+    "scrollToBottom": "滚动到底部"
+  },
+  "think": {
+    "thinking": "思考中…",
+    "thoughtProcess": "思考过程"
+  },
+  "reasoning": {
+    "buttonTitle": "推理 / 思考等级",
+    "buttonThink": "思考",
+    "levels": {
+      "off": "关闭",
+      "low": "低",
+      "medium": "中",
+      "high": "高"
+    },
+    "hintPrefix": "需要支持推理的模型,并且脚本需要通过",
+    "hintSuffix": " 转发该参数。"
+  },
+  "context": {
+    "buttonTitle": "上下文轮数",
+    "turnsLabel": "{{count}} 轮",
+    "settingLabel": "上下文轮数(1–50)",
+    "hint": "每条消息随历史一起发送的最近对话轮数。"
+  },
+  "link": {
+    "copyStandalone": "复制独立对话链接",
+    "copied": "已复制",
+    "copyLink": "复制链接",
+    "historyFallback": "历史记录"
+  },
+  "input": {
+    "placeholderNoScript": "请先选择一个脚本",
+    "placeholderNewConv": "发送消息以开始对话…",
+    "placeholderReady": "输入消息…(Enter 发送,Shift+Enter 换行)",
+    "stopGenerating": "停止生成",
+    "send": "发送",
+    "disclaimer": "内容由脚本生成——请自行判断。"
+  },
+  "empty": {
+    "startWith": "开始与「{{name}}」的对话",
+    "selectScript": "选择一个脚本以开始",
+    "conversationsSaved": "对话会被保存;每一轮都会将历史记录发送给脚本。",
+    "selectFromSidebar": "从侧边栏选择一个脚本以开始。"
+  },
+  "toast": {
+    "loadScriptsFailed": "加载脚本失败",
+    "loadConversationsFailed": "加载对话失败",
+    "loadConversationFailed": "加载对话失败",
+    "createConversationFailed": "创建对话失败",
+    "deleteConversationFailed": "删除对话失败",
+    "saveReplyFailed": "保存回复失败",
+    "wsError": "WebSocket 连接错误",
+    "stopFailed": "停止失败",
+    "deleteMessageFailed": "删除消息失败"
+  }
+}

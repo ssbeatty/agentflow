@@ -2,6 +2,7 @@
 import { Suspense, useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { useTranslation } from "react-i18next";
 import {
   ArrowLeft, Send, Loader2, MessageSquare, Trash2, Bot,
   Plus, Settings2, ExternalLink, ChevronDown, ChevronUp, ChevronRight, Link2, Check,
@@ -93,6 +94,7 @@ function splitThink(content: string): { reasoning: string; answer: string; think
 // expands while the model is actively thinking, then collapses (unless the user
 // toggled it) once the answer starts.
 function ThinkBlock({ reasoning, thinking }: { reasoning: string; thinking: boolean }) {
+  const { t } = useTranslation("converse");
   const [userOpen, setUserOpen] = useState<boolean | null>(null);
   const open = userOpen ?? thinking;
   if (!reasoning.trim()) return null;
@@ -105,7 +107,7 @@ function ThinkBlock({ reasoning, thinking }: { reasoning: string; thinking: bool
         {thinking
           ? <Loader2 className="h-3.5 w-3.5 text-blue-400 animate-spin" />
           : <Brain className="h-3.5 w-3.5 text-primary/70" />}
-        <span className="font-medium text-foreground/80">{thinking ? "Thinking…" : "Thought process"}</span>
+        <span className="font-medium text-foreground/80">{thinking ? t("think.thinking") : t("think.thoughtProcess")}</span>
         {open
           ? <ChevronDown className="h-3.5 w-3.5 ml-auto text-muted-foreground" />
           : <ChevronRight className="h-3.5 w-3.5 ml-auto text-muted-foreground" />}
@@ -130,6 +132,7 @@ const LEVEL_COLORS: Record<string, string> = {
 };
 
 function LogStrip({ logs }: { logs: WsEvent[] }) {
+  const { t } = useTranslation("converse");
   const [open, setOpen] = useState(false);
   const logEvents = logs.filter((e): e is Extract<WsEvent, { type: "log" }> => e.type === "log");
   if (logEvents.length === 0) return null;
@@ -140,7 +143,7 @@ function LogStrip({ logs }: { logs: WsEvent[] }) {
         className="flex items-center gap-1 text-[10px] text-muted-foreground/70 hover:text-foreground"
       >
         {open ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />}
-        {logEvents.length} log{logEvents.length === 1 ? "" : "s"}
+        {t("message.logCount", { count: logEvents.length })}
       </button>
       {open && (
         <div className="mt-1 rounded-lg border border-border/50 bg-muted/30 p-2 space-y-0.5 max-h-40 overflow-y-auto">
@@ -197,6 +200,7 @@ function MessageRow({
   onAnimDone?: () => void;
   onDelete?: () => void;
 }) {
+  const { t } = useTranslation("converse");
   const isUser = msg.role === "user";
   const { reasoning, answer, thinking } = isUser
     ? { reasoning: "", answer: msg.content, thinking: false }
@@ -221,12 +225,12 @@ function MessageRow({
   const actions = (
     <div className={`flex gap-0.5 ${isUser ? "justify-end pr-1" : ""} opacity-0 group-hover:opacity-100 transition-opacity`}>
       {showActions && answer && (
-        <ActionButton onClick={copy} title="Copy">
+        <ActionButton onClick={copy} title={t("message.copy")}>
           {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
         </ActionButton>
       )}
       {canDelete && (
-        <ActionButton onClick={onDelete!} title="Delete" danger>
+        <ActionButton onClick={onDelete!} title={t("message.delete")} danger>
           <Trash2 className="h-3.5 w-3.5" />
         </ActionButton>
       )}
@@ -272,7 +276,7 @@ function MessageRow({
                 thinking ? null : (
                   <span className="flex items-center gap-1.5 text-muted-foreground">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    <span className="text-xs">Generating…</span>
+                    <span className="text-xs">{t("message.generating")}</span>
                   </span>
                 )
               ) : (
@@ -346,8 +350,10 @@ function ReasoningControl({
   value: string;
   onChange: (v: string) => void;
 }) {
+  const { t } = useTranslation("converse");
   const [open, setOpen] = useState(false);
   const active = !!value && value !== "off";
+  const levelLabel = (lvl: string) => t(`reasoning.levels.${lvl}`);
   return (
     <div className="relative">
       <button
@@ -355,10 +361,10 @@ function ReasoningControl({
         className={`flex items-center gap-1 text-xs px-2 py-1 rounded border border-transparent hover:border-border transition-colors ${
           active ? "text-primary" : "text-muted-foreground hover:text-foreground"
         }`}
-        title="Reasoning / think level"
+        title={t("reasoning.buttonTitle")}
       >
         <Brain className="h-3 w-3" />
-        <span className="capitalize">{active ? value : "Think"}</span>
+        <span className="capitalize">{active ? levelLabel(value) : t("reasoning.buttonThink")}</span>
         {open ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
       </button>
       {open && (
@@ -371,11 +377,11 @@ function ReasoningControl({
                 value === lvl ? "text-primary font-medium" : "text-foreground"
               }`}
             >
-              {lvl === "off" ? "Off" : lvl}
+              {levelLabel(lvl)}
             </button>
           ))}
           <p className="text-[10px] text-muted-foreground px-2 py-1 leading-tight border-t border-border/50 mt-1">
-            Needs a reasoning-capable model and a script that forwards it to <code className="font-mono">get_llm(reasoning=…)</code>.
+            {t("reasoning.hintPrefix")} <code className="font-mono">get_llm(reasoning=…)</code>{t("reasoning.hintSuffix")}
           </p>
         </div>
       )}
@@ -392,21 +398,22 @@ function ContextTurnsControl({
   value: number;
   onChange: (n: number) => void;
 }) {
+  const { t } = useTranslation("converse");
   const [open, setOpen] = useState(false);
   return (
     <div className="relative">
       <button
         onClick={() => setOpen((p) => !p)}
         className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded border border-transparent hover:border-border transition-colors"
-        title="Context turns"
+        title={t("context.buttonTitle")}
       >
         <Settings2 className="h-3 w-3" />
-        {value} turns
+        {t("context.turnsLabel", { count: value })}
         {open ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
       </button>
       {open && (
         <div className="absolute right-0 top-full mt-1 z-10 bg-popover border border-border rounded-lg shadow-md p-3 w-44">
-          <Label className="text-xs mb-1.5 block">Context turns (1–50)</Label>
+          <Label className="text-xs mb-1.5 block">{t("context.settingLabel")}</Label>
           <Input
             type="number"
             min={1}
@@ -421,7 +428,7 @@ function ContextTurnsControl({
             autoFocus
           />
           <p className="text-[10px] text-muted-foreground mt-1.5">
-            How many recent turns are sent as history with each message.
+            {t("context.hint")}
           </p>
         </div>
       )}
@@ -432,6 +439,7 @@ function ContextTurnsControl({
 // ── Copy link button (copies standalone embed URL) ────────────────────────────
 
 function CopyLinkButton({ scriptId }: { scriptId: string }) {
+  const { t } = useTranslation("converse");
   const [copied, setCopied] = useState(false);
   function copy() {
     const url = `${window.location.origin}/converse?id=${scriptId}&embed=1`;
@@ -444,10 +452,10 @@ function CopyLinkButton({ scriptId }: { scriptId: string }) {
     <button
       onClick={copy}
       className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded border border-transparent hover:border-border transition-colors"
-      title="Copy standalone chat link"
+      title={t("link.copyStandalone")}
     >
       {copied ? <Check className="h-3 w-3 text-green-500" /> : <Link2 className="h-3 w-3" />}
-      {copied ? "Copied" : "Copy link"}
+      {copied ? t("link.copied") : t("link.copyLink")}
     </button>
   );
 }
@@ -465,6 +473,7 @@ function EmbedHistoryDropdown({
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
+  const { t } = useTranslation("converse");
   const [open, setOpen] = useState(false);
   const active = convList.find((c) => c.id === activeConvId);
   if (convList.length === 0) return null;
@@ -475,7 +484,7 @@ function EmbedHistoryDropdown({
         className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded border border-transparent hover:border-border transition-colors max-w-[140px]"
       >
         <MessageSquare className="h-3 w-3 shrink-0" />
-        <span className="truncate">{active?.title ?? "History"}</span>
+        <span className="truncate">{active?.title ?? t("link.historyFallback")}</span>
         <ChevronDown className="h-3 w-3 shrink-0" />
       </button>
       {open && (
@@ -521,6 +530,7 @@ export default function ConversePage() {
 }
 
 function ConverseInner() {
+  const { t } = useTranslation("converse");
   const params = useSearchParams();
   const embed = params.get("embed") === "1";
 
@@ -562,7 +572,7 @@ function ConverseInner() {
         setAllScripts(list);
         if (!scriptId && list.length > 0) setScriptId(list[0].id);
       })
-      .catch(() => toast.error("Failed to load scripts"));
+      .catch(() => toast.error(t("toast.loadScriptsFailed")));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -595,7 +605,7 @@ function ConverseInner() {
           setActiveConvId(list[0].id);
         }
       })
-      .catch(() => toast.error("Failed to load conversations"));
+      .catch(() => toast.error(t("toast.loadConversationsFailed")));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scriptId]);
 
@@ -648,7 +658,7 @@ function ConverseInner() {
           ...(tracesByMsg.has(m.id) ? { traces: tracesByMsg.get(m.id) } : {}),
         })));
       }
-    }).catch(() => toast.error("Failed to load conversation"));
+    }).catch(() => toast.error(t("toast.loadConversationFailed")));
   }, [activeConvId]);
 
   // Auto-scroll — only when the user is already near the bottom.
@@ -684,7 +694,7 @@ function ConverseInner() {
       setActiveConvId(conv.id);
       setMessages([]);
     } catch {
-      toast.error("Failed to create conversation");
+      toast.error(t("toast.createConversationFailed"));
     }
   }
 
@@ -697,7 +707,7 @@ function ConverseInner() {
         setMessages([]);
       }
     } catch {
-      toast.error("Failed to delete conversation");
+      toast.error(t("toast.deleteConversationFailed"));
     }
   }
 
@@ -802,7 +812,7 @@ function ConverseInner() {
             );
           }).catch(() => {
             setSending(false);
-            toast.error("Failed to save reply");
+            toast.error(t("toast.saveReplyFailed"));
           });
         }
       }
@@ -810,7 +820,7 @@ function ConverseInner() {
 
     ws.onerror = () => {
       setSending(false);
-      toast.error("WebSocket connection error");
+      toast.error(t("toast.wsError"));
     };
   }, []);
 
@@ -828,7 +838,7 @@ function ConverseInner() {
         setActiveConvId(conv.id);
         convId = conv.id;
       } catch {
-        toast.error("Failed to create conversation");
+        toast.error(t("toast.createConversationFailed"));
         return;
       }
     }
@@ -881,7 +891,7 @@ function ConverseInner() {
       await executionsApi.stop(id);
       // The WS will deliver a `cancelled` status which runs confirm + cleanup.
     } catch {
-      toast.error("Failed to stop");
+      toast.error(t("toast.stopFailed"));
     }
   }
 
@@ -898,7 +908,7 @@ function ConverseInner() {
       await convsApi.deleteMessage(activeConvId, msgId);
       setMessages((prev) => prev.filter((m) => m.id !== msgId));
     } catch {
-      toast.error("Failed to delete message");
+      toast.error(t("toast.deleteMessageFailed"));
     }
   }
 
@@ -925,7 +935,7 @@ function ConverseInner() {
         <button
           onClick={scrollToBottom}
           className="absolute bottom-4 left-1/2 -translate-x-1/2 h-8 w-8 rounded-full bg-popover border border-border shadow-md flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
-          title="Scroll to bottom"
+          title={t("message.scrollToBottom")}
         >
           <ArrowDown className="h-4 w-4" />
         </button>
@@ -948,10 +958,10 @@ function ConverseInner() {
             }}
             placeholder={
               !scriptId
-                ? "Select a script first"
+                ? t("input.placeholderNoScript")
                 : !activeConvId
-                ? "Send a message to start the conversation…"
-                : "Type a message… (Enter to send, Shift+Enter for a new line)"
+                ? t("input.placeholderNewConv")
+                : t("input.placeholderReady")
             }
             className="min-h-[40px] max-h-48 text-sm resize-none border-0 bg-transparent focus-visible:ring-0 px-1 py-1.5 shadow-none"
             disabled={!scriptId || sending}
@@ -962,7 +972,7 @@ function ConverseInner() {
               size="icon"
               variant="secondary"
               className="h-9 w-9 shrink-0 rounded-xl"
-              title="Stop generating"
+              title={t("input.stopGenerating")}
             >
               <Square className="h-3.5 w-3.5 fill-current" />
             </Button>
@@ -972,14 +982,14 @@ function ConverseInner() {
               disabled={!input.trim() || !scriptId}
               size="icon"
               className="h-9 w-9 shrink-0 rounded-xl"
-              title="Send"
+              title={t("input.send")}
             >
               <Send className="h-4 w-4" />
             </Button>
           )}
         </div>
         <p className="text-[10px] text-muted-foreground/50 text-center mt-1.5">
-          Content is generated by the script — use your own judgment.
+          {t("input.disclaimer")}
         </p>
       </div>
     </div>
@@ -992,7 +1002,7 @@ function ConverseInner() {
       <div className="h-screen flex flex-col bg-background">
         <header className="border-b border-border px-3 py-2 flex items-center gap-2 shrink-0">
           <span className="text-sm font-medium truncate flex-1 min-w-0">
-            {currentScript?.name ?? "Chat"}
+            {currentScript?.name ?? t("header.chatFallback")}
           </span>
           <EmbedHistoryDropdown
             convList={convList}
@@ -1006,7 +1016,7 @@ function ConverseInner() {
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded hover:bg-muted/60 transition-colors disabled:opacity-40"
           >
             <Plus className="h-3.5 w-3.5" />
-            New
+            {t("header.newShort")}
           </button>
           <ReasoningControl value={reasoningEffort} onChange={updateReasoning} />
           <ContextTurnsControl value={contextTurns} onChange={updateContextTurns} />
@@ -1027,14 +1037,14 @@ function ConverseInner() {
             <Link href="/">
               <Button variant="ghost" size="sm" className="w-full justify-start gap-2 h-8 text-xs">
                 <ArrowLeft className="h-3.5 w-3.5" />
-                Back to Home
+                {t("sidebar.backToHome")}
               </Button>
             </Link>
             <div>
-              <Label className="text-xs text-muted-foreground mb-1 block">Script</Label>
+              <Label className="text-xs text-muted-foreground mb-1 block">{t("sidebar.scriptLabel")}</Label>
               <Select value={scriptId} onValueChange={(v) => { setScriptId(v); }}>
                 <SelectTrigger className="h-8 text-xs">
-                  <SelectValue placeholder="Select a script" />
+                  <SelectValue placeholder={t("sidebar.selectScriptPlaceholder")} />
                 </SelectTrigger>
                 <SelectContent>
                   {allScripts.map((s) => (
@@ -1050,14 +1060,14 @@ function ConverseInner() {
               disabled={!scriptId}
             >
               <Plus className="h-3.5 w-3.5" />
-              New conversation
+              {t("sidebar.newConversation")}
             </Button>
             <div className="relative">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/50" />
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search conversations"
+                placeholder={t("sidebar.searchPlaceholder")}
                 className="h-7 text-xs pl-7"
               />
             </div>
@@ -1066,7 +1076,7 @@ function ConverseInner() {
           <ScrollArea className="flex-1 p-2">
             {filteredConvs.length === 0 && (
               <p className="text-xs text-muted-foreground text-center py-6">
-                {search.trim() ? "No matching conversations" : "No conversations yet"}
+                {search.trim() ? t("sidebar.noMatching") : t("sidebar.noConversations")}
               </p>
             )}
             {filteredConvs.map((conv) => (
@@ -1089,13 +1099,13 @@ function ConverseInner() {
             size="icon"
             className="h-7 w-7 shrink-0"
             onClick={() => setSidebarOpen((o) => !o)}
-            title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+            title={sidebarOpen ? t("sidebar.collapseSidebar") : t("sidebar.expandSidebar")}
           >
             {sidebarOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
           </Button>
           <MessageSquare className="h-4 w-4 text-primary shrink-0" />
           <span className="text-sm font-medium truncate">
-            {currentScript?.name ?? "Chat"}
+            {currentScript?.name ?? t("header.chatFallback")}
           </span>
           <div className="ml-auto flex items-center gap-2">
             <ReasoningControl value={reasoningEffort} onChange={updateReasoning} />
@@ -1107,7 +1117,7 @@ function ConverseInner() {
                 className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
               >
                 <ExternalLink className="h-3 w-3" />
-                Edit script
+                {t("header.editScript")}
               </Link>
             )}
             {activeConvId && (
@@ -1118,7 +1128,7 @@ function ConverseInner() {
                 onClick={() => deleteConversation(activeConvId)}
               >
                 <Trash2 className="h-3 w-3" />
-                Delete
+                {t("header.deleteConversation")}
               </Button>
             )}
           </div>
@@ -1139,6 +1149,7 @@ function EmptyState({
   onNew: () => void;
   hasScript: boolean;
 }) {
+  const { t } = useTranslation("converse");
   return (
     <div className="flex flex-col items-center justify-center text-center py-20 text-muted-foreground">
       <div className="h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
@@ -1147,18 +1158,18 @@ function EmptyState({
       {hasScript ? (
         <>
           <p className="text-sm mb-1 text-foreground">
-            {scriptName ? `Start a conversation with "${scriptName}"` : "Select a script to start"}
+            {scriptName ? t("empty.startWith", { name: scriptName }) : t("empty.selectScript")}
           </p>
           <p className="text-xs mb-4 max-w-sm">
-            Conversations are saved; the history is sent to the script with each turn.
+            {t("empty.conversationsSaved")}
           </p>
           <Button size="sm" onClick={onNew} className="gap-1.5">
             <Plus className="h-3.5 w-3.5" />
-            New conversation
+            {t("sidebar.newConversation")}
           </Button>
         </>
       ) : (
-        <p className="text-sm">Select a script from the sidebar to get started.</p>
+        <p className="text-sm">{t("empty.selectFromSidebar")}</p>
       )}
     </div>
   );

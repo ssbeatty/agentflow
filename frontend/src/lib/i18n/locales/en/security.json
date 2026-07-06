@@ -1,0 +1,54 @@
+{
+  "header": {
+    "home": "Home",
+    "title": "Security Settings",
+    "signOut": "Sign out"
+  },
+  "account": {
+    "title": "Admin Account",
+    "signedInAs": "Signed in as:",
+    "currentPassword": "Current password",
+    "newPassword": "New password (at least 6 characters)",
+    "confirmPassword": "Confirm new password",
+    "mismatch": "Passwords do not match",
+    "submit": "Change password",
+    "toast": {
+      "updated": "Password updated",
+      "failed": "Update failed"
+    }
+  },
+  "apiKeys": {
+    "title": "API Keys",
+    "issue": "Issue Key",
+    "defaultName": "API Key",
+    "description": {
+      "pre": "Used to authenticate external systems calling the run endpoint. Send the header",
+      "to": "to"
+    },
+    "empty": "No API keys yet",
+    "row": {
+      "created": "Created",
+      "lastUsed": "Last used"
+    },
+    "revoke": "Revoke",
+    "toast": {
+      "createFailed": "Creation failed",
+      "revoked": "Revoked",
+      "revokeFailed": "Failed to revoke"
+    },
+    "createDialog": {
+      "title": "Issue a new API Key",
+      "description": "Give the key a name so you can recognize its purpose later.",
+      "name": "Name",
+      "namePlaceholder": "e.g. Production / n8n integration",
+      "cancel": "Cancel",
+      "submit": "Issue"
+    },
+    "revealDialog": {
+      "title": "Save your API Key",
+      "warning": "This is the only time the full key is shown. It can't be viewed again once closed — copy and save it now.",
+      "copy": "Copy",
+      "done": "I've saved it"
+    }
+  }
+}

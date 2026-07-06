@@ -1,0 +1,135 @@
+{
+  "header": {
+    "title": "API Reference",
+    "examplesFor": "Examples for:",
+    "pickScriptPlaceholder": "Pick a script",
+    "noScripts": "No scripts yet"
+  },
+  "intro": {
+    "title": "API Reference",
+    "servedFrom": "HTTP endpoints are served from",
+    "pickScript": "Pick a script in the top-right to substitute its real id into the examples below.",
+    "authLabel": "Authentication.",
+    "authText1": "Everything sits behind a single admin login. Management endpoints (files, async executions, listing, stop) require an admin session — the logged-in UI attaches it as a cookie automatically, or send",
+    "authText2": "The one endpoint meant for external systems,",
+    "authText3": "also accepts an issued API key via",
+    "authText4": "create and manage keys on the",
+    "pageSuffix": "page."
+  },
+  "mcp": {
+    "title": "Connect a coding agent (MCP)",
+    "desc": "AgentFlow exposes an MCP server so Claude Code, Cursor or any MCP client can develop scripts on this instance directly: create/edit script files, set up the venv, run scripts and read the failing traceback — the full write→run→debug loop. Auth is an issued API key (create one on the /security page). Note: unlike /api/executions/run, the MCP endpoint gives an API key full script-management scope, not just run.",
+    "labelClaudeCode": "Claude Code",
+    "labelCursorJson": "Cursor / generic mcpServers JSON",
+    "labelInstallSkill": "Install the companion skill (teaches the agent the script conventions)",
+    "toolsExposedLabel": "Tools exposed:",
+    "toolsExposedTrailing1": "The same skill text is also available to the agent at runtime via",
+    "toolsExposedTrailing2": ", so installing it locally is optional — it just helps the agent pick the right approach sooner."
+  },
+  "runSync": {
+    "title": "Run synchronously",
+    "desc": "Blocks until the script finishes and returns the final output_data. Best for external service-to-service calls — this is the one endpoint you can call with an X-API-Key (default timeout 300s).",
+    "labelResponse": "response"
+  },
+  "uploadFile": {
+    "title": "Upload a file",
+    "desc": "Admin only. Upload arbitrary binaries (PDFs, CSVs, images, etc.) that scripts can read by reference. Files persist until you delete them. Optionally tag with script_id for filtering."
+  },
+  "runWithFile": {
+    "title": "Run a script with file input",
+    "desc": "Pass a file reference anywhere in input_data using the marker {\"$file\": \"<FILE_ID>\"}. The execution engine resolves it before launch; your script receives an AgentFlowFile object in its place. Markers can be nested in objects / arrays.",
+    "labelPythonScriptSide": "python (script side)"
+  },
+  "listDeleteFiles": {
+    "title": "List / delete files",
+    "desc": "Admin only. Filter by script_id to show files tagged to a script plus untagged globals."
+  },
+  "runAsync": {
+    "title": "Run asynchronously",
+    "desc": "Admin only. Returns immediately with an execution id; poll GET /executions/{id} or subscribe via WebSocket for logs. Better for long jobs and fan-out."
+  },
+  "stopExecution": {
+    "title": "Stop a running execution",
+    "desc": "Admin only. Force-stops the subprocess and marks the execution as cancelled. Always returns 200."
+  },
+  "listExecutions": {
+    "title": "List executions",
+    "desc": "Admin only. Optionally filtered by script_id. Newest first."
+  },
+  "pythonExample": {
+    "title": "Python example",
+    "desc": "Anything that speaks HTTP works. Here's a minimal chat loop hitting /executions/run with client-side history."
+  },
+  "contract": {
+    "title": "Script contract",
+    "desc": "What the platform passes in and expects back.",
+    "entryFunction": {
+      "label": "Entry function",
+      "pre": ": receives one dict argument (whatever you put in",
+      "post": ") and returns any JSON-serialisable value."
+    },
+    "converseConventions": {
+      "label": "Conventions for the /converse chat page",
+      "t1": ": input has",
+      "t2": "; return",
+      "t3": ". Other return shapes still work — the chat UI falls back to",
+      "t4": ", and then to a JSON dump."
+    },
+    "llms": {
+      "label": "LLMs",
+      "t1": ": configured as channels in Settings.",
+      "t2": "returns the model flagged as default there;",
+      "t3": "picks a model by its id (case-insensitive);",
+      "t4": "enumerates the available model ids."
+    },
+    "toolsAgents": {
+      "label": "Tools and agents",
+      "t1": ":",
+      "t2": "returns the built-in",
+      "t3": "plus the MCP-server tools this script selects;",
+      "t4": "builds a ready agent over them (and any bound skills, reachable via a",
+      "t5": "tool). Configure the search provider and MCP servers on the",
+      "t6": "page."
+    },
+    "logging": {
+      "label": "Logging",
+      "t1": ": use",
+      "t2": ". Structured logs go to the Logs panel and are persisted to the run history."
+    },
+    "secrets": {
+      "label": "Secrets",
+      "t1": ": store credentials once on the",
+      "t2": "page, then read them with",
+      "t3": "(keys are case-insensitive). Values are injected into the run's environment and never appear in your code, input, or the frontend.",
+      "t4": "enumerates the keys."
+    },
+    "httpHelpers": {
+      "label": "HTTP helpers",
+      "t1": ":",
+      "t2": "are thin",
+      "t3": "wrappers with sane defaults (timeout, follow-redirects, raise-for-status). They return the",
+      "t4": "and pass any",
+      "t5": "straight through — so you don't re-write request boilerplate in every script."
+    },
+    "fileInputs": {
+      "label": "File inputs",
+      "t1": ": upload via",
+      "t2": ", then reference in",
+      "t3": "as",
+      "t4": "at any depth. The script receives an",
+      "t5": "with"
+    },
+    "workingDirs": {
+      "label": "Working directories",
+      "t1": ": import",
+      "t2": "from",
+      "t3": "is this run's cwd (fresh each run, auto-pruned);",
+      "t4": "persists across runs of the same script (good for caches, vector indexes, sqlite files)."
+    }
+  },
+  "code": {
+    "copied": "Copied",
+    "copiedLabel": "copied",
+    "copyLabel": "copy"
+  }
+}

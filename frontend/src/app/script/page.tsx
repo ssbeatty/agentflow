@@ -2,6 +2,7 @@
 import { Suspense, useEffect, useRef, useState, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { useTranslation } from "react-i18next";
 import {
   ArrowLeft, Play, Square, Save, Terminal, Settings2,
   Clock, ChevronRight, Loader2, CalendarClock, Workflow,
@@ -64,6 +65,7 @@ export default function ScriptPageWrapper() {
 }
 
 function ScriptPage() {
+  const { t } = useTranslation("script");
   const searchParams = useSearchParams();
   const id = searchParams.get("id") || "";
   const router = useRouter();
@@ -118,12 +120,12 @@ function ScriptPage() {
     if (!id || !activeFile.endsWith(".py")) { setLintIssues([]); return; }
     const content = fileContents.get(activeFile) ?? "";
     if (!content) { setLintIssues([]); return; }
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       scripts.lint(id, content)
         .then(r => setLintIssues(r.issues))
         .catch(() => setLintIssues([]));
     }, 500);
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, activeFile, fileContents]);
 
@@ -185,9 +187,9 @@ function ScriptPage() {
         const main = s.files.find(f => f.is_main) ?? s.files[0];
         setActiveFile(main?.filename ?? "main.py");
       })
-      .catch(() => { toast.error("Script not found"); router.push("/"); })
+      .catch(() => { toast.error(t("toast.scriptNotFound")); router.push("/"); })
       .finally(() => setLoading(false));
-  }, [id, router]);
+  }, [id, router, t]);
 
   // Ctrl+S save shortcut
   useEffect(() => {
@@ -230,13 +232,13 @@ function ScriptPage() {
         const terminal = ["completed", "failed", "cancelled"].includes(msg.status);
         if (terminal) {
           ws.close();
-          if (msg.status === "failed" && msg.error) toast.error(`Failed: ${msg.error}`);
-          if (msg.status === "completed") toast.success("Execution completed");
+          if (msg.status === "failed" && msg.error) toast.error(t("toast.executionFailed", { error: msg.error }));
+          if (msg.status === "completed") toast.success(t("toast.executionCompleted"));
         }
       }
     };
     ws.onerror = () => setRunStatus("failed");
-  }, []);
+  }, [t]);
 
   async function handleRun() {
     try {
@@ -254,7 +256,7 @@ function ScriptPage() {
       setCurrentExecId(exec.id);
       connectWs(exec.id);
     } catch (e: unknown) {
-      if (e instanceof SyntaxError) { setInputError("Invalid JSON"); return; }
+      if (e instanceof SyntaxError) { setInputError(t("toast.invalidJson")); return; }
       toast.error(String(e));
       setRunStatus("failed");
     }
@@ -266,7 +268,7 @@ function ScriptPage() {
       const r = await executions.stop(currentExecId);
       setRunStatus((r as { status?: RunStatus }).status ?? "cancelled");
     } catch (e) {
-      toast.error(`Stop failed: ${e}`);
+      toast.error(t("toast.stopFailed", { error: e }));
       setRunStatus("cancelled");
     } finally { wsRef.current?.close(); }
   }
@@ -291,7 +293,7 @@ function ScriptPage() {
       setLoadedRevision(null);
       // Create revision snapshot after successful save
       revisionsApi.create(id).then(() => setRevisionRefresh(n => n + 1)).catch(() => null);
-      toast.success("Saved");
+      toast.success(t("toast.saved"));
     } catch (e: unknown) {
       toast.error(String(e));
     } finally {
@@ -327,7 +329,7 @@ function ScriptPage() {
     setDeleting(true);
     try {
       await scripts.delete(id);
-      toast.success("Script deleted");
+      toast.success(t("toast.deleted"));
       router.push("/");
     } catch (e: unknown) {
       toast.error(String(e));
@@ -571,26 +573,29 @@ function ScriptPage() {
           className="bg-transparent text-sm font-medium focus:outline-none border-b border-transparent focus:border-border w-48"
         />
         <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground"
-          title="Copy script ID" onClick={() => { navigator.clipboard.writeText(id); toast.success("Script ID copied"); }}>
+          title={t("header.copyIdTitle")} onClick={() => { navigator.clipboard.writeText(id); toast.success(t("toast.idCopied")); }}>
           <Copy className="h-3 w-3" />
         </Button>
         <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"
-          title="Delete script" onClick={() => setDeleteOpen(true)}>
+          title={t("header.deleteTitle")} onClick={() => setDeleteOpen(true)}>
           <Trash2 className="h-3 w-3" />
         </Button>
 
         {loadedRevision && (
           <span className="text-xs text-amber-400 flex items-center gap-1">
             <History className="h-3 w-3" />
-            Revision #{loadedRevision.number}{loadedRevision.label ? ` "${loadedRevision.label}"` : ""} loaded — save to apply
+            {t("header.revisionLoaded", {
+              number: loadedRevision.number,
+              label: loadedRevision.label ? ` "${loadedRevision.label}"` : "",
+            })}
           </span>
         )}
-        {!loadedRevision && dirty && <span className="text-xs text-muted-foreground">unsaved</span>}
+        {!loadedRevision && dirty && <span className="text-xs text-muted-foreground">{t("header.unsaved")}</span>}
         {lintForActive.length > 0 && (
           <span className={`text-xs flex items-center gap-1 ${
             lintForActive.some(i => i.severity === "error") ? "text-destructive" : "text-amber-400"
           }`}>
-            ● {lintForActive.length} issue{lintForActive.length > 1 ? "s" : ""}
+            ● {t("header.issueCount", { count: lintForActive.length })}
           </span>
         )}
 
@@ -598,20 +603,20 @@ function ScriptPage() {
           {runStatus !== "idle" && (
             <span className={`text-xs font-medium flex items-center gap-1.5 ${STATUS_COLORS[runStatus]}`}>
               {(runStatus === "queued" || runStatus === "running") && <Loader2 className="h-3 w-3 animate-spin" />}
-              {runStatus}
+              {t(`status.${runStatus}`, { defaultValue: runStatus })}
             </span>
           )}
           <Button variant="outline" size="sm" onClick={handleSave} disabled={saving || !dirty}>
             {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
-            Save
+            {t("header.save")}
           </Button>
           {(runStatus === "queued" || runStatus === "running") ? (
             <Button variant="destructive" size="sm" onClick={handleStop}>
-              <Square className="h-3 w-3" />Stop
+              <Square className="h-3 w-3" />{t("header.stop")}
             </Button>
           ) : (
             <Button size="sm" onClick={handleRun}>
-              <Play className="h-3 w-3" />Run
+              <Play className="h-3 w-3" />{t("header.run")}
             </Button>
           )}
         </div>
@@ -672,28 +677,28 @@ function ScriptPage() {
             <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
               <TabsList className="rounded-none border-b border-border bg-transparent px-4 h-9 justify-start gap-1 shrink-0">
                 <TabsTrigger value="logs" className="text-xs gap-1.5">
-                  <Terminal className="h-3 w-3" />Logs
+                  <Terminal className="h-3 w-3" />{t("tabs.logs")}
                 </TabsTrigger>
                 <TabsTrigger value="flow" className="text-xs gap-1.5">
-                  <Workflow className="h-3 w-3" />Flow
+                  <Workflow className="h-3 w-3" />{t("tabs.flow")}
                   {trace.length > 0 && (
-                    <span className="text-[10px] text-muted-foreground tabular-nums">{trace.filter(t => t.phase === "start" || t.phase === "event").length}</span>
+                    <span className="text-[10px] text-muted-foreground tabular-nums">{trace.filter(ev => ev.phase === "start" || ev.phase === "event").length}</span>
                   )}
                 </TabsTrigger>
                 <TabsTrigger value="output" className="text-xs gap-1.5">
-                  <ChevronRight className="h-3 w-3" />Output
+                  <ChevronRight className="h-3 w-3" />{t("tabs.output")}
                 </TabsTrigger>
                 <TabsTrigger value="artifacts" className="text-xs gap-1.5">
-                  <Sparkles className="h-3 w-3" />Artifacts
+                  <Sparkles className="h-3 w-3" />{t("tabs.artifacts")}
                   {artifacts.length > 0 && (
                     <span className="text-[10px] text-muted-foreground tabular-nums">{artifacts.length}</span>
                   )}
                 </TabsTrigger>
                 <TabsTrigger value="schedule" className="text-xs gap-1.5">
-                  <CalendarClock className="h-3 w-3" />Schedule
+                  <CalendarClock className="h-3 w-3" />{t("tabs.schedule")}
                 </TabsTrigger>
                 <TabsTrigger value="runs" className="text-xs gap-1.5">
-                  <History className="h-3 w-3" />Runs
+                  <History className="h-3 w-3" />{t("tabs.runs")}
                 </TabsTrigger>
               </TabsList>
               <div className="flex-1 overflow-hidden">
@@ -707,7 +712,7 @@ function ScriptPage() {
                   <ScrollArea className="h-full">
                     {output !== null
                       ? <pre className="text-xs font-mono text-muted-foreground whitespace-pre-wrap">{JSON.stringify(output, null, 2)}</pre>
-                      : <p className="text-xs text-muted-foreground">No output yet.</p>}
+                      : <p className="text-xs text-muted-foreground">{t("run.noOutput")}</p>}
                   </ScrollArea>
                 </TabsContent>
                 <TabsContent value="artifacts" className="h-full m-0">
@@ -752,7 +757,7 @@ function ScriptPage() {
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              Config
+              {t("rightPanel.config")}
             </button>
             <button
               onClick={() => setRightTab("history")}
@@ -762,7 +767,7 @@ function ScriptPage() {
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              <History className="h-3 w-3" />History
+              <History className="h-3 w-3" />{t("rightPanel.history")}
             </button>
           </div>
 
@@ -772,14 +777,14 @@ function ScriptPage() {
 
                 {/* Entry function */}
                 <div className="space-y-1.5">
-                  <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/70">Entry function</p>
+                  <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/70">{t("config.entryFunction.label")}</p>
                   <div className="relative">
                     <Settings2 className="absolute left-2.5 top-[9px] h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
                     <Input
                       value={entryFn}
                       onChange={e => { setEntryFn(e.target.value); markDirty("__meta__"); }}
                       className="pl-8 h-8 text-xs font-mono"
-                      placeholder="run"
+                      placeholder={t("config.entryFunction.placeholder")}
                     />
                   </div>
                 </div>
@@ -787,7 +792,7 @@ function ScriptPage() {
                 {/* Execution retention */}
                 <div className="space-y-1.5">
                   <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/70 flex items-center gap-1.5">
-                    <History className="h-3 w-3" />Kept Executions
+                    <History className="h-3 w-3" />{t("config.maxExec.label")}
                   </p>
                   <div className="relative">
                     <Input
@@ -801,11 +806,11 @@ function ScriptPage() {
                         markDirty("__meta__");
                       }}
                       className="h-8 text-xs font-mono"
-                      placeholder="50"
+                      placeholder={t("config.maxExec.placeholder")}
                     />
                   </div>
                   <p className="text-[10px] text-muted-foreground/70 leading-snug">
-                    Oldest records beyond this count are auto-deleted after each run. 0 = unlimited.
+                    {t("config.maxExec.hint")}
                   </p>
                 </div>
 
@@ -813,7 +818,7 @@ function ScriptPage() {
                 {availableMcpServers.length > 0 && (
                   <div className="space-y-2">
                     <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/70 flex items-center gap-1.5">
-                      <Wrench className="h-3 w-3" />MCP Servers
+                      <Wrench className="h-3 w-3" />{t("config.mcp.label")}
                     </p>
                     <div className="flex flex-wrap gap-1.5">
                       {availableMcpServers.map(srv => {
@@ -848,7 +853,7 @@ function ScriptPage() {
                 {availableSkills.length > 0 && (
                   <div className="space-y-2">
                     <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/70 flex items-center gap-1.5">
-                      <Sparkles className="h-3 w-3" />Skills
+                      <Sparkles className="h-3 w-3" />{t("config.skills.label")}
                     </p>
                     <div className="flex flex-wrap gap-1.5">
                       {availableSkills.map(sk => {
@@ -936,16 +941,16 @@ function ScriptPage() {
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Delete script?</DialogTitle>
+            <DialogTitle>{t("dialog.delete.title")}</DialogTitle>
             <DialogDescription>
-              <span className="font-medium text-foreground">{name}</span> and all its runs will be permanently deleted.
+              <span className="font-medium text-foreground">{name}</span> {t("dialog.delete.description")}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={deleting}>Cancel</Button>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={deleting}>{t("dialog.delete.cancel")}</Button>
             <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
               {deleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
-              Delete
+              {t("dialog.delete.confirm")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -962,14 +967,15 @@ import { formatDate } from "@/lib/utils";
 import { Plus } from "lucide-react";
 
 const CRON_PRESETS = [
-  { label: "Every 5m", value: "*/5 * * * *" },
-  { label: "Hourly", value: "0 * * * *" },
-  { label: "Daily", value: "0 0 * * *" },
-  { label: "Weekly", value: "0 0 * * 0" },
-  { label: "Monthly", value: "0 0 1 * *" },
+  { key: "every5m", value: "*/5 * * * *" },
+  { key: "hourly", value: "0 * * * *" },
+  { key: "daily", value: "0 0 * * *" },
+  { key: "weekly", value: "0 0 * * 0" },
+  { key: "monthly", value: "0 0 1 * *" },
 ] as const;
 
 function ScheduleTab({ scriptId }: { scriptId: string }) {
+  const { t } = useTranslation("script");
   const [jobs, setJobs] = useState<CronJob[]>([]);
   const [expr, setExpr] = useState("0 * * * *");
   const [label, setLabel] = useState("");
@@ -993,7 +999,7 @@ function ScheduleTab({ scriptId }: { scriptId: string }) {
     try {
       parsed = JSON.parse(newInput || "{}");
     } catch {
-      setNewInputError("Invalid JSON");
+      setNewInputError(t("schedule.invalidJson"));
       return;
     }
     setNewInputError("");
@@ -1031,7 +1037,7 @@ function ScheduleTab({ scriptId }: { scriptId: string }) {
     try {
       parsed = JSON.parse(editJson || "{}");
     } catch {
-      setEditError("Invalid JSON");
+      setEditError(t("schedule.invalidJson"));
       return;
     }
     setSavingEdit(true);
@@ -1061,7 +1067,7 @@ function ScheduleTab({ scriptId }: { scriptId: string }) {
 
         {/* Add form */}
         <div className="space-y-2">
-          <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/70">New schedule</p>
+          <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/70">{t("schedule.newSchedule")}</p>
           <div className="flex flex-wrap gap-1">
             {CRON_PRESETS.map(p => (
               <button key={p.value} onClick={() => setExpr(p.value)}
@@ -1070,14 +1076,14 @@ function ScheduleTab({ scriptId }: { scriptId: string }) {
                     ? "bg-primary/10 border-primary/40 text-primary"
                     : "border-border/60 text-muted-foreground hover:border-border hover:text-foreground"
                 }`}>
-                {p.label}
+                {t(`schedule.presets.${p.key}`)}
               </button>
             ))}
           </div>
           <div className="flex gap-1.5">
-            <Input value={expr} onChange={e => setExpr(e.target.value)} placeholder="0 * * * *"
+            <Input value={expr} onChange={e => setExpr(e.target.value)} placeholder={t("schedule.cronPlaceholder")}
               className="h-7 text-xs font-mono flex-1 min-w-0" />
-            <Input value={label} onChange={e => setLabel(e.target.value)} placeholder="label"
+            <Input value={label} onChange={e => setLabel(e.target.value)} placeholder={t("schedule.labelPlaceholder")}
               className="h-7 text-xs w-20 shrink-0" />
             <Button size="sm" className="h-7 px-2 shrink-0" onClick={add} disabled={adding || !expr}>
               {adding ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
@@ -1086,15 +1092,15 @@ function ScheduleTab({ scriptId }: { scriptId: string }) {
           <div className="space-y-1">
             <div className="flex items-center justify-between">
               <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/70">
-                Input JSON {newInputError && <span className="text-destructive normal-case font-normal ml-1">{newInputError}</span>}
+                {t("schedule.inputJsonLabel")} {newInputError && <span className="text-destructive normal-case font-normal ml-1">{newInputError}</span>}
               </span>
               {presets.length > 0 && (
                 <select
                   value=""
                   onChange={e => { applyPreset(setNewInput, setNewInputError, e.target.value); e.target.value = ""; }}
                   className="h-6 text-[10px] bg-secondary/30 border border-border rounded px-1.5 text-muted-foreground hover:text-foreground"
-                  title="Pre-fill from preset">
-                  <option value="">From preset…</option>
+                  title={t("schedule.presetTitle")}>
+                  <option value="">{t("schedule.fromPreset")}</option>
                   {presets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               )}
@@ -1112,11 +1118,11 @@ function ScheduleTab({ scriptId }: { scriptId: string }) {
         {/* Job list */}
         {jobs.length > 0 && (
           <div className="space-y-1.5">
-            <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/70">Schedules</p>
+            <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/70">{t("schedule.schedulesLabel")}</p>
             {jobs.map(j => (
               <div key={j.id} className="rounded-lg border border-border bg-secondary/10 hover:bg-secondary/20 transition-colors group">
                 <div className="flex items-center gap-2.5 px-2.5 py-2">
-                  <button onClick={() => toggle(j)} title={j.enabled ? "Disable" : "Enable"} className="shrink-0">
+                  <button onClick={() => toggle(j)} title={j.enabled ? t("schedule.disable") : t("schedule.enable")} className="shrink-0">
                     <div className={`h-2 w-2 rounded-full transition-colors ${j.enabled ? "bg-emerald-400" : "bg-muted-foreground/30"}`} />
                   </button>
                   <div className="flex-1 min-w-0">
@@ -1124,7 +1130,7 @@ function ScheduleTab({ scriptId }: { scriptId: string }) {
                       {j.cron_expression}
                       {hasInput(j.input_data) && (
                         <span className="text-[9px] px-1 py-0.5 rounded bg-secondary/60 text-muted-foreground font-sans" title={JSON.stringify(j.input_data)}>
-                          input
+                          {t("schedule.inputBadge")}
                         </span>
                       )}
                     </div>
@@ -1132,8 +1138,8 @@ function ScheduleTab({ scriptId }: { scriptId: string }) {
                   </div>
                   <button onClick={() => editingId === j.id ? setEditingId(null) : startEdit(j)}
                     className="text-muted-foreground hover:text-foreground transition-colors shrink-0 text-[10px]"
-                    title="Edit input">
-                    {editingId === j.id ? "close" : "input"}
+                    title={t("schedule.editInputTitle")}>
+                    {editingId === j.id ? t("schedule.inputToggleClose") : t("schedule.inputToggleOpen")}
                   </button>
                   <button onClick={() => remove(j.id)}
                     className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all shrink-0">
@@ -1144,14 +1150,14 @@ function ScheduleTab({ scriptId }: { scriptId: string }) {
                   <div className="px-2.5 pb-2.5 space-y-1.5 border-t border-border/60 pt-2">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/70">
-                        Input JSON {editError && <span className="text-destructive normal-case font-normal ml-1">{editError}</span>}
+                        {t("schedule.inputJsonLabel")} {editError && <span className="text-destructive normal-case font-normal ml-1">{editError}</span>}
                       </span>
                       {presets.length > 0 && (
                         <select
                           value=""
                           onChange={e => { applyPreset(setEditJson, setEditError, e.target.value); e.target.value = ""; }}
                           className="h-6 text-[10px] bg-secondary/30 border border-border rounded px-1.5 text-muted-foreground hover:text-foreground">
-                          <option value="">From preset…</option>
+                          <option value="">{t("schedule.fromPreset")}</option>
                           {presets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                         </select>
                       )}
@@ -1164,10 +1170,10 @@ function ScheduleTab({ scriptId }: { scriptId: string }) {
                     />
                     <div className="flex justify-end gap-1.5">
                       <Button variant="outline" size="sm" className="h-6 px-2 text-xs" onClick={() => setEditingId(null)}>
-                        Cancel
+                        {t("schedule.cancel")}
                       </Button>
                       <Button size="sm" className="h-6 px-2 text-xs" onClick={saveEdit} disabled={savingEdit}>
-                        {savingEdit ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save"}
+                        {savingEdit ? <Loader2 className="h-3 w-3 animate-spin" /> : t("schedule.save")}
                       </Button>
                     </div>
                   </div>
@@ -1178,7 +1184,7 @@ function ScheduleTab({ scriptId }: { scriptId: string }) {
         )}
 
         {jobs.length === 0 && (
-          <p className="text-xs text-muted-foreground text-center py-6">No schedules yet</p>
+          <p className="text-xs text-muted-foreground text-center py-6">{t("schedule.empty")}</p>
         )}
       </div>
     </ScrollArea>
@@ -1203,6 +1209,7 @@ function RunsTab({
     artifacts: ArtifactEvent[];
   }) => void;
 }) {
+  const { t } = useTranslation("script");
   const [items, setItems] = useState<ExecutionSummary[]>([]);
   const [loadingRuns, setLoadingRuns] = useState(false);
   const [confirmDelId, setConfirmDelId] = useState<string | null>(null);
@@ -1225,7 +1232,7 @@ function RunsTab({
     setConfirmClear(false);
     try {
       const r = await executions.clear(scriptId);
-      toast.success(`Cleared ${r.deleted} records`);
+      toast.success(t("runs.toast.cleared", { count: r.deleted }));
       reload();
     } catch (e) { toast.error(String(e)); }
   }
@@ -1278,26 +1285,26 @@ function RunsTab({
       <div className="p-3 space-y-1">
         {items.length > 0 && (
           <div className="flex items-center justify-between pb-1">
-            <span className="text-[10px] text-muted-foreground/70 tabular-nums">{items.length} records</span>
+            <span className="text-[10px] text-muted-foreground/70 tabular-nums">{t("runs.recordCount", { count: items.length })}</span>
             {confirmClear ? (
               <span className="flex items-center gap-1 text-[10px]">
-                <span className="text-muted-foreground">Clear all?</span>
-                <button onClick={clearAll} className="text-destructive hover:underline">Confirm</button>
-                <button onClick={() => setConfirmClear(false)} className="text-muted-foreground hover:underline">Cancel</button>
+                <span className="text-muted-foreground">{t("runs.clearConfirm.question")}</span>
+                <button onClick={clearAll} className="text-destructive hover:underline">{t("runs.clearConfirm.confirm")}</button>
+                <button onClick={() => setConfirmClear(false)} className="text-muted-foreground hover:underline">{t("runs.clearConfirm.cancel")}</button>
               </span>
             ) : (
               <button
                 onClick={() => setConfirmClear(true)}
                 className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-destructive transition-colors"
-                title="Delete all finished execution records"
+                title={t("runs.clearTitle")}
               >
-                <Trash2 className="h-3 w-3" />Clear
+                <Trash2 className="h-3 w-3" />{t("runs.clearButton")}
               </button>
             )}
           </div>
         )}
-        {loadingRuns && items.length === 0 && <div className="text-xs text-muted-foreground">Loading…</div>}
-        {!loadingRuns && items.length === 0 && <div className="text-xs text-muted-foreground">No runs yet.</div>}
+        {loadingRuns && items.length === 0 && <div className="text-xs text-muted-foreground">{t("runs.loading")}</div>}
+        {!loadingRuns && items.length === 0 && <div className="text-xs text-muted-foreground">{t("runs.empty")}</div>}
         {items.map(e => {
           const inFlight = ["running", "queued", "pending"].includes(e.status);
           return (
@@ -1310,20 +1317,20 @@ function RunsTab({
               <button onClick={() => openRun(e.id)} className="flex items-center gap-2 flex-1 min-w-0 text-left">
                 {statusIcon(e.status)}
                 <span className="font-mono text-muted-foreground">{e.id.slice(0, 8)}</span>
-                <span className="text-muted-foreground">{e.status}</span>
+                <span className="text-muted-foreground">{t(`status.${e.status}`, { defaultValue: e.status })}</span>
                 <span className="ml-auto text-muted-foreground shrink-0">{formatDate(e.created_at)}</span>
               </button>
               {confirmDelId === e.id ? (
                 <span className="flex items-center gap-1 shrink-0">
-                  <button onClick={() => delOne(e.id)} className="text-destructive" title="Confirm delete"><Check className="h-3 w-3" /></button>
-                  <button onClick={() => setConfirmDelId(null)} className="text-muted-foreground" title="Cancel"><XCircle className="h-3 w-3" /></button>
+                  <button onClick={() => delOne(e.id)} className="text-destructive" title={t("runs.confirmDeleteTitle")}><Check className="h-3 w-3" /></button>
+                  <button onClick={() => setConfirmDelId(null)} className="text-muted-foreground" title={t("runs.cancelTitle")}><XCircle className="h-3 w-3" /></button>
                 </span>
               ) : (
                 !inFlight && (
                   <button
                     onClick={() => setConfirmDelId(e.id)}
                     className="shrink-0 text-muted-foreground/50 hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-                    title="Delete this record"
+                    title={t("runs.deleteRecordTitle")}
                   >
                     <Trash2 className="h-3 w-3" />
                   </button>

@@ -1,0 +1,42 @@
+{
+  "scriptEditor": {
+    "loadingEditor": "正在加载编辑器…"
+  },
+  "fileTree": {
+    "explorer": "资源管理器",
+    "actions": {
+      "newFile": "新建文件",
+      "newFolder": "新建文件夹",
+      "uploadFiles": "上传文件",
+      "uploadFolder": "上传文件夹",
+      "uploadFolderHint": "上传文件夹(保留目录结构)",
+      "newFileInFolder": "在文件夹中新建文件",
+      "download": "下载",
+      "delete": "删除",
+      "deleteFolder": "删除文件夹",
+      "rename": "重命名"
+    },
+    "placeholder": {
+      "filename": "filename.py",
+      "folderName": "文件夹名称"
+    },
+    "confirm": "确认",
+    "cancel": "取消",
+    "deleteConfirm": "删除?",
+    "deleteFolderConfirm": "删除文件夹?",
+    "unsaved": "未保存",
+    "mainBadge": "M",
+    "dropOverlay": "拖放文件或文件夹以上传",
+    "toast": {
+      "filesUploaded_other": "已上传 {{count}} 个文件"
+    }
+  },
+  "logPanel": {
+    "empty": "运行脚本以查看日志",
+    "dataLabel": "数据"
+  },
+  "mermaidView": {
+    "renderFailed": "Mermaid 渲染失败：{{error}}",
+    "sourceLabel": "源码"
+  }
+}

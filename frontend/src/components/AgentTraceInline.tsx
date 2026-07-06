@@ -1,5 +1,7 @@
 "use client";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import {
   Wrench, Brain, Box, Bot, Flag, ChevronRight, ChevronDown,
   Loader2, Check, AlertCircle, Sparkles, BookOpen,
@@ -38,13 +40,13 @@ function durationLabel(ms?: number | null): string {
   return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
 }
 
-function titleFor(row: TraceRow): string {
+function titleFor(row: TraceRow, t: TFunction): string {
   if (row.kind === "llm") {
-    if (row.isOpen) return "Thinking…";
+    if (row.isOpen) return t("agentTraceInline.thinking");
     const d = durationLabel(row.durationMs);
-    return d ? `Deep thinking · ${d}` : "Deep thinking";
+    return d ? t("agentTraceInline.deepThinkingDuration", { duration: d }) : t("agentTraceInline.deepThinking");
   }
-  if (row.kind === "agent_finish") return row.name || "Done";
+  if (row.kind === "agent_finish") return row.name || t("agentTraceInline.done");
   return row.name;
 }
 
@@ -63,6 +65,7 @@ function DetailBlock({ label, value, error }: { label: string; value: unknown; e
 }
 
 function Row({ row }: { row: TraceRow }) {
+  const { t } = useTranslation("assistant");
   const [open, setOpen] = useState(false);
   const Icon = ICONS[row.kind] ?? Box;
   const color = COLORS[row.kind] ?? "text-foreground";
@@ -83,9 +86,9 @@ function Row({ row }: { row: TraceRow }) {
                   : <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" />)
           : <span className="w-3 shrink-0" />}
         <Icon className={cn("h-3.5 w-3.5 shrink-0", color)} />
-        <span className="truncate font-medium text-foreground/90">{titleFor(row)}</span>
-        {isTool && <span className="text-[10px] text-muted-foreground/50 shrink-0">Tool</span>}
-        {row.kind === "node" && <span className="text-[10px] text-muted-foreground/50 shrink-0">Node</span>}
+        <span className="truncate font-medium text-foreground/90">{titleFor(row, t)}</span>
+        {isTool && <span className="text-[10px] text-muted-foreground/50 shrink-0">{t("agentTraceInline.label.tool")}</span>}
+        {row.kind === "node" && <span className="text-[10px] text-muted-foreground/50 shrink-0">{t("agentTraceInline.label.node")}</span>}
 
         <span className="ml-auto flex items-center gap-1.5 shrink-0">
           {row.durationMs != null && row.kind !== "llm" && (
@@ -94,15 +97,15 @@ function Row({ row }: { row: TraceRow }) {
           {row.isOpen
             ? <Loader2 className="h-3 w-3 text-blue-400 animate-spin" />
             : row.error
-              ? <span className="flex items-center gap-0.5 text-destructive text-[10px]"><AlertCircle className="h-3 w-3" />Failed</span>
+              ? <span className="flex items-center gap-0.5 text-destructive text-[10px]"><AlertCircle className="h-3 w-3" />{t("agentTraceInline.failed")}</span>
               : <Check className="h-3 w-3 text-emerald-500/80" />}
         </span>
       </button>
       {open && hasDetails && (
         <div className="px-2.5 pb-2 space-y-1">
-          <DetailBlock label="input" value={row.input} />
-          <DetailBlock label="output" value={row.output} />
-          {row.error && <DetailBlock label="error" value={row.error} error />}
+          <DetailBlock label={t("agentTraceInline.detail.input")} value={row.input} />
+          <DetailBlock label={t("agentTraceInline.detail.output")} value={row.output} />
+          {row.error && <DetailBlock label={t("agentTraceInline.detail.error")} value={row.error} error />}
         </div>
       )}
     </div>
@@ -110,6 +113,7 @@ function Row({ row }: { row: TraceRow }) {
 }
 
 export default function AgentTraceInline({ traces }: { traces: TraceEvent[] }) {
+  const { t } = useTranslation("assistant");
   const rows = buildRows(traces);
   const running = rows.some((r) => r.isOpen);
   const [collapsed, setCollapsed] = useState(false);
@@ -128,10 +132,10 @@ export default function AgentTraceInline({ traces }: { traces: TraceEvent[] }) {
         {running
           ? <Loader2 className="h-3.5 w-3.5 text-blue-400 animate-spin" />
           : <Sparkles className="h-3.5 w-3.5 text-primary/70" />}
-        <span className="font-medium text-foreground/80">{running ? "Thinking…" : "Agent trace"}</span>
+        <span className="font-medium text-foreground/80">{running ? t("agentTraceInline.thinking") : t("agentTraceInline.header.trace")}</span>
         <span className="text-muted-foreground/60">
-          {toolCount > 0 && <> · {toolCount} tool call{toolCount === 1 ? "" : "s"}</>}
-          {thinkCount > 0 && <> · {thinkCount} thought{thinkCount === 1 ? "" : "s"}</>}
+          {toolCount > 0 && <> · {t("agentTraceInline.summary.toolCount", { count: toolCount })}</>}
+          {thinkCount > 0 && <> · {t("agentTraceInline.summary.thoughtCount", { count: thinkCount })}</>}
         </span>
         {collapsed
           ? <ChevronRight className="h-3.5 w-3.5 ml-auto text-muted-foreground" />

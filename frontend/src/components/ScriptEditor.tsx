@@ -2,6 +2,7 @@
 import Editor, { type OnMount } from "@monaco-editor/react";
 import { useEffect, useRef } from "react";
 import type * as Monaco from "monaco-editor";
+import { useTranslation } from "react-i18next";
 
 export interface LintIssue {
   line: number;
@@ -29,6 +30,7 @@ interface Props {
 }
 
 export default function ScriptEditor({ value, onChange, readOnly = false, issues = [], language = "python", onSelectionChange }: Props) {
+  const { t } = useTranslation("scriptEditor");
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const monacoRef = useRef<typeof Monaco | null>(null);
 
@@ -104,7 +106,7 @@ export default function ScriptEditor({ value, onChange, readOnly = false, issues
         options={{ readOnly, automaticLayout: true }}
         loading={
           <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
-            Loading editor…
+            {t("scriptEditor.loadingEditor")}
           </div>
         }
       />

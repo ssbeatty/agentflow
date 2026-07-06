@@ -1,0 +1,42 @@
+{
+  "toast": {
+    "loadFailed": "Failed to load scripts"
+  },
+  "heading": "Scripts",
+  "subtitle_one": "{{count}} LangGraph agent",
+  "subtitle_other": "{{count}} LangGraph agents",
+  "newScript": "New Script",
+  "empty": {
+    "text": "No scripts yet",
+    "cta": "Create your first script"
+  },
+  "card": {
+    "chat": "Chat",
+    "open": "Open"
+  },
+  "dialog": {
+    "template": "Template",
+    "name": "Name",
+    "description": "Description",
+    "optional": "(optional)",
+    "namePlaceholder": "My LangGraph Agent",
+    "descriptionPlaceholder": "What does this agent do?",
+    "cancel": "Cancel",
+    "create": "Create",
+    "creating": "Creating…",
+    "nameRequired": "Name is required",
+    "created": "Script created"
+  },
+  "templates": {
+    "blank": { "label": "Blank", "description": "Empty run() starter" },
+    "simple-chat": { "label": "Simple Chat", "description": "Minimal multi-turn chat for the Chat page" },
+    "streaming-chat": { "label": "Streaming Chat", "description": "Streaming LLM, typewriter output, reasoning-aware" },
+    "rich-chat": { "label": "Rich Chat", "description": "LLM tool-calls to render markdown / table / chart / image" },
+    "react-agent": { "label": "ReAct Agent", "description": "get_agent with web_search + web_fetch" },
+    "skills-mcp": { "label": "Skills + MCP", "description": "Use bound skills and MCP server tools" },
+    "deep-agent": { "label": "Deep Agent", "description": "get_deep_agent: planning, sub-agents, skill filesystem" },
+    "graph-loop": { "label": "LangGraph Loop", "description": "Multi-node graph with a cycle + conditional edge" },
+    "secrets-http": { "label": "Secrets + HTTP", "description": "Read a secret and call an external API" },
+    "file-workspace": { "label": "File + Workspace", "description": "Handle an uploaded file + persist state across runs" }
+  }
+}

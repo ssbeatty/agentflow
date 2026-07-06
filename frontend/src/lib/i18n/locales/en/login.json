@@ -1,0 +1,12 @@
+{
+  "subtitle": "Sign in to the admin console",
+  "form": {
+    "username": "Username",
+    "usernamePlaceholder": "admin",
+    "password": "Password",
+    "submit": "Sign in"
+  },
+  "toast": {
+    "invalidCredentials": "Invalid username or password"
+  }
+}

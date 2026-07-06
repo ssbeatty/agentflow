@@ -29,6 +29,8 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
+from loguru import logger
+
 from app.config import DATA_DIR
 from services.script_files import normalize_script_filename
 
@@ -300,6 +302,7 @@ def create_skill(name: str, description: str = "") -> dict:
     d.mkdir(parents=True, exist_ok=False)
     (d / MAIN_FILE).write_text(default_skill_md(name, description), encoding="utf-8")
     write_sidecar(d, {"enabled": True, "source": "manual", "installed_at": _now_iso()})
+    logger.info("Skill created: {}", dir_name)
     return get_skill(dir_name)
 
 
@@ -357,6 +360,7 @@ def delete_skill(dir_name: str) -> None:
     d = skill_dir(dir_name)
     if d.is_dir():
         shutil.rmtree(d)
+        logger.info("Skill deleted: {}", dir_name)
 
 
 def upsert_file(dir_name: str, filename: str, content: str = "", is_main: bool = False) -> dict:
@@ -456,6 +460,7 @@ def import_skill_dir(src: Path, *, source: str, upstream: str = "",
     if migrated_from_id:
         side["migrated_from_id"] = migrated_from_id
     write_sidecar(dest, side)
+    logger.info("Skill imported: {} (source={}, upstream={})", dir_name, source, upstream or "-")
     return dir_name
 
 

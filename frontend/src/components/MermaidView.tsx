@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import mermaid from "mermaid";
 import { AlertCircle } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 // Initialize mermaid once across the app — safe to call multiple times.
 let _initialized = false;
@@ -37,6 +38,7 @@ function ensureInit() {
 let _renderCounter = 0;
 
 export default function MermaidView({ source, className }: { source: string; className?: string }) {
+  const { t } = useTranslation("scriptEditor");
   const ref = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -56,9 +58,9 @@ export default function MermaidView({ source, className }: { source: string; cla
     return (
       <div className="p-3 text-xs text-amber-400">
         <AlertCircle className="inline h-3 w-3 mr-1" />
-        Mermaid render failed: {error}
+        {t("mermaidView.renderFailed", { error })}
         <details className="mt-1">
-          <summary className="cursor-pointer text-muted-foreground">source</summary>
+          <summary className="cursor-pointer text-muted-foreground">{t("mermaidView.sourceLabel")}</summary>
           <pre className="mt-1 text-[10px] text-muted-foreground whitespace-pre-wrap">{source}</pre>
         </details>
       </div>

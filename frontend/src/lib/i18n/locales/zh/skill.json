@@ -1,0 +1,25 @@
+{
+  "toast": {
+    "loadFailed": "加载技能失败",
+    "renameMainForbidden": "无法重命名 SKILL.md",
+    "nameRequired": "请输入名称",
+    "saved": "已保存",
+    "deleted": "技能已删除"
+  },
+  "header": {
+    "namePlaceholder": "skill-name",
+    "enabled": "启用",
+    "save": "保存",
+    "deleteTitle": "删除技能"
+  },
+  "description": {
+    "placeholder": "描述 — 这个技能的作用以及何时使用它(展示给智能体)"
+  },
+  "deleteDialog": {
+    "title": "删除技能?",
+    "description": "此操作将永久删除“{{name}}”及其所有文件。绑定了该技能的脚本将不再加载它。",
+    "cancel": "取消",
+    "deleting": "删除中…",
+    "delete": "删除"
+  }
+}

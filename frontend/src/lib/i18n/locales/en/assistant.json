@@ -1,0 +1,154 @@
+{
+  "agentNarrative": {
+    "label": {
+      "skill": "Skill load",
+      "tool": "Tool call"
+    },
+    "detail": {
+      "arguments": "Arguments",
+      "result": "Result",
+      "error": "Error"
+    },
+    "header": {
+      "running": "Running…",
+      "trace": "Agent trace"
+    },
+    "summary": {
+      "skillCount_one": "{{count}} skill",
+      "skillCount_other": "{{count}} skills",
+      "toolCount_one": "{{count}} tool call",
+      "toolCount_other": "{{count}} tool calls",
+      "thoughtCount_one": "{{count}} thought",
+      "thoughtCount_other": "{{count}} thoughts"
+    }
+  },
+  "agentTraceInline": {
+    "thinking": "Thinking…",
+    "deepThinking": "Deep thinking",
+    "deepThinkingDuration": "Deep thinking · {{duration}}",
+    "done": "Done",
+    "label": {
+      "tool": "Tool",
+      "node": "Node"
+    },
+    "failed": "Failed",
+    "detail": {
+      "input": "input",
+      "output": "output",
+      "error": "error"
+    },
+    "header": {
+      "trace": "Agent trace"
+    },
+    "summary": {
+      "toolCount_one": "{{count}} tool call",
+      "toolCount_other": "{{count}} tool calls",
+      "thoughtCount_one": "{{count}} thought",
+      "thoughtCount_other": "{{count}} thoughts"
+    }
+  },
+  "thinkBlock": {
+    "thinking": "Thinking…",
+    "thoughtProcess": "Thought process"
+  },
+  "floatingAssistant": {
+    "dragToResize": "Drag to resize",
+    "aiAssistant": "AI Assistant"
+  },
+  "assistantPanel": {
+    "kind": {
+      "script": "script",
+      "skill": "skill"
+    },
+    "toast": {
+      "initializationFailed": "Initialization failed",
+      "envReady": "Assistant environment ready",
+      "envSetupFailed": "Environment setup failed — see the log",
+      "envConnectionFailed": "Environment setup connection failed",
+      "initEnvFirst": "Please initialize the assistant environment first",
+      "revertedTurn": "Reverted this turn",
+      "revertedFile": "Reverted {{filename}}",
+      "revertFailed": "Revert failed: {{error}}"
+    },
+    "error": {
+      "noAnswer": "The model finished thinking but returned no answer — it may have run out of output length. Try again, or lower the Thinking level.",
+      "wsError": "WebSocket connection error",
+      "loadFailed": "Failed to load assistant: {{error}}"
+    },
+    "header": {
+      "title": "AI Assistant",
+      "editing": "Editing",
+      "global": "Global · No project bound"
+    },
+    "title": {
+      "chatHistory": "Chat history",
+      "clearChat": "Clear chat",
+      "collapse": "Collapse"
+    },
+    "newChat": "New chat",
+    "setup": {
+      "title": "First-time setup",
+      "description": "Installs baseline packages (langchain / langgraph, ~1–3 min, one time).",
+      "initializing": "Initializing…",
+      "initialize": "Initialize environment"
+    },
+    "empty": {
+      "global": {
+        "prefix": "Currently ",
+        "notBound": "not bound to a project",
+        "suffix": ". I can help you create or edit a script / skill. Try:",
+        "example1": "\"Create a script that scrapes a website daily and summarizes it\"",
+        "example2": "\"Open a script / skill page and I'll automatically scope my edits to just that one\"",
+        "hint": "When you open a script / skill's edit page, I'll automatically bind to it and only change that one."
+      },
+      "bound": {
+        "prefix": "Let me write, edit and debug this ",
+        "suffix": " with you. Try:",
+        "skillExample1": "“Make SKILL.md clear: when to use this skill and how”",
+        "skillExample2": "“Add references/examples.md with a few usage examples”",
+        "scriptExample1": "“Add a `city` input, look up its weather via web_search, and return it”",
+        "scriptExample2": "“This script is failing — find the bug and fix it”",
+        "scriptExample3": "“Render the result as a table with markdown()”",
+        "hint": "Changes are applied first, then you review or revert them in the diff below."
+      }
+    },
+    "diff": {
+      "filesChanged_one": "{{count}} file changed this turn",
+      "filesChanged_other": "{{count}} files changed this turn",
+      "openInEditor": "Open in editor",
+      "viewDiff": "View diff",
+      "revertFile": "Revert this file",
+      "acceptAll": "Accept all",
+      "revertAll": "Revert all",
+      "dialogTitle": "This turn’s changes · before → after",
+      "close": "Close"
+    },
+    "input": {
+      "modelTitle": "Model",
+      "defaultModel": "Default model",
+      "thinkingLevelTitle": "Thinking (chain-of-thought) level",
+      "think": "Think: {{level}}",
+      "placeholderGlobal": "Let me help you create / edit a script or skill… (Enter to send)",
+      "placeholderBound": "Let me help you write / run / debug this {{kind}}… (Enter to send)",
+      "placeholderNotReady": "Initialize the environment first…",
+      "stop": "Stop",
+      "send": "Send (Enter)"
+    },
+    "reasoning": {
+      "off": "off",
+      "low": "low",
+      "medium": "med",
+      "high": "high"
+    },
+    "history": {
+      "empty": "No saved chats yet.",
+      "delete": "Delete"
+    },
+    "relativeTime": {
+      "justNow": "just now",
+      "minutesAgo": "{{count}}m ago",
+      "hoursAgo": "{{count}}h ago",
+      "daysAgo": "{{count}}d ago"
+    }
+  }
+}

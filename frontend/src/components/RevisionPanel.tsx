@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { DiffEditor } from "@monaco-editor/react";
 import { History, Tag, Trash2, GitFork, ChevronDown, ChevronRight, Loader2, GitBranch } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { revisions as revisionsApi } from "@/lib/api";
 import type { ScriptRevision, ScriptRevisionDetail } from "@/lib/types";
@@ -21,6 +22,7 @@ interface Props {
 }
 
 export default function RevisionPanel({ scriptId, currentFileContents, onLoad, refreshTrigger }: Props) {
+  const { t } = useTranslation("scriptPanels");
   const [items, setItems] = useState<ScriptRevision[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -85,7 +87,7 @@ export default function RevisionPanel({ scriptId, currentFileContents, onLoad, r
     setForking(true);
     try {
       const newScript = await revisionsApi.fork(scriptId, forkTarget.id, forkName.trim());
-      toast.success(`Created "${newScript.name}"`);
+      toast.success(t("revisionPanel.toast.forked", { name: newScript.name }));
       setForkTarget(null);
       setForkName("");
     } catch (e) {
@@ -124,12 +126,12 @@ export default function RevisionPanel({ scriptId, currentFileContents, onLoad, r
         <div className="p-3 space-y-1">
           {loading && items.length === 0 && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground py-4 justify-center">
-              <Loader2 className="h-3 w-3 animate-spin" /> Loading…
+              <Loader2 className="h-3 w-3 animate-spin" /> {t("revisionPanel.loading")}
             </div>
           )}
           {!loading && items.length === 0 && (
             <div className="text-xs text-muted-foreground text-center py-6">
-              No revisions yet. Save to create the first one.
+              {t("revisionPanel.empty")}
             </div>
           )}
 
@@ -158,10 +160,10 @@ export default function RevisionPanel({ scriptId, currentFileContents, onLoad, r
                 ) : (
                   <span
                     className="text-xs text-foreground/80 flex-1 min-w-0 truncate cursor-pointer hover:text-foreground"
-                    title="Click to edit label"
+                    title={t("revisionPanel.labelEditHint")}
                     onClick={() => { setEditingId(rev.id); setEditingLabel(rev.label); }}
                   >
-                    {rev.label || <span className="text-muted-foreground/50 italic">add label…</span>}
+                    {rev.label || <span className="text-muted-foreground/50 italic">{t("revisionPanel.addLabelPlaceholder")}</span>}
                   </span>
                 )}
 
@@ -177,21 +179,21 @@ export default function RevisionPanel({ scriptId, currentFileContents, onLoad, r
                   className="text-[10px] px-2 py-0.5 rounded border border-border/60 text-muted-foreground hover:text-foreground hover:border-border transition-colors flex items-center gap-1"
                 >
                   {diffLoading ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <History className="h-2.5 w-2.5" />}
-                  Diff
+                  {t("revisionPanel.actions.diff")}
                 </button>
                 <button
                   onClick={() => setRollbackTarget(rev)}
                   className="text-[10px] px-2 py-0.5 rounded border border-border/60 text-muted-foreground hover:text-foreground hover:border-border transition-colors flex items-center gap-1"
                 >
                   <GitBranch className="h-2.5 w-2.5" />
-                  Load
+                  {t("revisionPanel.actions.load")}
                 </button>
                 <button
-                  onClick={() => { setForkTarget(rev); setForkName(`${rev.name} (copy)`); }}
+                  onClick={() => { setForkTarget(rev); setForkName(t("revisionPanel.forkNameSuffix", { name: rev.name })); }}
                   className="text-[10px] px-2 py-0.5 rounded border border-border/60 text-muted-foreground hover:text-foreground hover:border-border transition-colors flex items-center gap-1"
                 >
                   <GitFork className="h-2.5 w-2.5" />
-                  Fork
+                  {t("revisionPanel.actions.fork")}
                 </button>
                 <button
                   onClick={() => handleDelete(rev)}
@@ -210,8 +212,8 @@ export default function RevisionPanel({ scriptId, currentFileContents, onLoad, r
         <DialogContent className="max-w-5xl w-[90vw] h-[80vh] flex flex-col gap-0 p-0">
           <DialogHeader className="px-4 py-3 border-b border-border shrink-0">
             <DialogTitle className="text-sm">
-              Revision #{diffRev?.revision_number}
-              {diffRev?.label && <span className="ml-2 text-muted-foreground font-normal">— {diffRev.label}</span>}
+              {t("revisionPanel.diffDialog.title", { number: diffRev?.revision_number })}
+              {diffRev?.label && <span className="ml-2 text-muted-foreground font-normal">{t("revisionPanel.diffDialog.labelSuffix", { label: diffRev.label })}</span>}
             </DialogTitle>
             {diffRev && diffRev.files.length > 1 && (
               <div className="flex gap-1 flex-wrap mt-1">
@@ -248,7 +250,7 @@ export default function RevisionPanel({ scriptId, currentFileContents, onLoad, r
             />
           </div>
           <div className="px-4 py-2 border-t border-border shrink-0 flex items-center gap-2">
-            <span className="text-[10px] text-muted-foreground">Left: revision &nbsp;·&nbsp; Right: current editor</span>
+            <span className="text-[10px] text-muted-foreground">{t("revisionPanel.diffDialog.legend")}</span>
           </div>
         </DialogContent>
       </Dialog>
@@ -257,22 +259,22 @@ export default function RevisionPanel({ scriptId, currentFileContents, onLoad, r
       <Dialog open={!!rollbackTarget} onOpenChange={open => { if (!open) setRollbackTarget(null); }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Load revision #{rollbackTarget?.revision_number}?</DialogTitle>
+            <DialogTitle>{t("revisionPanel.rollbackDialog.title", { number: rollbackTarget?.revision_number })}</DialogTitle>
             <DialogDescription>
               {rollbackTarget?.label
-                ? <>This will load <span className="font-medium text-foreground">"{rollbackTarget.label}"</span> into the editor.</>
-                : <>This will load revision #{rollbackTarget?.revision_number} into the editor.</>
+                ? <>{t("revisionPanel.rollbackDialog.withLabelPrefix")}<span className="font-medium text-foreground">"{rollbackTarget.label}"</span>{t("revisionPanel.rollbackDialog.withLabelSuffix")}</>
+                : <>{t("revisionPanel.rollbackDialog.withoutLabel", { number: rollbackTarget?.revision_number })}</>
               }
-              {" "}Your current unsaved changes will remain until you save.
+              {" "}{t("revisionPanel.rollbackDialog.unsavedNote")}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setRollbackTarget(null)} disabled={rollbackLoading}>
-              Cancel
+              {t("revisionPanel.rollbackDialog.cancel")}
             </Button>
             <Button onClick={confirmRollback} disabled={rollbackLoading}>
               {rollbackLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <GitBranch className="h-3 w-3" />}
-              Load into editor
+              {t("revisionPanel.rollbackDialog.confirm")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -282,23 +284,23 @@ export default function RevisionPanel({ scriptId, currentFileContents, onLoad, r
       <Dialog open={!!forkTarget} onOpenChange={open => { if (!open) setForkTarget(null); }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Fork revision #{forkTarget?.revision_number}</DialogTitle>
+            <DialogTitle>{t("revisionPanel.forkDialog.title", { number: forkTarget?.revision_number })}</DialogTitle>
             <DialogDescription>
-              Create a new script from this snapshot.
+              {t("revisionPanel.forkDialog.description")}
             </DialogDescription>
           </DialogHeader>
           <Input
             value={forkName}
             onChange={e => setForkName(e.target.value)}
-            placeholder="New script name"
+            placeholder={t("revisionPanel.forkDialog.namePlaceholder")}
             className="text-sm"
             onKeyDown={e => { if (e.key === "Enter") confirmFork(); }}
           />
           <DialogFooter>
-            <Button variant="outline" onClick={() => setForkTarget(null)} disabled={forking}>Cancel</Button>
+            <Button variant="outline" onClick={() => setForkTarget(null)} disabled={forking}>{t("revisionPanel.forkDialog.cancel")}</Button>
             <Button onClick={confirmFork} disabled={forking || !forkName.trim()}>
               {forking ? <Loader2 className="h-3 w-3 animate-spin" /> : <GitFork className="h-3 w-3" />}
-              Fork
+              {t("revisionPanel.forkDialog.confirm")}
             </Button>
           </DialogFooter>
         </DialogContent>

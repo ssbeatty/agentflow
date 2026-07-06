@@ -1,6 +1,7 @@
 "use client";
 import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 
@@ -17,6 +18,7 @@ type ConfirmFn = (message: string, opts?: ConfirmOpts) => Promise<boolean>;
 const Ctx = createContext<ConfirmFn | null>(null);
 
 export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
+  const { t } = useTranslation("common");
   const [message, setMessage] = useState<string | null>(null);
   const [opts, setOpts] = useState<ConfirmOpts>({});
   const resolveRef = useRef<((v: boolean) => void) | null>(null);
@@ -48,10 +50,10 @@ export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
           </DialogHeader>
           <DialogFooter>
             <Button variant="ghost" size="sm" onClick={() => finish(false)}>
-              {opts.cancelLabel || "Cancel"}
+              {opts.cancelLabel || t("confirm.cancel")}
             </Button>
             <Button variant={opts.destructive ? "destructive" : "default"} size="sm" onClick={() => finish(true)}>
-              {opts.confirmLabel || "Confirm"}
+              {opts.confirmLabel || t("confirm.confirm")}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Wrench, ChevronRight, ChevronDown, Loader2, Check, AlertCircle, Sparkles, BookOpen,
 } from "lucide-react";
@@ -54,13 +55,14 @@ function DetailBlock({ label, value, error }: { label: string; value: unknown; e
 }
 
 function ToolCallBox({ row }: { row: TraceRow }) {
+  const { t } = useTranslation("assistant");
   const [open, setOpen] = useState(false);
   const isSkill = row.kind === "skill";
   const a = isSkill
     ? { border: "border-fuchsia-500/25", bg: "bg-fuchsia-500/[0.04]", divider: "border-fuchsia-500/15",
-        icon: "text-fuchsia-400", Icon: BookOpen, label: "Skill load" }
+        icon: "text-fuchsia-400", Icon: BookOpen, label: t("agentNarrative.label.skill") }
     : { border: "border-emerald-500/25", bg: "bg-emerald-500/[0.04]", divider: "border-emerald-500/15",
-        icon: "text-emerald-400", Icon: Wrench, label: "Tool call" };
+        icon: "text-emerald-400", Icon: Wrench, label: t("agentNarrative.label.tool") };
   return (
     <div className={cn("rounded-lg border", a.border, a.bg)}>
       <button
@@ -84,9 +86,9 @@ function ToolCallBox({ row }: { row: TraceRow }) {
       </button>
       {open && (
         <div className={cn("px-3 pb-2.5 pt-2 space-y-1.5 border-t", a.divider)}>
-          <DetailBlock label="Arguments" value={row.input} />
-          <DetailBlock label="Result" value={row.output} />
-          {row.error && <DetailBlock label="Error" value={row.error} error />}
+          <DetailBlock label={t("agentNarrative.detail.arguments")} value={row.input} />
+          <DetailBlock label={t("agentNarrative.detail.result")} value={row.output} />
+          {row.error && <DetailBlock label={t("agentNarrative.detail.error")} value={row.error} error />}
         </div>
       )}
     </div>
@@ -100,6 +102,7 @@ export default function AgentNarrative({
   traces: TraceEvent[];
   excludeLastLlmText?: boolean;
 }) {
+  const { t } = useTranslation("assistant");
   const [expanded, setExpanded] = useState(false);
   const rows = buildRows(traces);
 
@@ -141,11 +144,11 @@ export default function AgentNarrative({
         {running
           ? <Loader2 className="h-3.5 w-3.5 text-blue-400 animate-spin" />
           : <Sparkles className="h-3.5 w-3.5 text-primary/70" />}
-        <span className="font-medium text-foreground/80">{running ? "Running…" : "Agent trace"}</span>
+        <span className="font-medium text-foreground/80">{running ? t("agentNarrative.header.running") : t("agentNarrative.header.trace")}</span>
         <span className="text-muted-foreground/60">
-          {skillCount > 0 && <> · {skillCount} skill{skillCount === 1 ? "" : "s"}</>}
-          {toolCount > 0 && <> · {toolCount} tool call{toolCount === 1 ? "" : "s"}</>}
-          {thinkCount > 0 && <> · {thinkCount} thought{thinkCount === 1 ? "" : "s"}</>}
+          {skillCount > 0 && <> · {t("agentNarrative.summary.skillCount", { count: skillCount })}</>}
+          {toolCount > 0 && <> · {t("agentNarrative.summary.toolCount", { count: toolCount })}</>}
+          {thinkCount > 0 && <> · {t("agentNarrative.summary.thoughtCount", { count: thinkCount })}</>}
         </span>
         {expanded
           ? <ChevronDown className="h-3.5 w-3.5 ml-auto text-muted-foreground" />

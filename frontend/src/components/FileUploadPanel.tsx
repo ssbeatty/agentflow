@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { Upload, Trash2, Copy, FileText, Loader2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { files } from "@/lib/api";
@@ -21,6 +22,7 @@ function formatSize(bytes: number): string {
 }
 
 export default function FileUploadPanel({ scriptId, onInsertRef }: Props) {
+  const { t } = useTranslation("scriptPanels");
   const [items, setItems] = useState<UploadedFile[]>([]);
   const [busy, setBusy] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -31,7 +33,7 @@ export default function FileUploadPanel({ scriptId, onInsertRef }: Props) {
     try {
       setItems(await files.list(scriptId));
     } catch (e) {
-      toast.error(`Failed to list files: ${e}`);
+      toast.error(t("fileUploadPanel.toast.listFailed", { error: e }));
     }
   }
 
@@ -45,22 +47,24 @@ export default function FileUploadPanel({ scriptId, onInsertRef }: Props) {
       for (const f of list) {
         await files.upload(f, scriptId);
       }
-      toast.success(list.length === 1 ? `Uploaded ${list[0].name}` : `Uploaded ${list.length} files`);
+      toast.success(list.length === 1
+        ? t("fileUploadPanel.toast.uploadedOne", { name: list[0].name })
+        : t("fileUploadPanel.toast.uploadedMany", { count: list.length }));
       await refresh();
     } catch (e) {
-      toast.error(`Upload failed: ${e}`);
+      toast.error(t("fileUploadPanel.toast.uploadFailed", { error: e }));
     } finally {
       setBusy(false);
     }
   }
 
   async function remove(item: UploadedFile) {
-    if (!(await confirm(`Delete "${item.original_name}"?`, { confirmLabel: "Delete", destructive: true }))) return;
+    if (!(await confirm(t("fileUploadPanel.confirm.deleteMessage", { name: item.original_name }), { confirmLabel: t("fileUploadPanel.confirm.deleteLabel"), destructive: true }))) return;
     try {
       await files.delete(item.id);
       setItems(prev => prev.filter(x => x.id !== item.id));
     } catch (e) {
-      toast.error(`Delete failed: ${e}`);
+      toast.error(t("fileUploadPanel.toast.deleteFailed", { error: e }));
     }
   }
 
@@ -68,7 +72,7 @@ export default function FileUploadPanel({ scriptId, onInsertRef }: Props) {
     const snippet = `{"$file":"${item.id}"}`;
     try {
       await navigator.clipboard.writeText(snippet);
-      toast.success(`Copied ref for ${item.original_name}`);
+      toast.success(t("fileUploadPanel.toast.copied", { name: item.original_name }));
     } catch {
       toast.message(snippet);  // fallback: at least show it
     }
@@ -82,9 +86,9 @@ export default function FileUploadPanel({ scriptId, onInsertRef }: Props) {
   return (
     <div className="space-y-1.5">
       <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/70 flex items-center justify-between">
-        <span>Files</span>
+        <span>{t("fileUploadPanel.heading")}</span>
         <span className="text-[10px] normal-case font-normal text-muted-foreground">
-          {items.length > 0 ? `${items.length} uploaded` : ""}
+          {items.length > 0 ? t("fileUploadPanel.uploadedCount", { count: items.length }) : ""}
         </span>
       </p>
 
@@ -104,9 +108,9 @@ export default function FileUploadPanel({ scriptId, onInsertRef }: Props) {
         }`}
       >
         {busy ? (
-          <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Uploading…</>
+          <><Loader2 className="h-3.5 w-3.5 animate-spin" /> {t("fileUploadPanel.dropZone.uploading")}</>
         ) : (
-          <><Upload className="h-3.5 w-3.5" /> Drop files or click to upload</>
+          <><Upload className="h-3.5 w-3.5" /> {t("fileUploadPanel.dropZone.prompt")}</>
         )}
         <input
           ref={inputRef}
@@ -129,7 +133,7 @@ export default function FileUploadPanel({ scriptId, onInsertRef }: Props) {
               <button
                 onClick={() => insertRef(item)}
                 className="flex-1 min-w-0 text-left"
-                title={onInsertRef ? "Insert {$file} ref into input JSON" : `Copy {"$file":"${item.id}"} to clipboard`}
+                title={onInsertRef ? t("fileUploadPanel.insertTitle") : t("fileUploadPanel.copyTitleWithId", { id: item.id })}
               >
                 <div className="truncate text-xs text-foreground">{item.original_name}</div>
                 <div className="text-[10px] text-muted-foreground">
@@ -139,14 +143,14 @@ export default function FileUploadPanel({ scriptId, onInsertRef }: Props) {
               <button
                 onClick={() => copyRef(item)}
                 className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-secondary text-muted-foreground hover:text-foreground transition"
-                title="Copy {$file} ref"
+                title={t("fileUploadPanel.copyRefTitle")}
               >
                 <Copy className="h-3 w-3" />
               </button>
               <button
                 onClick={() => remove(item)}
                 className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition"
-                title="Delete file"
+                title={t("fileUploadPanel.deleteFileTitle")}
               >
                 <Trash2 className="h-3 w-3" />
               </button>

@@ -1,0 +1,54 @@
+{
+  "header": {
+    "home": "首页",
+    "title": "安全设置",
+    "signOut": "退出登录"
+  },
+  "account": {
+    "title": "管理员账号",
+    "signedInAs": "当前登录:",
+    "currentPassword": "当前密码",
+    "newPassword": "新密码(至少 6 个字符)",
+    "confirmPassword": "确认新密码",
+    "mismatch": "两次输入的密码不一致",
+    "submit": "修改密码",
+    "toast": {
+      "updated": "密码已更新",
+      "failed": "更新失败"
+    }
+  },
+  "apiKeys": {
+    "title": "API 密钥",
+    "issue": "签发密钥",
+    "defaultName": "API 密钥",
+    "description": {
+      "pre": "用于向调用运行接口的外部系统进行身份验证。请在请求头中携带",
+      "to": "调用"
+    },
+    "empty": "还没有 API 密钥",
+    "row": {
+      "created": "创建于",
+      "lastUsed": "最后使用"
+    },
+    "revoke": "吊销",
+    "toast": {
+      "createFailed": "创建失败",
+      "revoked": "已吊销",
+      "revokeFailed": "吊销失败"
+    },
+    "createDialog": {
+      "title": "签发新的 API 密钥",
+      "description": "给密钥起个名字,方便以后识别它的用途。",
+      "name": "名称",
+      "namePlaceholder": "例如:生产环境 / n8n 集成",
+      "cancel": "取消",
+      "submit": "签发"
+    },
+    "revealDialog": {
+      "title": "保存你的 API 密钥",
+      "warning": "此密钥只会完整显示这一次,关闭后将无法再次查看——请立即复制并保存。",
+      "copy": "复制",
+      "done": "我已保存"
+    }
+  }
+}

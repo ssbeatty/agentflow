@@ -7,6 +7,7 @@ import {
   Plus, FolderPlus, Upload, FolderUp, Download, Trash2, Check, X, Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 export interface TreeFile {
@@ -142,6 +143,7 @@ export default function FileTree({
   onUploadFiles, onDownloadFile, showRequirements = true,
   emptyDirs = [], onNewFolder, onDeleteDir,
 }: Props) {
+  const { t } = useTranslation("scriptEditor");
   const [renamingFile, setRenamingFile] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [addingIn, setAddingIn] = useState<string | null>(null); // dir path prefix while adding a file, or null
@@ -299,7 +301,7 @@ export default function FileTree({
     if (!entries.length) return;
     try {
       await onUploadFiles(entries);
-      toast.success(`${entries.length} file${entries.length > 1 ? "s" : ""} uploaded`);
+      toast.success(t("fileTree.toast.filesUploaded", { count: entries.length }));
     } catch (e) { toast.error(String(e)); }
   }
 
@@ -390,16 +392,16 @@ export default function FileTree({
         <div key={entry.filename} className="flex items-center gap-1.5 pr-2 h-[22px] bg-destructive/15" style={{ paddingLeft: pad }}>
           <Icon className={`h-3.5 w-3.5 shrink-0 ${cls}`} />
           <span className="flex-1 text-xs font-mono truncate min-w-0 text-muted-foreground">{node.name}</span>
-          <span className="text-[10px] text-muted-foreground mr-1 shrink-0">Delete?</span>
+          <span className="text-[10px] text-muted-foreground mr-1 shrink-0">{t("fileTree.deleteConfirm")}</span>
           <button onClick={async () => {
             try { await onDeleteFile(entry.filename); }
             catch (e) { toast.error(String(e)); }
             finally { setPendingDelete(null); }
-          }} className="h-4 w-4 rounded flex items-center justify-center text-destructive hover:bg-destructive/20 shrink-0" title="Confirm">
+          }} className="h-4 w-4 rounded flex items-center justify-center text-destructive hover:bg-destructive/20 shrink-0" title={t("fileTree.confirm")}>
             <Check className="h-3 w-3" />
           </button>
           <button onClick={() => setPendingDelete(null)}
-            className="h-4 w-4 rounded flex items-center justify-center text-muted-foreground hover:bg-white/10 shrink-0" title="Cancel">
+            className="h-4 w-4 rounded flex items-center justify-center text-muted-foreground hover:bg-white/10 shrink-0" title={t("fileTree.cancel")}>
             <X className="h-3 w-3" />
           </button>
         </div>
@@ -422,18 +424,18 @@ export default function FileTree({
         <span className="flex-1 text-xs font-mono truncate min-w-0">{node.name}</span>
 
         <div className="flex items-center gap-1 group-hover:hidden shrink-0">
-          {entry.isDirty && <span className="h-[7px] w-[7px] rounded-full bg-foreground/50 shrink-0" title="Unsaved" />}
-          {entry.is_main && <span className="text-[9px] px-1 rounded-sm border border-border/50 text-muted-foreground/60 font-mono leading-4 shrink-0">M</span>}
+          {entry.isDirty && <span className="h-[7px] w-[7px] rounded-full bg-foreground/50 shrink-0" title={t("fileTree.unsaved")} />}
+          {entry.is_main && <span className="text-[9px] px-1 rounded-sm border border-border/50 text-muted-foreground/60 font-mono leading-4 shrink-0">{t("fileTree.mainBadge")}</span>}
         </div>
 
         <div className="hidden group-hover:flex items-center gap-0.5 shrink-0">
           <button onClick={e => { e.stopPropagation(); onDownloadFile(entry.filename); }}
-            className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors" title="Download">
+            className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors" title={t("fileTree.actions.download")}>
             <Download className="h-3 w-3" />
           </button>
           {canDelete && (
             <button onClick={e => { e.stopPropagation(); setPendingDelete(entry.filename); }}
-              className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-white/10 transition-colors" title="Delete">
+              className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-white/10 transition-colors" title={t("fileTree.actions.delete")}>
               <Trash2 className="h-3 w-3" />
             </button>
           )}
@@ -455,13 +457,13 @@ export default function FileTree({
           <div className="flex items-center gap-1 pr-2 h-[22px] bg-destructive/15" style={{ paddingLeft: pad }}>
             <Folder className="h-3.5 w-3.5 shrink-0 text-sky-400/80" />
             <span className="flex-1 text-xs font-mono truncate min-w-0 text-muted-foreground">{node.name}</span>
-            <span className="text-[10px] text-muted-foreground mr-1 shrink-0">Delete folder?</span>
+            <span className="text-[10px] text-muted-foreground mr-1 shrink-0">{t("fileTree.deleteFolderConfirm")}</span>
             <button onClick={() => commitDeleteDir(node.path)}
-              className="h-4 w-4 rounded flex items-center justify-center text-destructive hover:bg-destructive/20 shrink-0" title="Confirm">
+              className="h-4 w-4 rounded flex items-center justify-center text-destructive hover:bg-destructive/20 shrink-0" title={t("fileTree.confirm")}>
               <Check className="h-3 w-3" />
             </button>
             <button onClick={() => setPendingDeleteDir(null)}
-              className="h-4 w-4 rounded flex items-center justify-center text-muted-foreground hover:bg-white/10 shrink-0" title="Cancel">
+              className="h-4 w-4 rounded flex items-center justify-center text-muted-foreground hover:bg-white/10 shrink-0" title={t("fileTree.cancel")}>
               <X className="h-3 w-3" />
             </button>
           </div>
@@ -483,12 +485,12 @@ export default function FileTree({
           <span className="flex-1 text-xs font-mono truncate min-w-0">{node.name}</span>
           <div className="hidden group-hover:flex items-center gap-0.5 shrink-0">
             <button onClick={e => { e.stopPropagation(); startAddNew(node.path); }}
-              className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors" title="New file in folder">
+              className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors" title={t("fileTree.actions.newFileInFolder")}>
               <Plus className="h-3 w-3" />
             </button>
             {onDeleteDir && (
               <button onClick={e => { e.stopPropagation(); setPendingDeleteDir(node.path); }}
-                className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-white/10 transition-colors" title="Delete folder">
+                className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-white/10 transition-colors" title={t("fileTree.actions.deleteFolder")}>
                 <Trash2 className="h-3 w-3" />
               </button>
             )}
@@ -519,7 +521,7 @@ export default function FileTree({
             if (e.key === "Escape") { setAddingIn(null); setNewFileName(""); }
           }}
           onBlur={() => { if (!newFileName.trim()) setAddingIn(null); else commitNewFile(); }}
-          placeholder="filename.py"
+          placeholder={t("fileTree.placeholder.filename")}
           className="flex-1 min-w-0 bg-[#1a1a1a] border border-[#007acc] rounded-sm px-1.5 h-[18px] text-xs font-mono text-foreground placeholder:text-muted-foreground/40 focus:outline-none"
           spellCheck={false}
         />
@@ -540,7 +542,7 @@ export default function FileTree({
             if (e.key === "Escape") { setAddingFolderIn(null); setNewFolderName(""); }
           }}
           onBlur={() => { if (!newFolderName.trim()) setAddingFolderIn(null); else commitNewFolder(); }}
-          placeholder="folder-name"
+          placeholder={t("fileTree.placeholder.folderName")}
           className="flex-1 min-w-0 bg-[#1a1a1a] border border-[#007acc] rounded-sm px-1.5 h-[18px] text-xs font-mono text-foreground placeholder:text-muted-foreground/40 focus:outline-none"
           spellCheck={false}
         />
@@ -561,21 +563,21 @@ export default function FileTree({
       {/* Toolbar */}
       <div className="flex items-center px-2 border-b border-border shrink-0 h-8">
         <span className="text-[10px] uppercase tracking-widest text-muted-foreground/60 font-semibold flex-1 pl-0.5">
-          Explorer
+          {t("fileTree.explorer")}
         </span>
-        <button onClick={() => startAddNew("")} title="New file"
+        <button onClick={() => startAddNew("")} title={t("fileTree.actions.newFile")}
           className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors">
           <Plus className="h-3.5 w-3.5" />
         </button>
-        <button onClick={() => startAddFolder("")} title="New folder"
+        <button onClick={() => startAddFolder("")} title={t("fileTree.actions.newFolder")}
           className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors ml-0.5">
           <FolderPlus className="h-3.5 w-3.5" />
         </button>
-        <button onClick={() => uploadRef.current?.click()} title="Upload files"
+        <button onClick={() => uploadRef.current?.click()} title={t("fileTree.actions.uploadFiles")}
           className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors ml-0.5">
           <Upload className="h-3.5 w-3.5" />
         </button>
-        <button onClick={() => uploadDirRef.current?.click()} title="Upload folder (keeps structure)"
+        <button onClick={() => uploadDirRef.current?.click()} title={t("fileTree.actions.uploadFolderHint")}
           className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors ml-0.5">
           <FolderUp className="h-3.5 w-3.5" />
         </button>
@@ -611,7 +613,7 @@ export default function FileTree({
       {isDragOver && (
         <div className="absolute inset-0 flex items-end justify-center pb-4 pointer-events-none">
           <div className="text-xs text-primary font-medium bg-background/90 px-3 py-1.5 rounded-md border border-primary/40 shadow">
-            Drop files or a folder to upload
+            {t("fileTree.dropOverlay")}
           </div>
         </div>
       )}
@@ -669,6 +671,7 @@ function DirContextMenu({ x, y, onNewFile, onNewFolder, onUpload, onUploadFolder
   x: number; y: number; onNewFile: () => void; onNewFolder?: () => void;
   onUpload: () => void; onUploadFolder?: () => void; onDelete?: () => void;
 }) {
+  const { t } = useTranslation("scriptEditor");
   const rows = 2 + (onNewFolder ? 1 : 0) + (onUploadFolder ? 1 : 0) + (onDelete ? 1 : 0);
   const menuW = 170, menuH = 12 + rows * 28;
   const adjX = x + menuW > window.innerWidth ? x - menuW : x;
@@ -683,25 +686,25 @@ function DirContextMenu({ x, y, onNewFile, onNewFolder, onUpload, onUploadFolder
       <button onClick={onNewFile}
         className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-secondary transition-colors text-left">
         <Plus className="h-3 w-3 text-muted-foreground" />
-        New file
+        {t("fileTree.actions.newFile")}
       </button>
       {onNewFolder && (
         <button onClick={onNewFolder}
           className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-secondary transition-colors text-left">
           <FolderPlus className="h-3 w-3 text-muted-foreground" />
-          New folder
+          {t("fileTree.actions.newFolder")}
         </button>
       )}
       <button onClick={onUpload}
         className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-secondary transition-colors text-left">
         <Upload className="h-3 w-3 text-muted-foreground" />
-        Upload files
+        {t("fileTree.actions.uploadFiles")}
       </button>
       {onUploadFolder && (
         <button onClick={onUploadFolder}
           className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-secondary transition-colors text-left">
           <FolderUp className="h-3 w-3 text-muted-foreground" />
-          Upload folder
+          {t("fileTree.actions.uploadFolder")}
         </button>
       )}
       {onDelete && (
@@ -710,7 +713,7 @@ function DirContextMenu({ x, y, onNewFile, onNewFolder, onUpload, onUploadFolder
           <button onClick={onDelete}
             className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-destructive/10 text-destructive transition-colors text-left">
             <Trash2 className="h-3 w-3" />
-            Delete folder
+            {t("fileTree.actions.deleteFolder")}
           </button>
         </>
       )}
@@ -727,6 +730,7 @@ function FileContextMenu({
   canRename: boolean; canDelete: boolean;
   onRename: () => void; onDownload: () => void; onDelete: () => void;
 }) {
+  const { t } = useTranslation("scriptEditor");
   const menuW = 180, menuH = canDelete ? 116 : 84;
   const adjX = x + menuW > window.innerWidth ? x - menuW : x;
   const adjY = y + menuH > window.innerHeight ? y - menuH : y;
@@ -746,14 +750,14 @@ function FileContextMenu({
         <button onClick={onRename}
           className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-secondary transition-colors text-left">
           <Pencil className="h-3 w-3 text-muted-foreground" />
-          Rename
+          {t("fileTree.actions.rename")}
           <span className="ml-auto text-[10px] text-muted-foreground/60">F2</span>
         </button>
       )}
       <button onClick={onDownload}
         className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-secondary transition-colors text-left">
         <Download className="h-3 w-3 text-muted-foreground" />
-        Download
+        {t("fileTree.actions.download")}
       </button>
 
       {canDelete && (
@@ -762,7 +766,7 @@ function FileContextMenu({
           <button onClick={onDelete}
             className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-destructive/10 text-destructive transition-colors text-left">
             <Trash2 className="h-3 w-3" />
-            Delete
+            {t("fileTree.actions.delete")}
           </button>
         </>
       )}

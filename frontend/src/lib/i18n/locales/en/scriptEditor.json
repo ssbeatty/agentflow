@@ -1,0 +1,43 @@
+{
+  "scriptEditor": {
+    "loadingEditor": "Loading editor…"
+  },
+  "fileTree": {
+    "explorer": "Explorer",
+    "actions": {
+      "newFile": "New file",
+      "newFolder": "New folder",
+      "uploadFiles": "Upload files",
+      "uploadFolder": "Upload folder",
+      "uploadFolderHint": "Upload folder (keeps structure)",
+      "newFileInFolder": "New file in folder",
+      "download": "Download",
+      "delete": "Delete",
+      "deleteFolder": "Delete folder",
+      "rename": "Rename"
+    },
+    "placeholder": {
+      "filename": "filename.py",
+      "folderName": "folder-name"
+    },
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "deleteConfirm": "Delete?",
+    "deleteFolderConfirm": "Delete folder?",
+    "unsaved": "Unsaved",
+    "mainBadge": "M",
+    "dropOverlay": "Drop files or a folder to upload",
+    "toast": {
+      "filesUploaded_one": "{{count}} file uploaded",
+      "filesUploaded_other": "{{count}} files uploaded"
+    }
+  },
+  "logPanel": {
+    "empty": "Run the script to see logs",
+    "dataLabel": "data"
+  },
+  "mermaidView": {
+    "renderFailed": "Mermaid render failed: {{error}}",
+    "sourceLabel": "source"
+  }
+}

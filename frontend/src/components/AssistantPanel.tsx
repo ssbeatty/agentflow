@@ -1,5 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import {
   Sparkles, Send, Square, Loader2, X, RotateCcw, FileDiff, Check,
   AlertTriangle, PackagePlus, Eraser, Brain, Plus, History, Trash2,
@@ -56,25 +58,24 @@ const HISTORY_LIMIT = 16;
 const HISTORY_STORAGE_LIMIT = 60;
 const MAX_SESSIONS = 20;
 const REASONING_LEVELS = ["off", "low", "medium", "high"] as const;
-const REASONING_LABEL: Record<string, string> = { off: "off", low: "low", medium: "med", high: "high" };
 const DEFAULT_MODEL_VALUE = "__agentflow_default_model__";
 
 /** One archived chat thread for the current target (see the History dialog). */
 interface Session { id: string; title: string; updatedAt: number; messages: Msg[]; }
 
-function sessionTitle(msgs: Msg[]): string {
+function sessionTitle(msgs: Msg[], t: TFunction): string {
   const text = (msgs.find((m) => m.role === "user")?.content || "").trim().replace(/\s+/g, " ");
-  if (!text) return "New chat";
+  if (!text) return t("assistantPanel.newChat");
   return text.length > 48 ? `${text.slice(0, 48)}…` : text;
 }
 
-function relativeTime(ts: number): string {
+function relativeTime(ts: number, t: TFunction): string {
   const min = Math.round((Date.now() - ts) / 60000);
-  if (min < 1) return "just now";
-  if (min < 60) return `${min}m ago`;
+  if (min < 1) return t("assistantPanel.relativeTime.justNow");
+  if (min < 60) return t("assistantPanel.relativeTime.minutesAgo", { count: min });
   const hr = Math.round(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  return `${Math.round(hr / 24)}d ago`;
+  if (hr < 24) return t("assistantPanel.relativeTime.hoursAgo", { count: hr });
+  return t("assistantPanel.relativeTime.daysAgo", { count: Math.round(hr / 24) });
 }
 
 interface ModelGroup {
@@ -121,6 +122,7 @@ export default function AssistantPanel({
   mode, boundKind, boundLabel, boundId,
   buildContext, onBeforeTurn, onAfterTurn, onRevert, onOpenFile, onClose, onBusyChange,
 }: Props) {
+  const { t } = useTranslation("assistant");
   const [info, setInfo] = useState<{ script_id: string; venv_ready: boolean } | null>(null);
   const [infoError, setInfoError] = useState<string | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -238,11 +240,11 @@ export default function AssistantPanel({
   const newChat = useCallback(() => {
     if (sending || messages.length === 0) return;
     const snapshot = messages.slice(-HISTORY_STORAGE_LIMIT);
-    setSessions((prev) => [{ id: uid(), title: sessionTitle(snapshot), updatedAt: Date.now(), messages: snapshot }, ...prev].slice(0, MAX_SESSIONS));
+    setSessions((prev) => [{ id: uid(), title: sessionTitle(snapshot, t), updatedAt: Date.now(), messages: snapshot }, ...prev].slice(0, MAX_SESSIONS));
     setMessages([]);
     setDiff([]);
     setDiffForId(null);
-  }, [sending, messages]);
+  }, [sending, messages, t]);
 
   // Swap in an archived session as the current thread, archiving the outgoing one first.
   const openSession = useCallback((session: Session) => {
@@ -251,7 +253,7 @@ export default function AssistantPanel({
       let next = prev.filter((s) => s.id !== session.id);
       if (messages.length > 0) {
         const snapshot = messages.slice(-HISTORY_STORAGE_LIMIT);
-        next = [{ id: uid(), title: sessionTitle(snapshot), updatedAt: Date.now(), messages: snapshot }, ...next];
+        next = [{ id: uid(), title: sessionTitle(snapshot, t), updatedAt: Date.now(), messages: snapshot }, ...next];
       }
       return next.slice(0, MAX_SESSIONS);
     });
@@ -259,7 +261,7 @@ export default function AssistantPanel({
     setDiff([]);
     setDiffForId(null);
     setHistoryOpen(false);
-  }, [sending, messages]);
+  }, [sending, messages, t]);
 
   const deleteSession = useCallback((id: string) => {
     setSessions((prev) => prev.filter((s) => s.id !== id));
@@ -275,18 +277,18 @@ export default function AssistantPanel({
     ws.onmessage = (e) => {
       let evt: { type: string; text?: string; done?: boolean; message?: string };
       try { evt = JSON.parse(e.data); } catch { return; }
-      if (evt.type === "error") { toast.error(evt.message || "Initialization failed"); return; }
+      if (evt.type === "error") { toast.error(evt.message || t("assistantPanel.toast.initializationFailed")); return; }
       if (evt.text) setVenvLines((prev) => [...prev.slice(-80), evt.text!]);
       if (evt.done) {
         ws.close();
         setVenvBusy(false);
         const ok = evt.text === "DONE" || !(evt.text || "").startsWith("ERROR:");
-        if (ok) { setInfo((p) => p ? { ...p, venv_ready: true } : p); toast.success("Assistant environment ready"); }
-        else toast.error("Environment setup failed — see the log");
+        if (ok) { setInfo((p) => p ? { ...p, venv_ready: true } : p); toast.success(t("assistantPanel.toast.envReady")); }
+        else toast.error(t("assistantPanel.toast.envSetupFailed"));
       }
     };
-    ws.onerror = () => { setVenvBusy(false); toast.error("Environment setup connection failed"); };
-  }, [info, venvBusy]);
+    ws.onerror = () => { setVenvBusy(false); toast.error(t("assistantPanel.toast.envConnectionFailed")); };
+  }, [info, venvBusy, t]);
 
   // ── turn lifecycle ──────────────────────────────────────────────────────────
   // A turn can stream reasoning (<think>…</think>) and still end with no visible
@@ -314,7 +316,7 @@ export default function AssistantPanel({
           return {
             ...m,
             error: exc.error ?? m.error ?? (m.blocks.length
-              ? "The model finished thinking but returned no answer — it may have run out of output length. Try again, or lower the Thinking level."
+              ? t("assistantPanel.error.noAnswer")
               : undefined),
             streaming: false,
           };
@@ -338,7 +340,7 @@ export default function AssistantPanel({
     } catch { /* editor refetch best-effort */ }
     setSending(false);
     setExecId(null);
-  }, [onAfterTurn]);
+  }, [onAfterTurn, t]);
 
   const openWs = useCallback((executionId: string, asstId: string) => {
     liveBlocksRef.current = [];
@@ -368,16 +370,16 @@ export default function AssistantPanel({
       }
     };
     ws.onerror = () => {
-      setMessages((prev) => prev.map((m) => m.id === asstId ? { ...m, error: "WebSocket connection error", streaming: false } : m));
+      setMessages((prev) => prev.map((m) => m.id === asstId ? { ...m, error: t("assistantPanel.error.wsError"), streaming: false } : m));
       setSending(false);
       setExecId(null);
     };
-  }, [finalize]);
+  }, [finalize, t]);
 
   const send = useCallback(async () => {
     const msg = input.trim();
     if (!msg || sending || !info) return;
-    if (!info.venv_ready) { toast.error("Please initialize the assistant environment first"); return; }
+    if (!info.venv_ready) { toast.error(t("assistantPanel.toast.initEnvFirst")); return; }
 
     const history = messages
       .filter((m) => !m.error)
@@ -410,7 +412,7 @@ export default function AssistantPanel({
       setMessages((prev) => prev.map((m) => m.id === asstId ? { ...m, error: String(e), streaming: false } : m));
       setSending(false);
     }
-  }, [input, sending, info, messages, model, reasoning, boundId, onBeforeTurn, buildContext, openWs]);
+  }, [input, sending, info, messages, model, reasoning, boundId, onBeforeTurn, buildContext, openWs, t]);
 
   const stop = useCallback(async () => {
     if (!execId) return;
@@ -423,13 +425,15 @@ export default function AssistantPanel({
     try {
       await onRevert?.(filenames);
       setDiff((prev) => prev.filter((d) => !filenames.includes(d.filename)));
-      toast.success(filenames.length > 1 ? "Reverted this turn" : `Reverted ${filenames[0]}`);
+      toast.success(filenames.length > 1
+        ? t("assistantPanel.toast.revertedTurn")
+        : t("assistantPanel.toast.revertedFile", { filename: filenames[0] }));
     } catch (e) {
-      toast.error(`Revert failed: ${e}`);
+      toast.error(t("assistantPanel.toast.revertFailed", { error: String(e) }));
     } finally {
       setReverting(false);
     }
-  }, [onRevert]);
+  }, [onRevert, t]);
 
   const selected = diff.find((d) => d.filename === diffFile) ?? diff[0];
   const cycleReasoning = () => setReasoning((r) => REASONING_LEVELS[(REASONING_LEVELS.indexOf(r as typeof REASONING_LEVELS[number]) + 1) % REASONING_LEVELS.length]);
@@ -442,30 +446,30 @@ export default function AssistantPanel({
       <div className="flex items-center gap-2 pl-5 pr-3 py-2 border-b border-border shrink-0">
         <Sparkles className="h-4 w-4 text-primary shrink-0" />
         <div className="min-w-0 leading-tight">
-          <div className="text-sm font-medium">AI Assistant</div>
+          <div className="text-sm font-medium">{t("assistantPanel.header.title")}</div>
           <div className="text-[10px] text-muted-foreground truncate">
             {mode === "bound"
-              ? <>Editing · <span className="text-foreground/80">{boundLabel || boundKind}</span> · {boundKind}</>
-              : "Global · No project bound"}
+              ? <>{t("assistantPanel.header.editing")} · <span className="text-foreground/80">{boundLabel || t(`assistantPanel.kind.${boundKind ?? "script"}`)}</span> · {t(`assistantPanel.kind.${boundKind ?? "script"}`)}</>
+              : t("assistantPanel.header.global")}
           </div>
         </div>
         <div className="ml-auto flex items-center gap-1 shrink-0">
           {sessions.length > 0 && (
-            <button title="Chat history" onClick={() => setHistoryOpen(true)} className="p-1 text-muted-foreground hover:text-foreground">
+            <button title={t("assistantPanel.title.chatHistory")} onClick={() => setHistoryOpen(true)} className="p-1 text-muted-foreground hover:text-foreground">
               <History className="h-3.5 w-3.5" />
             </button>
           )}
           {messages.length > 0 && (
-            <button title="New chat" onClick={newChat} className="p-1 text-muted-foreground hover:text-foreground">
+            <button title={t("assistantPanel.newChat")} onClick={newChat} className="p-1 text-muted-foreground hover:text-foreground">
               <Plus className="h-3.5 w-3.5" />
             </button>
           )}
           {messages.length > 0 && (
-            <button title="Clear chat" onClick={() => { setMessages([]); setDiff([]); setDiffForId(null); }} className="p-1 text-muted-foreground hover:text-foreground">
+            <button title={t("assistantPanel.title.clearChat")} onClick={() => { setMessages([]); setDiff([]); setDiffForId(null); }} className="p-1 text-muted-foreground hover:text-foreground">
               <Eraser className="h-3.5 w-3.5" />
             </button>
           )}
-          <button title="Collapse" onClick={onClose} className="p-1 text-muted-foreground hover:text-foreground">
+          <button title={t("assistantPanel.title.collapse")} onClick={onClose} className="p-1 text-muted-foreground hover:text-foreground">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -475,19 +479,19 @@ export default function AssistantPanel({
       <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-3 py-3 space-y-4 min-h-0">
         {infoError && (
           <div className="text-xs text-destructive flex items-start gap-1.5">
-            <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />Failed to load assistant: {infoError}
+            <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />{t("assistantPanel.error.loadFailed", { error: infoError })}
           </div>
         )}
 
         {info && !info.venv_ready && (
           <div className="rounded-lg border border-amber-500/30 bg-amber-500/[0.06] p-3 text-xs space-y-2">
             <div className="flex items-center gap-1.5 font-medium text-amber-500">
-              <PackagePlus className="h-3.5 w-3.5" />First-time setup
+              <PackagePlus className="h-3.5 w-3.5" />{t("assistantPanel.setup.title")}
             </div>
-            <p className="text-muted-foreground leading-relaxed">Installs baseline packages (langchain / langgraph, ~1–3 min, one time).</p>
+            <p className="text-muted-foreground leading-relaxed">{t("assistantPanel.setup.description")}</p>
             <Button size="sm" onClick={initVenv} disabled={venvBusy} className="h-7 text-xs">
               {venvBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <PackagePlus className="h-3 w-3" />}
-              {venvBusy ? "Initializing…" : "Initialize environment"}
+              {venvBusy ? t("assistantPanel.setup.initializing") : t("assistantPanel.setup.initialize")}
             </Button>
             {venvLines.length > 0 && (
               <pre className="mt-1 max-h-32 overflow-auto rounded bg-black/40 p-2 font-mono text-[10px] text-muted-foreground/80 whitespace-pre-wrap">{venvLines.join("\n")}</pre>
@@ -499,31 +503,31 @@ export default function AssistantPanel({
           <div className="text-xs text-muted-foreground/70 leading-relaxed space-y-2 pt-2">
             {mode === "global" ? (
               <>
-                <p>Currently <b className="text-foreground">not bound to a project</b>. I can help you create or edit a script / skill. Try:</p>
+                <p>{t("assistantPanel.empty.global.prefix")}<b className="text-foreground">{t("assistantPanel.empty.global.notBound")}</b>{t("assistantPanel.empty.global.suffix")}</p>
                 <ul className="space-y-1 pl-1">
-                  <li>· "Create a script that scrapes a website daily and summarizes it"</li>
-                  <li>· "Open a script / skill page and I'll automatically scope my edits to just that one"</li>
+                  <li>· {t("assistantPanel.empty.global.example1")}</li>
+                  <li>· {t("assistantPanel.empty.global.example2")}</li>
                 </ul>
-                <p className="text-muted-foreground/50">When you open a script / skill's edit page, I'll automatically bind to it and only change that one.</p>
+                <p className="text-muted-foreground/50">{t("assistantPanel.empty.global.hint")}</p>
               </>
             ) : (
               <>
-                <p>Let me write, edit and debug this <b className="text-foreground">{boundKind}</b> with you. Try:</p>
+                <p>{t("assistantPanel.empty.bound.prefix")}<b className="text-foreground">{t(`assistantPanel.kind.${boundKind ?? "script"}`)}</b>{t("assistantPanel.empty.bound.suffix")}</p>
                 <ul className="space-y-1 pl-1">
                   {boundKind === "skill" ? (
                     <>
-                      <li>· “Make SKILL.md clear: when to use this skill and how”</li>
-                      <li>· “Add references/examples.md with a few usage examples”</li>
+                      <li>· {t("assistantPanel.empty.bound.skillExample1")}</li>
+                      <li>· {t("assistantPanel.empty.bound.skillExample2")}</li>
                     </>
                   ) : (
                     <>
-                      <li>· “Add a `city` input, look up its weather via web_search, and return it”</li>
-                      <li>· “This script is failing — find the bug and fix it”</li>
-                      <li>· “Render the result as a table with markdown()”</li>
+                      <li>· {t("assistantPanel.empty.bound.scriptExample1")}</li>
+                      <li>· {t("assistantPanel.empty.bound.scriptExample2")}</li>
+                      <li>· {t("assistantPanel.empty.bound.scriptExample3")}</li>
                     </>
                   )}
                 </ul>
-                <p className="text-muted-foreground/50">Changes are applied first, then you review or revert them in the diff below.</p>
+                <p className="text-muted-foreground/50">{t("assistantPanel.empty.bound.hint")}</p>
               </>
             )}
           </div>
@@ -553,19 +557,19 @@ export default function AssistantPanel({
         {showDiff && (
           <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/[0.05] p-3 text-xs space-y-2">
             <div className="flex items-center gap-1.5 font-medium text-emerald-500">
-              <FileDiff className="h-3.5 w-3.5 shrink-0" />{diff.length} file{diff.length === 1 ? "" : "s"} changed this turn
+              <FileDiff className="h-3.5 w-3.5 shrink-0" />{t("assistantPanel.diff.filesChanged", { count: diff.length })}
             </div>
             <div className="space-y-1">
               {diff.map((d) => (
                 <div key={d.filename} className="flex items-center gap-1.5">
-                  <button onClick={() => onOpenFile?.(d.filename)} title="Open in editor"
+                  <button onClick={() => onOpenFile?.(d.filename)} title={t("assistantPanel.diff.openInEditor")}
                     className="font-mono text-[11px] px-2 py-0.5 rounded bg-background/60 border border-border/60 hover:border-border text-foreground/90 truncate flex-1 text-left">
                     {d.filename}
                   </button>
-                  <button onClick={() => { setDiffFile(d.filename); setDiffOpen(true); }} title="View diff" className="p-1 text-muted-foreground hover:text-foreground">
+                  <button onClick={() => { setDiffFile(d.filename); setDiffOpen(true); }} title={t("assistantPanel.diff.viewDiff")} className="p-1 text-muted-foreground hover:text-foreground">
                     <FileDiff className="h-3 w-3" />
                   </button>
-                  <button onClick={() => doRevert([d.filename])} disabled={reverting} title="Revert this file" className="p-1 text-muted-foreground hover:text-destructive">
+                  <button onClick={() => doRevert([d.filename])} disabled={reverting} title={t("assistantPanel.diff.revertFile")} className="p-1 text-muted-foreground hover:text-destructive">
                     <RotateCcw className="h-3 w-3" />
                   </button>
                 </div>
@@ -573,11 +577,11 @@ export default function AssistantPanel({
             </div>
             <div className="flex items-center gap-2 pt-0.5">
               <Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground hover:text-foreground" onClick={() => { setDiff([]); setDiffForId(null); }}>
-                <Check className="h-3 w-3" />Accept all
+                <Check className="h-3 w-3" />{t("assistantPanel.diff.acceptAll")}
               </Button>
               <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive hover:text-destructive"
                 onClick={() => doRevert(diff.map((d) => d.filename))} disabled={reverting}>
-                {reverting ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}Revert all
+                {reverting ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}{t("assistantPanel.diff.revertAll")}
               </Button>
             </div>
           </div>
@@ -592,14 +596,14 @@ export default function AssistantPanel({
             onValueChange={(v) => setModel(v === DEFAULT_MODEL_VALUE ? "" : v)}
           >
             <SelectTrigger
-              title="Model"
+              title={t("assistantPanel.input.modelTitle")}
               className="min-w-0 flex-1 h-7 rounded-md bg-background/50 border-border/70 px-2 text-[11px] font-mono text-foreground/80 shadow-none hover:bg-muted/40 focus:ring-0 focus:border-primary/45 [&>span]:truncate"
             >
-              <SelectValue placeholder="Default model" />
+              <SelectValue placeholder={t("assistantPanel.input.defaultModel")} />
             </SelectTrigger>
             <SelectContent align="start" className="max-h-72 w-[var(--radix-select-trigger-width)] bg-popover border-border/70">
               <SelectItem value={DEFAULT_MODEL_VALUE} className="text-xs text-muted-foreground">
-                Default model
+                {t("assistantPanel.input.defaultModel")}
               </SelectItem>
               {modelGroups.map((group) => (
                 <SelectGroup key={group.provider}>
@@ -619,10 +623,10 @@ export default function AssistantPanel({
               ))}
             </SelectContent>
           </Select>
-          <button onClick={cycleReasoning} title="Thinking (chain-of-thought) level"
+          <button onClick={cycleReasoning} title={t("assistantPanel.input.thinkingLevelTitle")}
             className={cn("shrink-0 h-7 px-2 rounded-md border text-[11px] flex items-center gap-1",
               reasoning === "off" ? "border-border/60 text-muted-foreground" : "border-primary/40 text-primary bg-primary/10")}>
-            <Brain className="h-3 w-3" />Think: {REASONING_LABEL[reasoning]}
+            <Brain className="h-3 w-3" />{t("assistantPanel.input.think", { level: t(`assistantPanel.reasoning.${reasoning}`) })}
           </button>
         </div>
         <div className="relative">
@@ -632,19 +636,19 @@ export default function AssistantPanel({
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
             placeholder={info?.venv_ready
               ? (mode === "global"
-                  ? "Let me help you create / edit a script or skill… (Enter to send)"
-                  : `Let me help you write / run / debug this ${boundKind}… (Enter to send)`)
-              : "Initialize the environment first…"}
+                  ? t("assistantPanel.input.placeholderGlobal")
+                  : t("assistantPanel.input.placeholderBound", { kind: t(`assistantPanel.kind.${boundKind ?? "script"}`) }))
+              : t("assistantPanel.input.placeholderNotReady")}
             disabled={!info?.venv_ready || sending}
             rows={2}
             className="w-full resize-none rounded-lg bg-secondary/30 border border-border/60 px-3 py-2 pr-11 text-sm focus:outline-none focus:border-primary/50 disabled:opacity-50 placeholder:text-muted-foreground/50"
           />
           {sending ? (
-            <button onClick={stop} title="Stop" className="absolute right-2 bottom-2 p-1.5 rounded-md bg-destructive/90 text-destructive-foreground hover:bg-destructive">
+            <button onClick={stop} title={t("assistantPanel.input.stop")} className="absolute right-2 bottom-2 p-1.5 rounded-md bg-destructive/90 text-destructive-foreground hover:bg-destructive">
               <Square className="h-3.5 w-3.5" />
             </button>
           ) : (
-            <button onClick={send} disabled={!input.trim() || !info?.venv_ready} title="Send (Enter)"
+            <button onClick={send} disabled={!input.trim() || !info?.venv_ready} title={t("assistantPanel.input.send")}
               className="absolute right-2 bottom-2 p-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40">
               <Send className="h-3.5 w-3.5" />
             </button>
@@ -656,7 +660,7 @@ export default function AssistantPanel({
       <Dialog open={diffOpen} onOpenChange={setDiffOpen}>
         <DialogContent className="max-w-4xl w-[92vw]">
           <DialogHeader>
-            <DialogTitle className="text-sm flex items-center gap-2"><FileDiff className="h-4 w-4" />This turn’s changes · before → after</DialogTitle>
+            <DialogTitle className="text-sm flex items-center gap-2"><FileDiff className="h-4 w-4" />{t("assistantPanel.diff.dialogTitle")}</DialogTitle>
           </DialogHeader>
           {diff.length > 1 && (
             <div className="flex flex-wrap gap-1.5">
@@ -679,9 +683,9 @@ export default function AssistantPanel({
           {selected && (
             <div className="flex justify-end gap-2 pt-1">
               <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => doRevert([selected.filename])} disabled={reverting}>
-                {reverting ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}Revert this file
+                {reverting ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}{t("assistantPanel.diff.revertFile")}
               </Button>
-              <Button size="sm" onClick={() => setDiffOpen(false)}><Check className="h-3 w-3" />Close</Button>
+              <Button size="sm" onClick={() => setDiffOpen(false)}><Check className="h-3 w-3" />{t("assistantPanel.diff.close")}</Button>
             </div>
           )}
         </DialogContent>
@@ -691,19 +695,19 @@ export default function AssistantPanel({
       <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
         <DialogContent className="max-w-sm w-[90vw]">
           <DialogHeader>
-            <DialogTitle className="text-sm flex items-center gap-2"><History className="h-4 w-4" />Chat history</DialogTitle>
+            <DialogTitle className="text-sm flex items-center gap-2"><History className="h-4 w-4" />{t("assistantPanel.title.chatHistory")}</DialogTitle>
           </DialogHeader>
           {sessions.length === 0 ? (
-            <p className="text-xs text-muted-foreground py-4 text-center">No saved chats yet.</p>
+            <p className="text-xs text-muted-foreground py-4 text-center">{t("assistantPanel.history.empty")}</p>
           ) : (
             <div className="max-h-80 overflow-y-auto space-y-1">
               {sessions.map((s) => (
                 <div key={s.id} className="flex items-center gap-2 rounded-md border border-border/50 px-2.5 py-1.5 hover:border-border">
                   <button onClick={() => openSession(s)} className="min-w-0 flex-1 text-left">
                     <div className="text-xs text-foreground/90 truncate">{s.title}</div>
-                    <div className="text-[10px] text-muted-foreground/60">{relativeTime(s.updatedAt)}</div>
+                    <div className="text-[10px] text-muted-foreground/60">{relativeTime(s.updatedAt, t)}</div>
                   </button>
-                  <button onClick={() => deleteSession(s.id)} title="Delete" className="p-1 text-muted-foreground hover:text-destructive shrink-0">
+                  <button onClick={() => deleteSession(s.id)} title={t("assistantPanel.history.delete")} className="p-1 text-muted-foreground hover:text-destructive shrink-0">
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>

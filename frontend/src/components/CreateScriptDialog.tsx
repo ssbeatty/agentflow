@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
 import { scripts } from "@/lib/api";
 import type { ScriptSummary } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -16,26 +17,22 @@ import { cn } from "@/lib/utils";
 
 interface Template {
   id: string;
-  label: string;
-  description: string;
   icon: React.ReactNode;
   entryFunction: string;
   mainPy: string | null;   // null → use backend default
 }
 
+// Template display label/description are translated (dashboard:templates.<id>) —
+// this array only carries the structural/code parts, which stay English (source code).
 const TEMPLATES: Template[] = [
   {
     id: "blank",
-    label: "Blank",
-    description: "Empty run() starter",
     icon: <FileCode className="h-4 w-4" />,
     entryFunction: "run",
     mainPy: null,
   },
   {
     id: "simple-chat",
-    label: "Simple Chat",
-    description: "Minimal multi-turn chat for the Chat page",
     icon: <MessageSquare className="h-4 w-4" />,
     entryFunction: "run",
     mainPy:
@@ -64,8 +61,6 @@ def run(input: dict) -> dict:
   },
   {
     id: "streaming-chat",
-    label: "Streaming Chat",
-    description: "Streaming LLM, typewriter output, reasoning-aware",
     icon: <Type className="h-4 w-4" />,
     entryFunction: "run",
     mainPy:
@@ -105,8 +100,6 @@ async def run(input: dict) -> dict:
   },
   {
     id: "rich-chat",
-    label: "Rich Chat",
-    description: "LLM tool-calls to render markdown / table / chart / image",
     icon: <Sparkles className="h-4 w-4" />,
     entryFunction: "run",
     mainPy:
@@ -211,8 +204,6 @@ async def run(input: dict) -> dict:
   },
   {
     id: "react-agent",
-    label: "ReAct Agent",
-    description: "get_agent with web_search + web_fetch",
     icon: <Bot className="h-4 w-4" />,
     entryFunction: "run",
     mainPy:
@@ -239,8 +230,6 @@ def run(input: dict) -> dict:
   },
   {
     id: "skills-mcp",
-    label: "Skills + MCP",
-    description: "Use bound skills and MCP server tools",
     icon: <Puzzle className="h-4 w-4" />,
     entryFunction: "run",
     mainPy:
@@ -271,8 +260,6 @@ def run(input: dict) -> dict:
   },
   {
     id: "deep-agent",
-    label: "Deep Agent",
-    description: "get_deep_agent: planning, sub-agents, skill filesystem",
     icon: <Brain className="h-4 w-4" />,
     entryFunction: "run",
     mainPy:
@@ -295,8 +282,6 @@ async def run(input: dict) -> dict:
   },
   {
     id: "graph-loop",
-    label: "LangGraph Loop",
-    description: "Multi-node graph with a cycle + conditional edge",
     icon: <Workflow className="h-4 w-4" />,
     entryFunction: "run",
     mainPy:
@@ -391,8 +376,6 @@ def run(input: dict) -> dict:
   },
   {
     id: "secrets-http",
-    label: "Secrets + HTTP",
-    description: "Read a secret and call an external API",
     icon: <KeyRound className="h-4 w-4" />,
     entryFunction: "run",
     mainPy:
@@ -417,8 +400,6 @@ def run(input: dict) -> dict:
   },
   {
     id: "file-workspace",
-    label: "File + Workspace",
-    description: "Handle an uploaded file + persist state across runs",
     icon: <FileInput className="h-4 w-4" />,
     entryFunction: "run",
     mainPy:
@@ -475,19 +456,20 @@ interface Props {
 }
 
 export default function CreateScriptDialog({ open, onOpenChange, onCreated }: Props) {
+  const { t } = useTranslation("dashboard");
   const [name, setName]               = useState("");
   const [description, setDescription] = useState("");
   const [templateId, setTemplateId]   = useState("blank");
   const [nameEdited, setNameEdited]   = useState(false);   // true once the user hand-edits the name
   const [loading, setLoading]         = useState(false);
 
-  function selectTemplate(t: Template) {
-    setTemplateId(t.id);
+  function selectTemplate(tpl: Template) {
+    setTemplateId(tpl.id);
     // Auto-fill the name from the template label until the user hand-edits it.
     // Re-fills on every switch, so picking a different template updates the name
     // too (blank has no label → clear it).
     if (!nameEdited) {
-      setName(t.id === "blank" ? "" : t.label);
+      setName(tpl.id === "blank" ? "" : t(`templates.${tpl.id}.label`));
     }
   }
 
@@ -499,10 +481,10 @@ export default function CreateScriptDialog({ open, onOpenChange, onCreated }: Pr
   }
 
   async function handleCreate() {
-    if (!name.trim()) return toast.error("Name is required");
+    if (!name.trim()) return toast.error(t("dialog.nameRequired"));
     setLoading(true);
     try {
-      const tpl = TEMPLATES.find(t => t.id === templateId) ?? TEMPLATES[0];
+      const tpl = TEMPLATES.find(x => x.id === templateId) ?? TEMPLATES[0];
 
       // 1. create the script (backend generates default main.py)
       const s = await scripts.create({
@@ -522,7 +504,7 @@ export default function CreateScriptDialog({ open, onOpenChange, onCreated }: Pr
 
       onCreated(s);
       reset();
-      toast.success("Script created");
+      toast.success(t("dialog.created"));
     } catch (e: unknown) {
       toast.error(String(e));
     } finally {
@@ -534,31 +516,31 @@ export default function CreateScriptDialog({ open, onOpenChange, onCreated }: Pr
     <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) reset(); }}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>New Script</DialogTitle>
+          <DialogTitle>{t("newScript")}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-5 py-1">
           {/* Template picker */}
           <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground uppercase tracking-wide">Template</Label>
+            <Label className="text-xs text-muted-foreground uppercase tracking-wide">{t("dialog.template")}</Label>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {TEMPLATES.map(t => (
+              {TEMPLATES.map(tpl => (
                 <button
-                  key={t.id}
+                  key={tpl.id}
                   type="button"
-                  onClick={() => selectTemplate(t)}
+                  onClick={() => selectTemplate(tpl)}
                   className={cn(
                     "flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors hover:bg-secondary/60",
-                    templateId === t.id
+                    templateId === tpl.id
                       ? "border-primary bg-primary/5"
                       : "border-border bg-secondary/20",
                   )}
                 >
-                  <span className={cn("text-muted-foreground", templateId === t.id && "text-primary")}>
-                    {t.icon}
+                  <span className={cn("text-muted-foreground", templateId === tpl.id && "text-primary")}>
+                    {tpl.icon}
                   </span>
-                  <span className="text-xs font-medium leading-tight">{t.label}</span>
-                  <span className="text-[10px] text-muted-foreground leading-tight">{t.description}</span>
+                  <span className="text-xs font-medium leading-tight">{t(`templates.${tpl.id}.label`)}</span>
+                  <span className="text-[10px] text-muted-foreground leading-tight">{t(`templates.${tpl.id}.description`)}</span>
                 </button>
               ))}
             </div>
@@ -567,30 +549,30 @@ export default function CreateScriptDialog({ open, onOpenChange, onCreated }: Pr
           {/* Name + description */}
           <div className="space-y-3">
             <div className="space-y-1.5">
-              <Label>Name</Label>
+              <Label>{t("dialog.name")}</Label>
               <Input
                 value={name}
                 onChange={(e) => { setName(e.target.value); setNameEdited(e.target.value.trim().length > 0); }}
-                placeholder="My LangGraph Agent"
+                placeholder={t("dialog.namePlaceholder")}
                 onKeyDown={(e) => e.key === "Enter" && handleCreate()}
                 autoFocus
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Description <span className="text-muted-foreground">(optional)</span></Label>
+              <Label>{t("dialog.description")} <span className="text-muted-foreground">{t("dialog.optional")}</span></Label>
               <Input
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="What does this agent do?"
+                placeholder={t("dialog.descriptionPlaceholder")}
               />
             </div>
           </div>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => { onOpenChange(false); reset(); }}>Cancel</Button>
+          <Button variant="outline" onClick={() => { onOpenChange(false); reset(); }}>{t("dialog.cancel")}</Button>
           <Button onClick={handleCreate} disabled={loading}>
-            {loading ? "Creating…" : "Create"}
+            {loading ? t("dialog.creating") : t("dialog.create")}
           </Button>
         </DialogFooter>
       </DialogContent>

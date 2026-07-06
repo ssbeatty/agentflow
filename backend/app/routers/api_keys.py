@@ -10,6 +10,7 @@ Keys authenticate external callers of POST /api/executions/run via the
 persisted, so a lost key cannot be recovered — issue a new one.
 """
 from fastapi import APIRouter, Depends, HTTPException
+from loguru import logger
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -33,6 +34,7 @@ def create_key(body: ApiKeyCreate, db: Session = Depends(get_db)):
     db.add(rec)
     db.commit()
     db.refresh(rec)
+    logger.info("API key issued: {} (prefix={})", rec.id, prefix)
     out = ApiKeyOut.model_validate(rec).model_dump()
     return ApiKeyCreated(**out, key=full)
 
@@ -44,3 +46,4 @@ def delete_key(key_id: str, db: Session = Depends(get_db)):
         raise HTTPException(404, "API key not found")
     db.delete(rec)
     db.commit()
+    logger.info("API key revoked: {} (prefix={})", key_id, rec.prefix)

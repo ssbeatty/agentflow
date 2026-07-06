@@ -23,6 +23,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from loguru import logger
+
 from app.config import BACKEND_ROOT
 from app.database import SessionLocal
 from app.models import Execution, ExecutionLog, Script, UploadedFile
@@ -46,7 +48,7 @@ _PROFILE: bool = os.getenv("AGENTFLOW_PROFILE", "1").lower() not in ("0", "false
 
 def _prof(execution_id: str, msg: str) -> None:
     if _PROFILE:
-        print(f"[agentflow] [{execution_id[:8]}] {msg}", flush=True)
+        logger.info("[{}] {}", execution_id[:8], msg)
 
 # lazy-init so it's created inside the running event loop
 _semaphore: asyncio.Semaphore | None = None
@@ -280,6 +282,8 @@ async def start_execution(execution_id: str) -> None:
         script: Script = db.query(Script).filter_by(id=exc_row.script_id).first()
         if not script:
             return
+
+        logger.info("[{}] execution queued (script={})", execution_id[:8], script.id)
 
         # ── mark queued, then wait for a concurrency slot ─────────────────────
         exc_row.status = "queued"
@@ -643,6 +647,7 @@ async def start_execution(execution_id: str) -> None:
             _procs.pop(execution_id, None)
 
             timeout_msg = f"Execution timed out after {EXECUTION_TIMEOUT:.0f}s"
+            logger.warning("[{}] {}", execution_id[:8], timeout_msg)
             _prof(execution_id, (
                 f"TIMEOUT after {EXECUTION_TIMEOUT:.0f}s | "
                 f"cold_import={'n/a' if first_output_at is None else f'{first_output_at - _t_spawn:.2f}s'} "
@@ -708,6 +713,8 @@ async def start_execution(execution_id: str) -> None:
             f"queue_wait={_t_slot - _t_enter:.2f}s prep={_t_spawn - _t_slot:.2f}s "
             f"cold_import={_cold:.2f}s script={_script:.2f}s total={_t_end - _t_slot:.2f}s"
         ))
+        if exc_row.status == "failed":
+            logger.warning("[{}] execution failed: {}", execution_id[:8], exc_row.error)
 
         await ws_manager.send(execution_id, {
             "type": "status",
@@ -737,9 +744,11 @@ async def start_execution(execution_id: str) -> None:
             pass
 
     except asyncio.CancelledError:
+        logger.info("[{}] execution cancelled", execution_id[:8])
         _mark_cancelled(db, execution_id)
         await ws_manager.send(execution_id, {"type": "status", "status": "cancelled"})
     except Exception as e:
+        logger.exception("[{}] execution engine error", execution_id[:8])
         _mark_failed(db, execution_id, str(e))
         await ws_manager.send(execution_id, {"type": "status", "status": "failed", "error": str(e)})
     finally:
@@ -805,10 +814,12 @@ async def stop_execution(execution_id: str) -> bool:
     proc = _procs.get(execution_id)
     if not proc:
         return False
+    logger.info("[{}] stop requested (pid={})", execution_id[:8], proc.pid)
     proc.terminate()
     try:
         await asyncio.wait_for(asyncio.to_thread(proc.wait), timeout=5.0)
     except asyncio.TimeoutError:
+        logger.warning("[{}] did not terminate in time, killing (pid={})", execution_id[:8], proc.pid)
         proc.kill()
     return True
 
@@ -888,4 +899,5 @@ def prune_executions(db, script_id: str, keep: int | None) -> int:
         removed += 1
     if removed:
         db.commit()
+        logger.info("[script {}] pruned {} old execution record(s) (keep={})", script_id, removed, keep)
     return removed

@@ -2,6 +2,7 @@
 import { useMemo, useState, type MouseEvent } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChevronDown, ChevronRight, Wrench, Box, Bot, Flag, Brain, Copy, Check, BookOpen } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type { TraceEvent, GraphTopology } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import MermaidView from "@/components/MermaidView";
@@ -166,6 +167,7 @@ function highlightMermaid(src: string, counts: Map<string, number>): string {
 }
 
 export default function FlowPanel({ trace, topology }: Props) {
+  const { t } = useTranslation("scriptPanels");
   const rows = useMemo(() => buildRows(trace), [trace]);
   const counts = useMemo(() => visitedNodeCounts(trace), [trace]);
   const hasContent = rows.length > 0 || !!topology;
@@ -181,7 +183,7 @@ export default function FlowPanel({ trace, topology }: Props) {
         <div className="p-2 space-y-1">
           {!hasContent && (
             <p className="text-muted-foreground text-xs py-4 text-center">
-              Trace events will appear here while the script runs.
+              {t("flowPanel.empty")}
             </p>
           )}
           {rows.map(row => <TraceRowView key={row.key} row={row} />)}
@@ -195,6 +197,7 @@ export default function FlowPanel({ trace, topology }: Props) {
 // ── Single trace row ────────────────────────────────────────────────────────
 
 function TraceRowView({ row }: { row: TraceRow }) {
+  const { t } = useTranslation("scriptPanels");
   const [expanded, setExpanded] = useState(false);
   const hasDetails = Boolean(
     row.input !== undefined || row.output !== undefined || row.error || (row.log !== undefined && row.log !== null)
@@ -221,15 +224,15 @@ function TraceRowView({ row }: { row: TraceRow }) {
           <span className="text-muted-foreground/60 tabular-nums text-[10px]">#{row.step}</span>
         )}
         <span className={cn("font-mono font-medium", color)}>{row.name}</span>
-        <span className="text-muted-foreground/60 text-[10px]">{KIND_LABEL[row.kind]}</span>
+        <span className="text-muted-foreground/60 text-[10px]">{t(`flowPanel.kindLabels.${row.kind}`)}</span>
         {row.isOpen && (
-          <span className="text-blue-400 text-[10px] animate-pulse">running…</span>
+          <span className="text-blue-400 text-[10px] animate-pulse">{t("flowPanel.row.running")}</span>
         )}
         {row.error && (
-          <span className="text-destructive text-[10px]">error</span>
+          <span className="text-destructive text-[10px]">{t("flowPanel.row.error")}</span>
         )}
         <span className="ml-auto text-muted-foreground/60 text-[10px] tabular-nums">
-          {row.durationMs != null ? `${row.durationMs} ms` : ""}
+          {row.durationMs != null ? t("flowPanel.row.durationMs", { ms: row.durationMs }) : ""}
         </span>
       </button>
 
@@ -240,7 +243,7 @@ function TraceRowView({ row }: { row: TraceRow }) {
           {row.log !== undefined && row.log !== null && <JsonBlock label="log" value={row.log} />}
           {row.error && (
             <div>
-              <div className="text-destructive font-semibold text-[10px] mb-0.5">error</div>
+              <div className="text-destructive font-semibold text-[10px] mb-0.5">{t("flowPanel.row.error")}</div>
               <pre className="bg-destructive/10 rounded px-2 py-1 text-destructive whitespace-pre-wrap break-words">
                 {row.error}
               </pre>
@@ -293,6 +296,7 @@ function ChatView({ messages }: { messages: ChatMessage[] }) {
 interface TruncMarker { __truncated__?: boolean; preview?: string; original_bytes?: number }
 
 function JsonBlock({ label, value }: { label: string; value: unknown }) {
+  const { t } = useTranslation("scriptPanels");
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -333,19 +337,19 @@ function JsonBlock({ label, value }: { label: string; value: unknown }) {
           was there, just hidden under the right-side bar. */}
       <div className="flex items-center gap-2 mb-0.5">
         <span className="text-muted-foreground/60 text-[10px] uppercase tracking-wide">{label}</span>
-        <span className="text-muted-foreground/40 text-[10px] tabular-nums">{totalChars.toLocaleString()} chars</span>
-        <button onClick={onCopy} title="Copy full content"
+        <span className="text-muted-foreground/40 text-[10px] tabular-nums">{t("flowPanel.jsonBlock.chars", { count: totalChars.toLocaleString() })}</span>
+        <button onClick={onCopy} title={t("flowPanel.jsonBlock.copyTitle")}
           className="text-[10px] text-muted-foreground hover:text-foreground inline-flex items-center gap-0.5">
           {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
         </button>
         {isLarge && (
           <button onClick={() => setExpanded(v => !v)}
             className="text-[10px] text-muted-foreground hover:text-foreground inline-flex items-center gap-0.5">
-            {expanded ? <><ChevronDown className="h-3 w-3" />collapse</> : <><ChevronRight className="h-3 w-3" />expand</>}
+            {expanded ? <><ChevronDown className="h-3 w-3" />{t("flowPanel.jsonBlock.collapse")}</> : <><ChevronRight className="h-3 w-3" />{t("flowPanel.jsonBlock.expand")}</>}
           </button>
         )}
         {trunc && (
-          <span className="text-amber-400/80 text-[10px]">truncated · {shownChars.toLocaleString()} shown</span>
+          <span className="text-amber-400/80 text-[10px]">{t("flowPanel.jsonBlock.truncated", { shown: shownChars.toLocaleString() })}</span>
         )}
       </div>
       <div
@@ -362,7 +366,7 @@ function JsonBlock({ label, value }: { label: string; value: unknown }) {
         }
         {isLarge && !expanded && (
           <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-background to-transparent flex items-end justify-center">
-            <span className="text-[10px] text-muted-foreground/70 pb-0.5">click to expand</span>
+            <span className="text-[10px] text-muted-foreground/70 pb-0.5">{t("flowPanel.jsonBlock.clickToExpand")}</span>
           </div>
         )}
       </div>
@@ -386,13 +390,4 @@ const COLORS = {
   agent_action: "text-amber-400",
   agent_finish: "text-blue-400",
   llm: "text-sky-400",
-} as const;
-
-const KIND_LABEL = {
-  node: "node",
-  tool: "tool",
-  skill: "skill",
-  agent_action: "agent",
-  agent_finish: "finish",
-  llm: "llm",
 } as const;

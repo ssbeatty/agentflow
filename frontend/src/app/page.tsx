@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useTranslation } from "react-i18next";
 import { Plus, Play, Clock, Settings, Zap, MessageSquare, BookOpen, Wrench, ShieldCheck, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { scripts } from "@/lib/api";
@@ -11,6 +12,7 @@ import { formatDate } from "@/lib/utils";
 import CreateScriptDialog from "@/components/CreateScriptDialog";
 
 export default function Dashboard() {
+  const { t } = useTranslation(["dashboard", "common"]);
   const [items, setItems] = useState<ScriptSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -18,9 +20,9 @@ export default function Dashboard() {
   useEffect(() => {
     scripts.list()
       .then(setItems)
-      .catch(() => toast.error("Failed to load scripts"))
+      .catch(() => toast.error(t("dashboard:toast.loadFailed")))
       .finally(() => setLoading(false));
-  }, []);
+  }, [t]);
 
   const handleCreated = (s: ScriptSummary) => {
     setItems((prev) => [s as ScriptSummary, ...prev]);
@@ -33,34 +35,34 @@ export default function Dashboard() {
       <header className="border-b border-border px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Zap className="h-5 w-5 text-primary" />
-          <span className="font-semibold text-base">AgentFlow</span>
+          <span className="font-semibold text-base">{t("common:app.name")}</span>
         </div>
         <div className="flex items-center gap-2">
           <Link href="/converse">
             <Button variant="ghost" size="sm" className="gap-1.5">
               <MessageSquare className="h-4 w-4" />
-              Chat
+              {t("common:nav.chat")}
             </Button>
           </Link>
           <Link href="/docs">
             <Button variant="ghost" size="sm" className="gap-1.5">
               <BookOpen className="h-4 w-4" />
-              Docs
+              {t("common:nav.docs")}
             </Button>
           </Link>
           <Link href="/tools">
             <Button variant="ghost" size="sm" className="gap-1.5">
               <Wrench className="h-4 w-4" />
-              Tools
+              {t("common:nav.tools")}
             </Button>
           </Link>
           <Link href="/secrets">
-            <Button variant="ghost" size="icon" title="Secrets">
+            <Button variant="ghost" size="icon" title={t("common:nav.secrets")}>
               <Lock className="h-4 w-4" />
             </Button>
           </Link>
           <Link href="/security">
-            <Button variant="ghost" size="icon" title="Security / API Keys">
+            <Button variant="ghost" size="icon" title={t("common:nav.security")}>
               <ShieldCheck className="h-4 w-4" />
             </Button>
           </Link>
@@ -71,7 +73,7 @@ export default function Dashboard() {
           </Link>
           <Button size="sm" onClick={() => setDialogOpen(true)}>
             <Plus className="h-4 w-4" />
-            New Script
+            {t("dashboard:newScript")}
           </Button>
         </div>
       </header>
@@ -79,9 +81,9 @@ export default function Dashboard() {
       {/* Main */}
       <main className="flex-1 px-6 py-8 max-w-6xl mx-auto w-full">
         <div className="mb-6">
-          <h1 className="text-2xl font-semibold">Scripts</h1>
+          <h1 className="text-2xl font-semibold">{t("dashboard:heading")}</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            {items.length} LangGraph agent{items.length !== 1 ? "s" : ""}
+            {t("dashboard:subtitle", { count: items.length })}
           </p>
         </div>
 
@@ -94,10 +96,10 @@ export default function Dashboard() {
         ) : items.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-center">
             <Zap className="h-12 w-12 text-muted-foreground/40 mb-4" />
-            <p className="text-muted-foreground">No scripts yet</p>
+            <p className="text-muted-foreground">{t("dashboard:empty.text")}</p>
             <Button className="mt-4" onClick={() => setDialogOpen(true)}>
               <Plus className="h-4 w-4" />
-              Create your first script
+              {t("dashboard:empty.cta")}
             </Button>
           </div>
         ) : (
@@ -119,6 +121,7 @@ export default function Dashboard() {
 }
 
 function ScriptCard({ script }: { script: ScriptSummary }) {
+  const { t } = useTranslation("dashboard");
   return (
     <div className="group rounded-xl border border-border bg-secondary/20 p-5 hover:border-primary/50 hover:bg-secondary/40 transition-all h-full flex flex-col">
       <Link href={`/script/?id=${script.id}`} className="block flex-1">
@@ -143,14 +146,14 @@ function ScriptCard({ script }: { script: ScriptSummary }) {
             onClick={(e) => e.stopPropagation()}
           >
             <MessageSquare className="h-3 w-3" />
-            Chat
+            {t("card.chat")}
           </Link>
           <Link
             href={`/script/?id=${script.id}`}
             className="flex items-center gap-1 hover:text-primary px-1.5 py-0.5 rounded transition-colors"
           >
             <Play className="h-3 w-3" />
-            Open
+            {t("card.open")}
           </Link>
         </div>
       </div>

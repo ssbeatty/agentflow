@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useTranslation } from "react-i18next";
 import {
   ArrowLeft, Plus, Trash2, Star, Loader2, Cpu, Pencil, Power, Check,
 } from "lucide-react";
@@ -16,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { useConfirm } from "@/components/ConfirmDialogProvider";
+import LanguageSwitcher from "@/components/LanguageSwitcher";
 
 const PROVIDERS = ["openai", "anthropic", "deepseek", "ollama", "custom"] as const;
 type ProviderKey = typeof PROVIDERS[number];
@@ -48,6 +50,7 @@ const emptyForm = (provider: ProviderKey = "openai"): FormState => ({
 });
 
 export default function SettingsPage() {
+  const { t } = useTranslation("settings");
   const confirm = useConfirm();
   const [list, setList] = useState<Channel[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -59,7 +62,7 @@ export default function SettingsPage() {
 
   async function load() {
     try { setList(await channelsApi.list()); }
-    catch { toast.error("Failed to load channels"); }
+    catch { toast.error(t("toast.loadFailed")); }
   }
 
   function openCreate() {
@@ -101,7 +104,7 @@ export default function SettingsPage() {
           ...p,
           fetching: false,
           available: Array.from(new Set([...p.models, ...models])),
-          fetchError: models.length ? null : "No models returned",
+          fetchError: models.length ? null : t("dialog.noModelsReturned"),
         }));
       }
     } catch (e: unknown) {
@@ -129,8 +132,8 @@ export default function SettingsPage() {
   }
 
   async function save() {
-    if (!form.name.trim()) return toast.error("Channel name is required");
-    if (form.models.length === 0) return toast.error("Select at least one model");
+    if (!form.name.trim()) return toast.error(t("toast.nameRequired"));
+    if (form.models.length === 0) return toast.error(t("toast.modelsRequired"));
     setSaving(true);
     try {
       const payload = {
@@ -150,7 +153,7 @@ export default function SettingsPage() {
         setList(prev => [...prev, c]);
       }
       setDialogOpen(false);
-      toast.success(editId ? "Updated" : "Created");
+      toast.success(editId ? t("toast.updated") : t("toast.created"));
     } catch (e: unknown) {
       toast.error(String(e));
     } finally {
@@ -159,19 +162,19 @@ export default function SettingsPage() {
   }
 
   async function remove(id: string) {
-    if (!(await confirm("Delete this channel?", { confirmLabel: "Delete", destructive: true }))) return;
+    if (!(await confirm(t("confirm.deleteMessage"), { confirmLabel: t("confirm.deleteLabel"), destructive: true }))) return;
     try {
       await channelsApi.delete(id);
       setList(prev => prev.filter(c => c.id !== id));
-      toast.success("Deleted");
-    } catch { toast.error("Failed to delete"); }
+      toast.success(t("toast.deleted"));
+    } catch { toast.error(t("toast.deleteFailed")); }
   }
 
   async function toggleEnabled(ch: Channel) {
     try {
       const u = await channelsApi.update(ch.id, { enabled: !ch.enabled });
       setList(prev => prev.map(c => c.id === ch.id ? u : c));
-    } catch { toast.error("Failed to update"); }
+    } catch { toast.error(t("toast.updateFailed")); }
   }
 
   async function setDefault(ch: Channel, model: string) {
@@ -182,8 +185,8 @@ export default function SettingsPage() {
         is_default: c.id === u.id,
         default_model: c.id === u.id ? u.default_model : null,
       })));
-      toast.success(`Default model: ${model}`);
-    } catch { toast.error("Failed to set default"); }
+      toast.success(t("toast.defaultModel", { model }));
+    } catch { toast.error(t("toast.setDefaultFailed")); }
   }
 
   const sorted = useMemo(
@@ -197,32 +200,42 @@ export default function SettingsPage() {
         <Link href="/">
           <Button variant="ghost" size="icon"><ArrowLeft className="h-4 w-4" /></Button>
         </Link>
-        <h1 className="font-semibold">Settings</h1>
+        <h1 className="font-semibold">{t("header.title")}</h1>
       </header>
 
       <main className="max-w-2xl mx-auto px-6 py-8">
+        <div className="mb-6 border border-border rounded-lg px-4 py-3">
+          <h2 className="font-medium mb-2">{t("general.title")}</h2>
+          <div className="flex items-center justify-between gap-4">
+            <Label className="text-sm">{t("general.language")}</Label>
+            <LanguageSwitcher />
+          </div>
+        </div>
+
         <div className="flex items-start justify-between mb-6 gap-4">
           <div>
-            <h2 className="font-medium">LLM Channels</h2>
+            <h2 className="font-medium">{t("channels.title")}</h2>
             <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-              A channel is one provider endpoint (key + base URL) serving a set of models.
-              Call a model from a script with{" "}
-              <code className="font-mono bg-muted px-1 rounded">get_llm(&quot;model-id&quot;)</code>.
-              If the same model lives in several channels, the highest{" "}
-              <span className="font-medium">priority</span> wins (ties → first).
-              The <Star className="inline h-3 w-3 text-amber-400 fill-amber-400 align-middle" /> model
-              is what <code className="font-mono bg-muted px-1 rounded">get_llm()</code> returns by default.
+              {t("channels.description.part1")}{" "}
+              <code className="font-mono bg-muted px-1 rounded">get_llm(&quot;model-id&quot;)</code>
+              {t("channels.description.part2")}{" "}
+              <span className="font-medium">{t("channels.description.priorityWord")}</span>{" "}
+              {t("channels.description.part3")}{" "}
+              <Star className="inline h-3 w-3 text-amber-400 fill-amber-400 align-middle" />{" "}
+              {t("channels.description.part4")}{" "}
+              <code className="font-mono bg-muted px-1 rounded">get_llm()</code>{" "}
+              {t("channels.description.part5")}
             </p>
           </div>
           <Button size="sm" onClick={openCreate} className="shrink-0">
             <Plus className="h-4 w-4" />
-            Add channel
+            {t("channels.addChannel")}
           </Button>
         </div>
 
         {list.length === 0 && (
           <p className="text-sm text-muted-foreground text-center py-12 border border-dashed border-border rounded-lg">
-            No channels yet. Click <span className="font-medium">Add channel</span> to connect a provider and pick its models.
+            {t("channels.emptyState.prefix")} <span className="font-medium">{t("channels.addChannel")}</span> {t("channels.emptyState.suffix")}
           </p>
         )}
 
@@ -241,8 +254,8 @@ export default function SettingsPage() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-medium text-sm truncate">{ch.name}</span>
                     <Badge variant="secondary" className="text-[10px] capitalize">{ch.provider}</Badge>
-                    <Badge variant="outline" className="text-[10px]" title="Priority — higher wins">P{ch.priority}</Badge>
-                    {!ch.enabled && <Badge variant="outline" className="text-[10px]">disabled</Badge>}
+                    <Badge variant="outline" className="text-[10px]" title={t("channels.priorityTitle")}>P{ch.priority}</Badge>
+                    {!ch.enabled && <Badge variant="outline" className="text-[10px]">{t("channels.disabled")}</Badge>}
                     {ch.has_api_key && <span className="text-[10px] text-muted-foreground">🔑</span>}
                   </div>
                   {ch.base_url && (
@@ -250,13 +263,13 @@ export default function SettingsPage() {
                   )}
                 </div>
                 <div className="flex items-center gap-0.5 shrink-0">
-                  <Button variant="ghost" size="icon" onClick={() => toggleEnabled(ch)} title={ch.enabled ? "Disable" : "Enable"}>
+                  <Button variant="ghost" size="icon" onClick={() => toggleEnabled(ch)} title={ch.enabled ? t("channels.disableTitle") : t("channels.enableTitle")}>
                     <Power className={cn("h-4 w-4", ch.enabled ? "text-primary" : "text-muted-foreground")} />
                   </Button>
-                  <Button variant="ghost" size="icon" onClick={() => openEdit(ch)} title="Edit">
+                  <Button variant="ghost" size="icon" onClick={() => openEdit(ch)} title={t("channels.editTitle")}>
                     <Pencil className="h-4 w-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" onClick={() => remove(ch.id)} title="Delete">
+                  <Button variant="ghost" size="icon" onClick={() => remove(ch.id)} title={t("channels.deleteTitle")}>
                     <Trash2 className="h-4 w-4 text-destructive" />
                   </Button>
                 </div>
@@ -264,7 +277,7 @@ export default function SettingsPage() {
 
               <div className="px-4 py-3">
                 {ch.models.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">No models — click <Pencil className="inline h-3 w-3" /> to add some.</p>
+                  <p className="text-xs text-muted-foreground">{t("channels.noModels")} <Pencil className="inline h-3 w-3" /> {t("channels.noModelsSuffix")}</p>
                 ) : (
                   <div className="flex flex-wrap gap-1.5">
                     {ch.models.map(m => {
@@ -280,7 +293,7 @@ export default function SettingsPage() {
                           {m}
                           <button
                             onClick={() => setDefault(ch, m)}
-                            title={isDefault ? "Default model for get_llm()" : "Set as default"}
+                            title={isDefault ? t("channels.defaultModelTitle") : t("channels.setDefaultTitle")}
                             className="shrink-0"
                           >
                             <Star className={cn(
@@ -303,20 +316,20 @@ export default function SettingsPage() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editId ? "Edit channel" : "Add channel"}</DialogTitle>
+            <DialogTitle>{editId ? t("dialog.editTitle") : t("dialog.addTitle")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Name</Label>
+                <Label>{t("dialog.nameLabel")}</Label>
                 <Input
                   value={form.name}
                   onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
-                  placeholder="e.g. OpenAI main"
+                  placeholder={t("dialog.namePlaceholder")}
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>Priority <span className="text-muted-foreground">(higher wins)</span></Label>
+                <Label>{t("dialog.priorityLabel")} <span className="text-muted-foreground">{t("dialog.priorityHint")}</span></Label>
                 <Input
                   type="number"
                   value={form.priority}
@@ -327,7 +340,7 @@ export default function SettingsPage() {
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Provider</Label>
+                <Label>{t("dialog.providerLabel")}</Label>
                 <Select
                   value={form.provider}
                   onValueChange={v => setForm(p => ({ ...p, provider: v as ProviderKey }))}
@@ -339,7 +352,7 @@ export default function SettingsPage() {
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label>Base URL <span className="text-muted-foreground">(optional)</span></Label>
+                <Label>{t("dialog.baseUrlLabel")} <span className="text-muted-foreground">{t("dialog.optional")}</span></Label>
                 <Input
                   value={form.base_url}
                   onChange={e => setForm(p => ({ ...p, base_url: e.target.value }))}
@@ -351,18 +364,18 @@ export default function SettingsPage() {
 
             <div className="space-y-1.5">
               <Label>
-                API Key
-                {editId && <span className="text-muted-foreground"> (blank = keep existing)</span>}
+                {t("dialog.apiKeyLabel")}
+                {editId && <span className="text-muted-foreground"> {t("dialog.apiKeyKeepHint")}</span>}
               </Label>
               <div className="flex gap-2">
                 <Input
                   type="password"
                   value={form.api_key}
                   onChange={e => setForm(p => ({ ...p, api_key: e.target.value }))}
-                  placeholder={editId ? "••••••••" : "sk-..."}
+                  placeholder={editId ? t("dialog.apiKeyPlaceholderEdit") : t("dialog.apiKeyPlaceholderCreate")}
                 />
                 <Button variant="secondary" onClick={fetchModels} disabled={form.fetching} className="shrink-0">
-                  {form.fetching ? <Loader2 className="h-4 w-4 animate-spin" /> : "Load models"}
+                  {form.fetching ? <Loader2 className="h-4 w-4 animate-spin" /> : t("dialog.loadModels")}
                 </Button>
               </div>
             </div>
@@ -371,7 +384,7 @@ export default function SettingsPage() {
 
             {form.available.length > 0 && (
               <div className="space-y-1.5">
-                <Label>Models <span className="text-muted-foreground">({form.models.length} selected)</span></Label>
+                <Label>{t("dialog.modelsLabel")} <span className="text-muted-foreground">{t("dialog.modelsSelected", { count: form.models.length })}</span></Label>
                 <div className="max-h-52 overflow-y-auto rounded-md border border-border divide-y divide-border/50">
                   {form.available.map(m => (
                     <label key={m} className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-muted/40">
@@ -384,16 +397,16 @@ export default function SettingsPage() {
             )}
 
             <div className="space-y-1.5">
-              <Label>Add a model manually <span className="text-muted-foreground">(if not listed)</span></Label>
+              <Label>{t("dialog.addModelLabel")} <span className="text-muted-foreground">{t("dialog.addModelHint")}</span></Label>
               <div className="flex gap-2">
                 <Input
                   value={form.customModel}
                   onChange={e => setForm(p => ({ ...p, customModel: e.target.value }))}
                   onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addCustom(); } }}
-                  placeholder="gpt-4o"
+                  placeholder={t("dialog.addModelPlaceholder")}
                   className="font-mono text-xs"
                 />
-                <Button variant="outline" onClick={addCustom} className="shrink-0">Add</Button>
+                <Button variant="outline" onClick={addCustom} className="shrink-0">{t("dialog.add")}</Button>
               </div>
             </div>
 
@@ -405,13 +418,13 @@ export default function SettingsPage() {
                 onChange={e => setForm(p => ({ ...p, enabled: e.target.checked }))}
                 className="rounded"
               />
-              <span className="text-sm">Enabled (models available to scripts)</span>
+              <span className="text-sm">{t("dialog.enabledLabel")}</span>
             </label>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>{t("dialog.cancel")}</Button>
             <Button onClick={save} disabled={saving}>
-              {saving ? "Saving…" : <><Check className="h-4 w-4" />Save</>}
+              {saving ? t("dialog.saving") : <><Check className="h-4 w-4" />{t("dialog.save")}</>}
             </Button>
           </DialogFooter>
         </DialogContent>

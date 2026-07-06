@@ -4,6 +4,7 @@ import {
   Loader2, Download, Check, Star, RefreshCw, Search, BookOpen, ExternalLink, ArrowLeft,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
 import { marketplace } from "@/lib/api";
 import type { MarketplaceSkill, RegistrySkill } from "@/lib/types";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -11,12 +12,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 type Tab = "official" | "skillsmp" | "skillssh";
-
-const TAB_LABEL: Record<Tab, string> = {
-  official: "Official anthropics/skills",
-  skillsmp: "Community SkillsMP",
-  skillssh: "Community skills.sh",
-};
 
 interface Choice {
   owner: string;
@@ -36,6 +31,7 @@ export default function SkillMarketplaceDialog({
   onOpenChange: (v: boolean) => void;
   onInstalled: () => void;
 }) {
+  const { t } = useTranslation("tools");
   const [tab, setTab] = useState<Tab>("official");
 
   const [official, setOfficial] = useState<MarketplaceSkill[]>([]);
@@ -71,10 +67,10 @@ export default function SkillMarketplaceDialog({
     if (open && tab === "official" && !officialLoaded) loadOfficial(false);
   }, [open, tab, officialLoaded, loadOfficial]);
 
-  function switchTab(t: Tab) {
-    if (t === tab) return;
-    setTab(t);
-    if (t === "skillsmp" || t === "skillssh") {
+  function switchTab(next: Tab) {
+    if (next === tab) return;
+    setTab(next);
+    if (next === "skillsmp" || next === "skillssh") {
       // reset the search panel so results from the other provider don't linger
       setResults(null);
       setRate(null);
@@ -109,7 +105,9 @@ export default function SkillMarketplaceDialog({
         setChoice({ owner: r.owner!, repo: r.repo!, ref: r.ref, skills: r.skills, label });
         return;
       }
-      toast.success(r.already_installed ? `“${label}” already installed` : `Installed “${r.skill?.name ?? label}”`);
+      toast.success(r.already_installed
+        ? t("marketplace.toast.alreadyInstalled", { label })
+        : t("marketplace.toast.installed", { name: r.skill?.name ?? label }));
       setInstalled(prev => new Set(prev).add(key));
       onInstalled();
     } catch (e) { toast.error(String(e)); }
@@ -132,19 +130,19 @@ export default function SkillMarketplaceDialog({
             <span className="font-medium text-sm truncate">{name}</span>
             {meta}
             {href && (
-              <a href={href} target="_blank" rel="noreferrer" title="Open on GitHub"
+              <a href={href} target="_blank" rel="noreferrer" title={t("marketplace.card.openOnGithub")}
                 className="text-muted-foreground hover:text-foreground">
                 <ExternalLink className="h-3 w-3" />
               </a>
             )}
           </div>
-          <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{description || "No description"}</p>
+          <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{description || t("marketplace.card.noDescription")}</p>
         </div>
         <Button size="sm" variant={done ? "outline" : "default"} disabled={busy || done} onClick={onInstall}>
           {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
             : done ? <Check className="h-3.5 w-3.5" />
             : <Download className="h-3.5 w-3.5" />}
-          {done ? "Installed" : "Install"}
+          {done ? t("marketplace.card.installed") : t("marketplace.card.install")}
         </Button>
       </div>
     );
@@ -155,7 +153,7 @@ export default function SkillMarketplaceDialog({
       <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <BookOpen className="h-4 w-4 text-primary" /> Skill Marketplace
+            <BookOpen className="h-4 w-4 text-primary" /> {t("marketplace.title")}
           </DialogTitle>
         </DialogHeader>
 
@@ -164,11 +162,11 @@ export default function SkillMarketplaceDialog({
           <div className="flex-1 min-h-0 flex flex-col gap-3">
             <button onClick={() => setChoice(null)}
               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground shrink-0">
-              <ArrowLeft className="h-3 w-3" /> Back
+              <ArrowLeft className="h-3 w-3" /> {t("marketplace.back")}
             </button>
             <p className="text-xs text-muted-foreground shrink-0">
-              <span className="font-medium text-foreground">{choice.owner}/{choice.repo}</span> bundles
-              several skills — choose one:
+              <span className="font-medium text-foreground">{choice.owner}/{choice.repo}</span>{" "}
+              {t("marketplace.choice.bundlesHint")}
             </p>
             <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-2">
               {choice.skills.map(s => (
@@ -191,17 +189,17 @@ export default function SkillMarketplaceDialog({
           <div className="flex-1 min-h-0 flex flex-col gap-3">
             {/* Tabs */}
             <div className="flex items-center gap-1 border-b border-border shrink-0">
-              {(["official", "skillsmp", "skillssh"] as Tab[]).map(t => (
-                <button key={t} onClick={() => switchTab(t)}
+              {(["official", "skillsmp", "skillssh"] as Tab[]).map(tabId => (
+                <button key={tabId} onClick={() => switchTab(tabId)}
                   className={`px-3 py-1.5 text-sm border-b-2 -mb-px transition-colors whitespace-nowrap ${
-                    tab === t ? "border-primary text-foreground font-medium" : "border-transparent text-muted-foreground hover:text-foreground"
+                    tab === tabId ? "border-primary text-foreground font-medium" : "border-transparent text-muted-foreground hover:text-foreground"
                   }`}>
-                  {TAB_LABEL[t]}
+                  {t(`marketplace.tabs.${tabId}`)}
                 </button>
               ))}
               <div className="flex-1" />
               {tab === "official" && (
-                <Button variant="ghost" size="icon" title="Refresh"
+                <Button variant="ghost" size="icon" title={t("marketplace.refreshTitle")}
                   onClick={() => loadOfficial(true)} disabled={loadingOfficial}>
                   <RefreshCw className={`h-3.5 w-3.5 ${loadingOfficial ? "animate-spin" : ""}`} />
                 </Button>
@@ -212,7 +210,7 @@ export default function SkillMarketplaceDialog({
               <>
                 {!hasToken && (
                   <p className="text-[11px] text-amber-500/90 shrink-0">
-                    GITHUB_TOKEN not set — anonymous GitHub requests are rate-limited to 60/hour. Set it to raise the limit.
+                    {t("marketplace.official.tokenWarning")}
                   </p>
                 )}
                 <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-2">
@@ -222,7 +220,7 @@ export default function SkillMarketplaceDialog({
                     </div>
                   )}
                   {!loadingOfficial && official.length === 0 && officialLoaded && (
-                    <p className="text-sm text-muted-foreground text-center py-10">No skills found.</p>
+                    <p className="text-sm text-muted-foreground text-center py-10">{t("marketplace.official.noSkillsFound")}</p>
                   )}
                   {official.map(s => (
                     <Card
@@ -249,28 +247,28 @@ export default function SkillMarketplaceDialog({
                       value={q}
                       onChange={e => setQ(e.target.value)}
                       onKeyDown={e => { if (e.key === "Enter") doSearch(); }}
-                      placeholder="Search community skills, e.g. pdf, web scraping…"
+                      placeholder={t("marketplace.registry.searchPlaceholder")}
                       className="pl-8"
                     />
                   </div>
                   <Button onClick={doSearch} disabled={searching || !q.trim()}>
-                    {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : "Search"}
+                    {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : t("marketplace.registry.searchButton")}
                   </Button>
                 </div>
                 {tab === "skillssh" && (authRequired || results == null) && (
                   <p className="text-[11px] text-amber-500/90 shrink-0">
-                    skills.sh search requires a Vercel OIDC token — set the SKILLS_SH_TOKEN (or
-                    VERCEL_OIDC_TOKEN) env var to use it. SkillsMP needs no token.
+                    {t("marketplace.registry.skillsshAuthWarning")}
                   </p>
                 )}
                 {rate != null && (
                   <p className="text-[11px] text-muted-foreground shrink-0">
-                    Remaining quota today: {rate}{tab === "skillsmp" && !hasKey && " — set SKILLSMP_API_KEY to raise it to 500/day"}
+                    {t("marketplace.registry.remainingQuota", { rate })}
+                    {tab === "skillsmp" && !hasKey && t("marketplace.registry.raiseQuotaHint")}
                   </p>
                 )}
                 <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-2">
                   {results?.length === 0 && !authRequired && (
-                    <p className="text-sm text-muted-foreground text-center py-10">No results.</p>
+                    <p className="text-sm text-muted-foreground text-center py-10">{t("marketplace.registry.noResults")}</p>
                   )}
                   {results?.map(s => (
                     <Card
@@ -291,7 +289,7 @@ export default function SkillMarketplaceDialog({
                   ))}
                   {results == null && !(tab === "skillssh") && (
                     <p className="text-sm text-muted-foreground text-center py-10">
-                      Search for community skills by keyword. Installing pulls the skill from its GitHub repo.
+                      {t("marketplace.registry.searchHint")}
                     </p>
                   )}
                 </div>

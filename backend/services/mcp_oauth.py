@@ -28,6 +28,7 @@ import time
 from urllib.parse import urlencode, urlsplit
 
 import httpx
+from loguru import logger
 
 _USER_AGENT = "AgentFlow-MCP-OAuth/1.0"
 _TIMEOUT = 20.0
@@ -284,10 +285,12 @@ def _refresh(srv, db) -> dict | None:
                             headers={"Accept": "application/json"})
             r.raise_for_status()
             new = r.json() or {}
-    except Exception:
+    except Exception as exc:
+        logger.warning("OAuth token refresh failed for MCP server {}: {}", srv.id, exc)
         return None
 
     if not new.get("access_token"):
+        logger.warning("OAuth token refresh for MCP server {} returned no access_token", srv.id)
         return None
     stored = _store_token(new)
     # Many providers don't rotate the refresh token — keep the old one if absent.
@@ -295,6 +298,7 @@ def _refresh(srv, db) -> dict | None:
         stored["refresh_token"] = refresh_token
     srv.oauth_token = stored
     db.commit()
+    logger.info("OAuth token refreshed for MCP server {}", srv.id)
     return stored
 
 

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useTranslation } from "react-i18next";
 import {
   ArrowLeft, KeyRound, Lock, Plus, Trash2, Loader2, Pencil,
 } from "lucide-react";
@@ -17,6 +18,7 @@ import {
 import { useConfirm } from "@/components/ConfirmDialogProvider";
 
 export default function SecretsPage() {
+  const { t } = useTranslation("secrets");
   const confirm = useConfirm();
   const [items, setItems] = useState<Secret[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,13 +34,13 @@ export default function SecretsPage() {
   }
 
   async function remove(s: Secret) {
-    if (!(await confirm(`Delete secret ${s.key}? Scripts referencing it will no longer read a value.`, { confirmLabel: "Delete", destructive: true }))) return;
+    if (!(await confirm(t("confirm.deleteMessage", { key: s.key }), { confirmLabel: t("confirm.deleteLabel"), destructive: true }))) return;
     try {
       await secretsApi.delete(s.id);
       setItems((prev) => prev.filter((x) => x.id !== s.id));
-      toast.success("Deleted");
+      toast.success(t("toast.deleted"));
     } catch {
-      toast.error("Delete failed");
+      toast.error(t("toast.deleteFailed"));
     }
   }
 
@@ -48,26 +50,24 @@ export default function SecretsPage() {
         <Link href="/">
           <Button variant="ghost" size="sm" className="gap-1.5">
             <ArrowLeft className="h-4 w-4" />
-            Home
+            {t("header.home")}
           </Button>
         </Link>
         <div className="flex items-center gap-2">
           <Lock className="h-4 w-4 text-primary" />
-          <span className="font-semibold text-sm">Secrets</span>
+          <span className="font-semibold text-sm">{t("header.title")}</span>
         </div>
         <Button size="sm" className="ml-auto gap-1.5" onClick={() => setCreating(true)}>
           <Plus className="h-3.5 w-3.5" />
-          New Secret
+          {t("header.newSecret")}
         </Button>
       </header>
 
       <main className="flex-1 px-6 py-8 max-w-3xl mx-auto w-full">
         <p className="text-xs text-muted-foreground mb-5">
-          Credentials are stored server-side and injected into the script process at run time —
-          they <b>never appear in source code, input data, or the frontend</b>. Read them in a
-          script with{" "}
+          {t("intro.line1")} <b>{t("intro.bold")}</b>. {t("intro.line2")}{" "}
           <code className="bg-muted px-1 py-0.5 rounded font-mono">get_secret(&quot;BARK_KEY&quot;)</code>{" "}
-          (keys are case-insensitive). All scripts share the same set of secrets.
+          {t("intro.line3")}
         </p>
 
         {loading ? (
@@ -75,10 +75,10 @@ export default function SecretsPage() {
         ) : items.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <KeyRound className="h-10 w-10 text-muted-foreground/40 mb-3" />
-            <p className="text-sm text-muted-foreground">No secrets yet</p>
+            <p className="text-sm text-muted-foreground">{t("empty.text")}</p>
             <Button className="mt-4 gap-1.5" onClick={() => setCreating(true)}>
               <Plus className="h-4 w-4" />
-              Add your first secret
+              {t("empty.cta")}
             </Button>
           </div>
         ) : (
@@ -88,16 +88,16 @@ export default function SecretsPage() {
                 <div className="min-w-0 flex-1">
                   <div className="font-mono font-medium truncate">{s.key}</div>
                   <div className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-2 flex-wrap">
-                    <span className="font-mono">{s.preview || "(empty)"}</span>
+                    <span className="font-mono">{s.preview || t("list.empty")}</span>
                     {s.description && <span className="truncate">· {s.description}</span>}
-                    <span>· updated {formatDate(s.updated_at)}</span>
+                    <span>{t("list.updated", { date: formatDate(s.updated_at) })}</span>
                   </div>
                 </div>
                 <Button
                   variant="ghost" size="icon"
                   className="h-7 w-7 text-muted-foreground hover:text-foreground shrink-0"
                   onClick={() => setEditing(s)}
-                  title="Edit"
+                  title={t("list.edit")}
                 >
                   <Pencil className="h-3.5 w-3.5" />
                 </Button>
@@ -105,7 +105,7 @@ export default function SecretsPage() {
                   variant="ghost" size="icon"
                   className="h-7 w-7 text-muted-foreground hover:text-destructive shrink-0"
                   onClick={() => remove(s)}
-                  title="Delete"
+                  title={t("list.delete")}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
@@ -140,6 +140,7 @@ function CreateDialog({
   onOpenChange: (o: boolean) => void;
   onCreated: (s: Secret) => void;
 }) {
+  const { t } = useTranslation("secrets");
   const [key, setKey] = useState("");
   const [value, setValue] = useState("");
   const [description, setDescription] = useState("");
@@ -160,7 +161,7 @@ function CreateDialog({
       const s = await secretsApi.create({ key, value, description });
       onCreated(s);
     } catch (err) {
-      toast.error(String(err instanceof Error ? err.message : err) || "Create failed");
+      toast.error(String(err instanceof Error ? err.message : err) || t("toast.createFailed"));
     } finally {
       setBusy(false);
     }
@@ -170,48 +171,48 @@ function CreateDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>New Secret</DialogTitle>
-          <DialogDescription>Keys may contain letters, digits and underscores, and cannot start with a digit.</DialogDescription>
+          <DialogTitle>{t("createDialog.title")}</DialogTitle>
+          <DialogDescription>{t("createDialog.description")}</DialogDescription>
         </DialogHeader>
         <div className="space-y-3 py-2">
           <div className="space-y-1.5">
-            <Label htmlFor="sk-key" className="text-xs">Key</Label>
+            <Label htmlFor="sk-key" className="text-xs">{t("createDialog.keyLabel")}</Label>
             <Input
               id="sk-key" value={key} autoFocus
               onChange={(e) => setKey(e.target.value)}
-              placeholder="e.g. BARK_KEY"
+              placeholder={t("createDialog.keyPlaceholder")}
               className="font-mono"
             />
             {key.length > 0 && !keyValid && (
-              <p className="text-[11px] text-destructive">Only letters / digits / underscore, cannot start with a digit</p>
+              <p className="text-[11px] text-destructive">{t("createDialog.keyInvalid")}</p>
             )}
             {keyValid && collides && (
-              <p className="text-[11px] text-destructive">A secret with this key already exists (case-insensitive)</p>
+              <p className="text-[11px] text-destructive">{t("createDialog.keyCollides")}</p>
             )}
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="sk-val" className="text-xs">Value</Label>
+            <Label htmlFor="sk-val" className="text-xs">{t("createDialog.valueLabel")}</Label>
             <Input
               id="sk-val" value={value} type="password"
               onChange={(e) => setValue(e.target.value)}
-              placeholder="Not shown again after saving"
+              placeholder={t("createDialog.valuePlaceholder")}
               className="font-mono"
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="sk-desc" className="text-xs">Description (optional)</Label>
+            <Label htmlFor="sk-desc" className="text-xs">{t("createDialog.descriptionLabel")}</Label>
             <Input
               id="sk-desc" value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="What it's for"
+              placeholder={t("createDialog.descriptionPlaceholder")}
             />
           </div>
         </div>
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>{t("actions.cancel")}</Button>
           <Button onClick={save} disabled={!canSave} className="gap-1.5">
             {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            Save
+            {t("actions.save")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -228,6 +229,7 @@ function EditDialog({
   onOpenChange: (o: boolean) => void;
   onSaved: (s: Secret) => void;
 }) {
+  const { t } = useTranslation("secrets");
   const [value, setValue] = useState("");
   const [description, setDescription] = useState("");
   const [busy, setBusy] = useState(false);
@@ -246,9 +248,9 @@ function EditDialog({
       if (value.length > 0) data.value = value;
       const s = await secretsApi.update(secret.id, data);
       onSaved(s);
-      toast.success("Updated");
+      toast.success(t("toast.updated"));
     } catch (err) {
-      toast.error(String(err instanceof Error ? err.message : err) || "Update failed");
+      toast.error(String(err instanceof Error ? err.message : err) || t("toast.updateFailed"));
     } finally {
       setBusy(false);
     }
@@ -260,33 +262,33 @@ function EditDialog({
         <DialogHeader>
           <DialogTitle className="font-mono">{secret?.key}</DialogTitle>
           <DialogDescription>
-            Current value: <span className="font-mono">{secret?.preview || "(empty)"}</span>. Leave blank to keep it unchanged.
+            {t("editDialog.currentValue")} <span className="font-mono">{secret?.preview || t("list.empty")}</span>. {t("editDialog.leaveBlank")}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3 py-2">
           <div className="space-y-1.5">
-            <Label htmlFor="se-val" className="text-xs">New value</Label>
+            <Label htmlFor="se-val" className="text-xs">{t("editDialog.newValueLabel")}</Label>
             <Input
               id="se-val" value={value} type="password" autoFocus
               onChange={(e) => setValue(e.target.value)}
-              placeholder="Leave blank to keep current"
+              placeholder={t("editDialog.newValuePlaceholder")}
               className="font-mono"
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="se-desc" className="text-xs">Description</Label>
+            <Label htmlFor="se-desc" className="text-xs">{t("editDialog.descriptionLabel")}</Label>
             <Input
               id="se-desc" value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="What it's for"
+              placeholder={t("editDialog.descriptionPlaceholder")}
             />
           </div>
         </div>
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>{t("actions.cancel")}</Button>
           <Button onClick={save} disabled={busy} className="gap-1.5">
             {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            Save
+            {t("actions.save")}
           </Button>
         </DialogFooter>
       </DialogContent>

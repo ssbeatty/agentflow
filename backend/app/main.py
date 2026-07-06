@@ -1,5 +1,6 @@
 import asyncio
 import sys
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -9,9 +10,13 @@ from pathlib import Path
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
-from fastapi import Depends, FastAPI
+from app.logging_config import setup_logging
+setup_logging()  # as early as possible, before uvicorn/sqlalchemy touch stdlib logging
+
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
+from loguru import logger
 
 from app.config import settings
 from app.database import engine, SessionLocal
@@ -34,6 +39,8 @@ async def lifespan(app: FastAPI):
     # pre-Alembic one, or no-op'ing if already current. Fail-fast: a migration
     # error stops startup rather than running behind a broken schema. Works on
     # both sqlite (batch ALTER) and postgres.
+    logger.info("Starting AgentFlow backend (env={})", settings.app_env)
+
     from app.migrate import run_migrations
     run_migrations(engine)
 
@@ -43,9 +50,9 @@ async def lifespan(app: FastAPI):
         from services.llm_migrate import migrate_llm_configs_to_channels
         n = migrate_llm_configs_to_channels(db)
         if n:
-            print(f"[agentflow] migrated {n} LLM channel(s) from legacy configs")
-    except Exception as exc:  # never let migration block startup
-        print(f"[agentflow] LLM channel migration skipped: {exc}")
+            logger.info("Migrated {} LLM channel(s) from legacy configs", n)
+    except Exception:  # never let migration block startup
+        logger.exception("LLM channel migration skipped")
     finally:
         db.close()
 
@@ -55,9 +62,9 @@ async def lifespan(app: FastAPI):
         from services.skill_migrate import migrate_skills_to_disk
         n = migrate_skills_to_disk(db)
         if n:
-            print(f"[agentflow] migrated {n} skill(s) from DB to disk")
-    except Exception as exc:  # never let migration block startup
-        print(f"[agentflow] skill disk migration skipped: {exc}")
+            logger.info("Migrated {} skill(s) from DB to disk", n)
+    except Exception:  # never let migration block startup
+        logger.exception("Skill disk migration skipped")
     finally:
         db.close()
 
@@ -67,18 +74,21 @@ async def lifespan(app: FastAPI):
     try:
         from services.assistant_seed import seed_assistant
         seed_assistant(db)
-    except Exception as exc:  # never let seeding block startup
-        print(f"[agentflow] assistant seed skipped: {exc}")
+    except Exception:  # never let seeding block startup
+        logger.exception("Assistant seed skipped")
     finally:
         db.close()
     scheduler_service.start()
+    logger.info("Scheduler started")
     try:
         # The MCP gateway's StreamableHTTP session manager needs a running task
         # group for the lifetime of the app (stateless mode still requires it).
         async with mcp_gateway.session_manager.run():
+            logger.info("AgentFlow backend ready")
             yield
     finally:
         scheduler_service.shutdown()
+        logger.info("AgentFlow backend shut down")
 
 
 app = FastAPI(title="AgentFlow", version="0.1.0", lifespan=lifespan)
@@ -95,6 +105,26 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ── Request logging + unhandled-exception logging ────────────────────────────
+# Static-asset/catch-all noise (frontend export, /health) stays at DEBUG so a
+# normal INFO-level deployment doesn't get spammed on every page load.
+_QUIET_PREFIXES = ("/_next", "/health")
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start = time.monotonic()
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception("Unhandled error: {} {}", request.method, request.url.path)
+        return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+    duration_ms = (time.monotonic() - start) * 1000
+    level = "DEBUG" if request.url.path.startswith(_QUIET_PREFIXES) else "INFO"
+    logger.log(level, "{} {} -> {} ({:.1f}ms)", request.method, request.url.path, response.status_code, duration_ms)
+    return response
 
 # ── Public auth endpoints (login/setup/status) — no admin gate ────────────────
 app.include_router(auth.router,        prefix="/api/auth",        tags=["auth"])

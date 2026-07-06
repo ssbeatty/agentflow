@@ -13,6 +13,7 @@ programmatic clients. API keys come via `X-API-Key` or `Authorization: Bearer af
 from datetime import datetime
 
 from fastapi import Depends, HTTPException, Request, status
+from loguru import logger
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -84,6 +85,7 @@ def require_api_key_or_admin(request: Request, db: Session = Depends(get_db)) ->
             rec.last_used_at = datetime.utcnow()
             db.commit()
             return f"apikey:{rec.id}"
+        logger.warning("Rejected API key: {}...", raw[:8])
     raise HTTPException(
         status.HTTP_401_UNAUTHORIZED,
         detail="Invalid or missing API key",

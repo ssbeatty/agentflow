@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from loguru import logger
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
@@ -35,6 +36,7 @@ def create_secret(body: SecretCreate, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(409, "secret key already exists")
     db.refresh(s)
+    logger.info("Secret created: {} ({})", s.id, s.key)
     return s
 
 
@@ -45,6 +47,7 @@ def update_secret(sid: str, body: SecretUpdate, db: Session = Depends(get_db)):
         setattr(s, k, v)
     db.commit()
     db.refresh(s)
+    logger.info("Secret updated: {} ({})", sid, s.key)
     return s
 
 
@@ -53,6 +56,7 @@ def delete_secret(sid: str, db: Session = Depends(get_db)):
     s = _get_or_404(sid, db)
     db.delete(s)
     db.commit()
+    logger.info("Secret deleted: {} ({})", sid, s.key)
 
 
 def _get_or_404(sid: str, db: Session) -> Secret:

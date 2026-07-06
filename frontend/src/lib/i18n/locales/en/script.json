@@ -1,0 +1,116 @@
+{
+  "toast": {
+    "scriptNotFound": "Script not found",
+    "idCopied": "Script ID copied",
+    "invalidJson": "Invalid JSON",
+    "executionFailed": "Failed: {{error}}",
+    "executionCompleted": "Execution completed",
+    "stopFailed": "Stop failed: {{error}}",
+    "saved": "Saved",
+    "deleted": "Script deleted"
+  },
+  "status": {
+    "idle": "idle",
+    "queued": "queued",
+    "running": "running",
+    "completed": "completed",
+    "failed": "failed",
+    "cancelled": "cancelled",
+    "pending": "pending"
+  },
+  "header": {
+    "copyIdTitle": "Copy script ID",
+    "deleteTitle": "Delete script",
+    "revisionLoaded": "Revision #{{number}}{{label}} loaded — save to apply",
+    "unsaved": "unsaved",
+    "issueCount_one": "{{count}} issue",
+    "issueCount_other": "{{count}} issues",
+    "save": "Save",
+    "stop": "Stop",
+    "run": "Run"
+  },
+  "tabs": {
+    "logs": "Logs",
+    "flow": "Flow",
+    "output": "Output",
+    "artifacts": "Artifacts",
+    "schedule": "Schedule",
+    "runs": "Runs"
+  },
+  "run": {
+    "noOutput": "No output yet."
+  },
+  "rightPanel": {
+    "config": "Config",
+    "history": "History"
+  },
+  "config": {
+    "entryFunction": {
+      "label": "Entry function",
+      "placeholder": "run"
+    },
+    "maxExec": {
+      "label": "Kept Executions",
+      "placeholder": "50",
+      "hint": "Oldest records beyond this count are auto-deleted after each run. 0 = unlimited."
+    },
+    "mcp": {
+      "label": "MCP Servers"
+    },
+    "skills": {
+      "label": "Skills"
+    }
+  },
+  "dialog": {
+    "delete": {
+      "title": "Delete script?",
+      "description": "and all its runs will be permanently deleted.",
+      "cancel": "Cancel",
+      "confirm": "Delete"
+    }
+  },
+  "schedule": {
+    "presets": {
+      "every5m": "Every 5m",
+      "hourly": "Hourly",
+      "daily": "Daily",
+      "weekly": "Weekly",
+      "monthly": "Monthly"
+    },
+    "invalidJson": "Invalid JSON",
+    "newSchedule": "New schedule",
+    "cronPlaceholder": "0 * * * *",
+    "labelPlaceholder": "label",
+    "inputJsonLabel": "Input JSON",
+    "presetTitle": "Pre-fill from preset",
+    "fromPreset": "From preset…",
+    "schedulesLabel": "Schedules",
+    "enable": "Enable",
+    "disable": "Disable",
+    "inputBadge": "input",
+    "editInputTitle": "Edit input",
+    "inputToggleOpen": "input",
+    "inputToggleClose": "close",
+    "cancel": "Cancel",
+    "save": "Save",
+    "empty": "No schedules yet"
+  },
+  "runs": {
+    "toast": {
+      "cleared": "Cleared {{count}} records"
+    },
+    "recordCount": "{{count}} records",
+    "clearConfirm": {
+      "question": "Clear all?",
+      "confirm": "Confirm",
+      "cancel": "Cancel"
+    },
+    "clearTitle": "Delete all finished execution records",
+    "clearButton": "Clear",
+    "loading": "Loading…",
+    "empty": "No runs yet.",
+    "confirmDeleteTitle": "Confirm delete",
+    "cancelTitle": "Cancel",
+    "deleteRecordTitle": "Delete this record"
+  }
+}

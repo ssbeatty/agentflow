@@ -1,5 +1,6 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
   Download, RefreshCw, CheckCircle2, XCircle, Trash2, Package,
@@ -22,6 +23,7 @@ type InstallState = "idle" | "working" | "done" | "error";
 type ConfirmKind = null | "recreate" | "delete";
 
 export default function DependencyManager({ scriptId, requirements, onRequirementsSaved }: Props) {
+  const { t } = useTranslation("scriptPanels");
   const [state, setState] = useState<InstallState>("idle");
   const [lines, setLines] = useState<string[]>([]);
   const [venvExists, setVenvExists] = useState(false);
@@ -37,7 +39,7 @@ export default function DependencyManager({ scriptId, requirements, onRequiremen
       const r = await scriptsApi.packages(scriptId);
       setPackages(r.packages);
       setPkgError(r.error);
-      if (r.error) toast.error(`pip list: ${r.error}`);
+      if (r.error) toast.error(t("dependencyManager.toast.pipListError", { error: r.error }));
     } catch (e) { setPackages([]); setPkgError(String(e)); }
   };
 
@@ -81,7 +83,7 @@ export default function DependencyManager({ scriptId, requirements, onRequiremen
             setState("done");
             if (endpoint === "venv") setVenvExists(true);
             refreshPackages();
-            toast.success(endpoint === "venv" ? "Venv ready" : "Packages installed");
+            toast.success(endpoint === "venv" ? t("dependencyManager.toast.venvReady") : t("dependencyManager.toast.packagesInstalled"));
             return;
           }
         }
@@ -101,7 +103,7 @@ export default function DependencyManager({ scriptId, requirements, onRequiremen
       setShowPackages(false);
       setLines([]);
       setState("idle");
-      toast.success("Venv deleted");
+      toast.success(t("dependencyManager.toast.venvDeleted"));
     } catch (e) { toast.error(String(e)); }
   }
 
@@ -128,7 +130,7 @@ export default function DependencyManager({ scriptId, requirements, onRequiremen
         <div className="flex items-center gap-1.5 px-2 py-1">
           <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${venvExists ? "bg-emerald-400" : "bg-muted-foreground/40"}`} />
           <span className="text-xs text-muted-foreground flex-1 truncate">
-            {venvExists ? `venv · ${packages.length} pkgs` : "no venv"}
+            {venvExists ? t("dependencyManager.status.venv", { count: packages.length }) : t("dependencyManager.status.noVenv")}
           </span>
           {state === "done" && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />}
           {state === "error" && <XCircle className="h-3.5 w-3.5 text-destructive shrink-0" />}
@@ -136,12 +138,12 @@ export default function DependencyManager({ scriptId, requirements, onRequiremen
           {venvExists && (
             <>
               <button onClick={() => !busy && setConfirmKind("recreate")} disabled={busy}
-                title="Recreate venv"
+                title={t("dependencyManager.actions.recreateVenvTitle")}
                 className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/10 disabled:opacity-40 transition-colors shrink-0">
                 <RefreshCw className="h-3 w-3" />
               </button>
               <button onClick={() => !busy && setConfirmKind("delete")} disabled={busy}
-                title="Delete venv"
+                title={t("dependencyManager.actions.deleteVenvTitle")}
                 className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-white/10 disabled:opacity-40 transition-colors shrink-0">
                 <Trash2 className="h-3 w-3" />
               </button>
@@ -152,16 +154,16 @@ export default function DependencyManager({ scriptId, requirements, onRequiremen
         <div className="flex items-center gap-1 px-2 pb-1.5">
           {!venvExists ? (
             <Button size="sm" className="h-6 text-xs gap-1 flex-1" onClick={() => stream("venv")} disabled={busy}>
-              <PackagePlus className="h-3 w-3" />Create venv
+              <PackagePlus className="h-3 w-3" />{t("dependencyManager.actions.createVenv")}
             </Button>
           ) : (
             <Button size="sm" className="h-6 text-xs gap-1 flex-1" onClick={() => stream("install")} disabled={busy}>
-              <Download className="h-3 w-3" />Install
+              <Download className="h-3 w-3" />{t("dependencyManager.actions.install")}
             </Button>
           )}
           {venvExists && (
             <Button variant="outline" size="sm" className="h-6 text-xs gap-1 flex-1" onClick={toggleList}>
-              <Package className="h-3 w-3" />{showPackages ? "Hide" : "List"}
+              <Package className="h-3 w-3" />{showPackages ? t("dependencyManager.actions.hide") : t("dependencyManager.actions.list")}
             </Button>
           )}
         </div>
@@ -170,7 +172,7 @@ export default function DependencyManager({ scriptId, requirements, onRequiremen
       {/* Hint */}
       {!venvExists && lines.length === 0 && (
         <div className="px-3 py-2 text-xs text-muted-foreground/70">
-          Edit <code className="text-foreground/80">requirements.txt</code> in the file tree, then create a venv and install.
+          {t("dependencyManager.hint.before")}<code className="text-foreground/80">requirements.txt</code>{t("dependencyManager.hint.after")}
         </div>
       )}
 
@@ -185,7 +187,7 @@ export default function DependencyManager({ scriptId, requirements, onRequiremen
                 <input
                   value={search}
                   onChange={e => setSearch(e.target.value)}
-                  placeholder="Search…"
+                  placeholder={t("dependencyManager.search.placeholder")}
                   className="w-full pl-5 pr-2 py-0.5 text-xs font-mono bg-transparent focus:outline-none placeholder:text-muted-foreground/40"
                 />
               </div>
@@ -196,7 +198,7 @@ export default function DependencyManager({ scriptId, requirements, onRequiremen
                 {pkgError && <div className="text-red-400 whitespace-pre-wrap break-all">{pkgError}</div>}
                 {!pkgError && filteredPackages.length === 0 && (
                   <div className="text-muted-foreground">
-                    {packages.length === 0 ? "no packages" : "no match"}
+                    {packages.length === 0 ? t("dependencyManager.packages.empty") : t("dependencyManager.packages.noMatch")}
                   </div>
                 )}
                 {filteredPackages.map(p => (
@@ -230,23 +232,23 @@ export default function DependencyManager({ scriptId, requirements, onRequiremen
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 text-amber-400" />
-              {confirmKind === "delete" ? "Delete venv?" : "Recreate venv?"}
+              {confirmKind === "delete" ? t("dependencyManager.confirmDialog.deleteTitle") : t("dependencyManager.confirmDialog.recreateTitle")}
             </DialogTitle>
             <DialogDescription>
               {confirmKind === "delete"
-                ? "This permanently deletes the script's .venv directory."
-                : "Deletes the existing .venv and creates a fresh one. Re-run Install to restore packages."}
+                ? t("dependencyManager.confirmDialog.deleteDescription")
+                : t("dependencyManager.confirmDialog.recreateDescription")}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmKind(null)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setConfirmKind(null)}>{t("dependencyManager.confirmDialog.cancel")}</Button>
             <Button variant="destructive" onClick={async () => {
               const kind = confirmKind;
               setConfirmKind(null);
               if (kind === "delete") await doDelete();
               else if (kind === "recreate") await stream("venv", true);
             }}>
-              {confirmKind === "delete" ? "Delete" : "Recreate"}
+              {confirmKind === "delete" ? t("dependencyManager.confirmDialog.deleteConfirm") : t("dependencyManager.confirmDialog.recreateConfirm")}
             </Button>
           </DialogFooter>
         </DialogContent>

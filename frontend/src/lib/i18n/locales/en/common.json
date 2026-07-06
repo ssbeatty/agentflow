@@ -1,0 +1,20 @@
+{
+  "app": { "name": "AgentFlow" },
+  "nav": {
+    "chat": "Chat",
+    "docs": "Docs",
+    "tools": "Tools",
+    "secrets": "Secrets",
+    "security": "Security / API Keys",
+    "settings": "Settings"
+  },
+  "confirm": {
+    "cancel": "Cancel",
+    "confirm": "Confirm"
+  },
+  "language": {
+    "label": "Language",
+    "zh": "中文",
+    "en": "English"
+  }
+}

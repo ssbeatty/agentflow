@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useTranslation } from "react-i18next";
 import {
   ArrowLeft, Plus, Trash2, ToggleLeft, ToggleRight, Globe, Terminal, Radio,
   Activity, Plug, Unplug, Loader2, ShieldCheck, ShieldAlert, XCircle,
@@ -60,6 +61,7 @@ function fmtJson(v: Record<string, string> | undefined): string {
 }
 
 export default function ToolsPage() {
+  const { t } = useTranslation("tools");
   const router = useRouter();
   const confirm = useConfirm();
   const [servers, setServers] = useState<MCPServerConfig[]>([]);
@@ -92,7 +94,7 @@ export default function ToolsPage() {
       const cfg = await searchConfig.get();
       setSearch(cfg);
       setSearchProvider(cfg.provider);
-    } catch { toast.error("Failed to load search config"); }
+    } catch { toast.error(t("webSearch.toast.loadFailed")); }
   }
 
   async function saveSearch() {
@@ -105,7 +107,7 @@ export default function ToolsPage() {
       setSearch(cfg);
       setSearchProvider(cfg.provider);
       setTavilyKey("");
-      toast.success("Search settings saved");
+      toast.success(t("webSearch.toast.saved"));
     } catch (e: unknown) {
       toast.error(String(e));
     } finally {
@@ -119,7 +121,7 @@ export default function ToolsPage() {
       const cfg = await searchConfig.update({ tavily_api_key: "" });
       setSearch(cfg);
       setTavilyKey("");
-      toast.success("Tavily key removed");
+      toast.success(t("webSearch.toast.keyRemoved"));
     } catch (e: unknown) {
       toast.error(String(e));
     } finally {
@@ -132,8 +134,8 @@ export default function ToolsPage() {
     try {
       // Test the freshly typed key if present, else the stored one.
       const res = await searchConfig.test(tavilyKey.trim() ? { tavily_api_key: tavilyKey.trim() } : {});
-      if (res.ok) toast.success(`Tavily OK (${res.results ?? 0} result${res.results === 1 ? "" : "s"})`);
-      else toast.error(`Tavily: ${res.error ?? "failed"}`);
+      if (res.ok) toast.success(t("webSearch.toast.tavilyOk", { count: res.results ?? 0 }));
+      else toast.error(t("webSearch.toast.tavilyError", { error: res.error ?? t("webSearch.toast.testFailedFallback") }));
     } catch (e: unknown) {
       toast.error(String(e));
     } finally {
@@ -143,11 +145,11 @@ export default function ToolsPage() {
 
   async function loadSkills() {
     try { setSkillList(await skills.list()); }
-    catch { toast.error("Failed to load skills"); }
+    catch { toast.error(t("skills.toast.loadFailed")); }
   }
 
   async function createSkill() {
-    if (!skillForm.name.trim()) return toast.error("Name is required");
+    if (!skillForm.name.trim()) return toast.error(t("skills.toast.nameRequired"));
     setCreatingSkill(true);
     try {
       const created = await skills.create({
@@ -168,16 +170,16 @@ export default function ToolsPage() {
     try {
       const updated = await skills.update(sk.id, { enabled: !sk.enabled });
       setSkillList(prev => prev.map(s => s.id === sk.id ? { ...s, enabled: updated.enabled } : s));
-    } catch { toast.error("Failed to update"); }
+    } catch { toast.error(t("skills.toast.updateFailed")); }
   }
 
   async function removeSkill(id: string) {
-    if (!(await confirm("Delete this skill?", { confirmLabel: "Delete", destructive: true }))) return;
+    if (!(await confirm(t("skills.confirm.message"), { confirmLabel: t("skills.confirm.confirmLabel"), destructive: true }))) return;
     try {
       await skills.delete(id);
       setSkillList(prev => prev.filter(s => s.id !== id));
-      toast.success("Deleted");
-    } catch { toast.error("Failed to delete"); }
+      toast.success(t("skills.toast.deleted"));
+    } catch { toast.error(t("skills.toast.deleteFailed")); }
   }
 
   // The OAuth callback window posts back here when sign-in completes.
@@ -185,17 +187,17 @@ export default function ToolsPage() {
     function onMsg(e: MessageEvent) {
       const d = e.data as { source?: string; ok?: boolean; detail?: string } | null;
       if (d && typeof d === "object" && d.source === "agentflow-oauth") {
-        if (d.ok) { toast.success("Connected"); load(); }
-        else toast.error(`Authorization failed${d.detail ? `: ${d.detail}` : ""}`);
+        if (d.ok) { toast.success(t("mcpServers.toast.oauthConnected")); load(); }
+        else toast.error(d.detail ? t("mcpServers.toast.oauthFailedDetail", { detail: d.detail }) : t("mcpServers.toast.oauthFailed"));
       }
     }
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
-  }, []);
+  }, [t]);
 
   async function load() {
     try { setServers(await mcpServers.list()); }
-    catch { toast.error("Failed to load MCP servers"); }
+    catch { toast.error(t("mcpServers.toast.loadFailed")); }
   }
 
   function openCreate() {
@@ -222,15 +224,15 @@ export default function ToolsPage() {
   }
 
   async function save() {
-    if (!form.name.trim()) return toast.error("Name is required");
+    if (!form.name.trim()) return toast.error(t("mcpServers.toast.nameRequired"));
     const isNetwork = form.transport !== "stdio";
-    if (isNetwork && !form.url.trim()) return toast.error("URL is required for this transport");
-    if (!isNetwork && !form.command.trim()) return toast.error("Command is required for stdio");
+    if (isNetwork && !form.url.trim()) return toast.error(t("mcpServers.toast.urlRequired"));
+    if (!isNetwork && !form.command.trim()) return toast.error(t("mcpServers.toast.commandRequired"));
 
     const headers = parseJson(form.headers);
     const env_vars = parseJson(form.env_vars);
-    if (form.headers.trim() && headers === undefined) return toast.error("Headers must be valid JSON");
-    if (form.env_vars.trim() && env_vars === undefined) return toast.error("Env vars must be valid JSON");
+    if (form.headers.trim() && headers === undefined) return toast.error(t("mcpServers.toast.headersInvalid"));
+    if (form.env_vars.trim() && env_vars === undefined) return toast.error(t("mcpServers.toast.envVarsInvalid"));
 
     const authType: AuthType = isNetwork ? form.auth_type : "none";
     const payload = {
@@ -256,7 +258,7 @@ export default function ToolsPage() {
         setServers(prev => [...prev, created]);
       }
       setDialogOpen(false);
-      toast.success(editId ? "Updated" : "Created");
+      toast.success(editId ? t("mcpServers.toast.updated") : t("mcpServers.toast.created"));
     } catch (e: unknown) {
       toast.error(String(e));
     } finally {
@@ -265,19 +267,19 @@ export default function ToolsPage() {
   }
 
   async function remove(id: string) {
-    if (!(await confirm("Delete this MCP server?", { confirmLabel: "Delete", destructive: true }))) return;
+    if (!(await confirm(t("mcpServers.confirm.message"), { confirmLabel: t("mcpServers.confirm.confirmLabel"), destructive: true }))) return;
     try {
       await mcpServers.delete(id);
       setServers(prev => prev.filter(s => s.id !== id));
-      toast.success("Deleted");
-    } catch { toast.error("Failed to delete"); }
+      toast.success(t("mcpServers.toast.deleted"));
+    } catch { toast.error(t("mcpServers.toast.deleteFailed")); }
   }
 
   async function toggleEnabled(srv: MCPServerConfig) {
     try {
       const updated = await mcpServers.update(srv.id, { enabled: !srv.enabled });
       setServers(prev => prev.map(s => s.id === srv.id ? updated : s));
-    } catch { toast.error("Failed to update"); }
+    } catch { toast.error(t("mcpServers.toast.updateFailed")); }
   }
 
   async function testConnection(srv: MCPServerConfig) {
@@ -285,9 +287,9 @@ export default function ToolsPage() {
     try {
       const result = await mcpServers.probe(srv.id);
       setProbeResult({ srv, result });
-      if (result.ok) toast.success(`${srv.name}: ${result.tools.length} tool(s) found`);
-      else if (result.needs_auth) toast.error(`${srv.name}: authentication required`);
-      else toast.error(`${srv.name}: connection failed`);
+      if (result.ok) toast.success(t("mcpServers.toast.testFound", { name: srv.name, count: result.tools.length }));
+      else if (result.needs_auth) toast.error(t("mcpServers.toast.testAuthRequired", { name: srv.name }));
+      else toast.error(t("mcpServers.toast.testFailed", { name: srv.name }));
     } catch (e: unknown) {
       toast.error(String(e));
     } finally {
@@ -300,9 +302,9 @@ export default function ToolsPage() {
     try {
       const { authorize_url } = await mcpServers.oauthAuthorizeUrl(srv.id);
       const w = window.open(authorize_url, "agentflow_oauth", "width=620,height=780");
-      if (!w) toast.error("Popup blocked — allow popups for this site");
+      if (!w) toast.error(t("mcpServers.toast.popupBlocked"));
     } catch (e: unknown) {
-      toast.error(`OAuth: ${String(e)}`);
+      toast.error(t("mcpServers.toast.oauthError", { error: String(e) }));
     } finally {
       setConnecting(null);
     }
@@ -312,8 +314,8 @@ export default function ToolsPage() {
     try {
       const updated = await mcpServers.oauthDisconnect(srv.id);
       setServers(prev => prev.map(s => s.id === srv.id ? updated : s));
-      toast.success("Disconnected");
-    } catch { toast.error("Failed to disconnect"); }
+      toast.success(t("mcpServers.toast.disconnected"));
+    } catch { toast.error(t("mcpServers.toast.disconnectFailed")); }
   }
 
   const isNetwork = form.transport !== "stdio";
@@ -324,40 +326,40 @@ export default function ToolsPage() {
         <Link href="/">
           <Button variant="ghost" size="icon"><ArrowLeft className="h-4 w-4" /></Button>
         </Link>
-        <h1 className="font-semibold">Tools & MCP Servers</h1>
+        <h1 className="font-semibold">{t("page.title")}</h1>
       </header>
 
       <main className="max-w-2xl mx-auto px-6 py-8">
         {/* Built-in tools info */}
         <div className="mb-8 rounded-lg border border-border bg-secondary/20 p-4">
-          <h2 className="font-medium text-sm mb-1">Built-in tools (always available)</h2>
+          <h2 className="font-medium text-sm mb-1">{t("builtinTools.heading")}</h2>
           <p className="text-xs text-muted-foreground mb-3">
-            Injected into every run automatically — no per-script setup. The{" "}
+            {t("builtinTools.description.prefix")}{" "}
             <code className="font-mono bg-muted px-1 rounded">web_search</code> /{" "}
-            <code className="font-mono bg-muted px-1 rounded">web_fetch</code> provider is
-            configured below.
+            <code className="font-mono bg-muted px-1 rounded">web_fetch</code>{" "}
+            {t("builtinTools.description.suffix")}
           </p>
           <div className="flex gap-2 flex-wrap">
             {[
               {
                 name: "web_fetch",
-                desc: search?.tavily_connected ? "Fetch webpage text (Tavily → HTTP)" : "Fetch webpage text",
+                desc: search?.tavily_connected ? t("builtinTools.webFetch.tavilyConnected") : t("builtinTools.webFetch.default"),
               },
               {
                 name: "web_search",
                 desc: searchProvider === "tavily" && search?.tavily_connected
-                  ? "Tavily search (DuckDuckGo fallback)"
-                  : "DuckDuckGo search",
+                  ? t("builtinTools.webSearchTool.tavilyConnected")
+                  : t("builtinTools.webSearchTool.default"),
               },
-            ].map(t => (
-              <div key={t.name} className="rounded-md border border-border bg-background px-3 py-1.5">
-                <code className="text-xs font-mono text-primary">{t.name}</code>
-                <span className="text-xs text-muted-foreground ml-2">{t.desc}</span>
+            ].map(item => (
+              <div key={item.name} className="rounded-md border border-border bg-background px-3 py-1.5">
+                <code className="text-xs font-mono text-primary">{item.name}</code>
+                <span className="text-xs text-muted-foreground ml-2">{item.desc}</span>
               </div>
             ))}
           </div>
           <p className="text-xs text-muted-foreground mt-3">
-            Usage in scripts:{" "}
+            {t("builtinTools.usageLabel")}{" "}
             <code className="font-mono bg-muted px-1 rounded">from agentflow import get_tools, get_agent</code>
           </p>
         </div>
@@ -366,29 +368,29 @@ export default function ToolsPage() {
         <div className="mb-8 rounded-lg border border-border p-4">
           <div className="flex items-center gap-2 mb-1">
             <Search className="h-4 w-4 text-muted-foreground" />
-            <h2 className="font-medium text-sm">Web search provider</h2>
+            <h2 className="font-medium text-sm">{t("webSearch.heading")}</h2>
           </div>
           <p className="text-xs text-muted-foreground mb-3">
-            Which provider <code className="font-mono bg-muted px-1 rounded">web_search</code> /{" "}
-            <code className="font-mono bg-muted px-1 rounded">web_fetch</code> use. DuckDuckGo (no key)
-            is always the fallback, so this is optional.
+            {t("webSearch.description.prefix")} <code className="font-mono bg-muted px-1 rounded">web_search</code> /{" "}
+            <code className="font-mono bg-muted px-1 rounded">web_fetch</code>{" "}
+            {t("webSearch.description.suffix")}
           </p>
 
           <div className="space-y-3">
             <div className="flex items-center gap-3">
-              <Label className="text-xs w-20 shrink-0">Provider</Label>
+              <Label className="text-xs w-20 shrink-0">{t("webSearch.providerLabel")}</Label>
               <Select value={searchProvider} onValueChange={(v) => setSearchProvider(v as "tavily" | "duckduckgo")}>
                 <SelectTrigger className="h-8 w-56"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="tavily">Tavily (needs API key)</SelectItem>
-                  <SelectItem value="duckduckgo">DuckDuckGo (no key)</SelectItem>
+                  <SelectItem value="tavily">{t("webSearch.tavilyOption")}</SelectItem>
+                  <SelectItem value="duckduckgo">{t("webSearch.duckduckgoOption")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             {searchProvider === "tavily" && (
               <div className="flex items-center gap-3">
-                <Label className="text-xs w-20 shrink-0">Tavily key</Label>
+                <Label className="text-xs w-20 shrink-0">{t("webSearch.tavilyKeyLabel")}</Label>
                 <div className="flex-1 flex items-center gap-2">
                   <Input
                     type="password"
@@ -396,14 +398,14 @@ export default function ToolsPage() {
                     onChange={(e) => setTavilyKey(e.target.value)}
                     placeholder={
                       search?.tavily_connected
-                        ? `saved (${search.tavily_key_preview}) — type to replace`
-                        : "tvly-…"
+                        ? t("webSearch.tavilyKeyPlaceholderSaved", { preview: search.tavily_key_preview })
+                        : t("webSearch.tavilyKeyPlaceholderDefault")
                     }
                     className="h-8 font-mono text-xs"
                   />
                   {search?.tavily_connected && (
                     <Badge variant="outline" className="gap-1 border-green-600/40 text-green-600 shrink-0">
-                      <ShieldCheck className="h-3 w-3" />set
+                      <ShieldCheck className="h-3 w-3" />{t("webSearch.keySetBadge")}
                     </Badge>
                   )}
                 </div>
@@ -413,20 +415,20 @@ export default function ToolsPage() {
             <div className="flex items-center gap-2 pt-1">
               <Button size="sm" onClick={saveSearch} disabled={savingSearch}>
                 {savingSearch ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                <span className="ml-1">Save</span>
+                <span className="ml-1">{t("webSearch.saveButton")}</span>
               </Button>
               {searchProvider === "tavily" && (
                 <Button size="sm" variant="ghost" onClick={testTavily}
                   disabled={testingSearch || (!tavilyKey.trim() && !search?.tavily_connected)}>
                   {testingSearch ? <Loader2 className="h-4 w-4 animate-spin" /> : <Activity className="h-4 w-4" />}
-                  <span className="ml-1 text-xs">Test</span>
+                  <span className="ml-1 text-xs">{t("webSearch.testButton")}</span>
                 </Button>
               )}
               {searchProvider === "tavily" && search?.tavily_connected && (
                 <Button size="sm" variant="ghost" onClick={clearTavilyKey} disabled={savingSearch}
                   className="text-muted-foreground">
                   <Trash2 className="h-4 w-4" />
-                  <span className="ml-1 text-xs">Remove key</span>
+                  <span className="ml-1 text-xs">{t("webSearch.removeKeyButton")}</span>
                 </Button>
               )}
             </div>
@@ -436,24 +438,24 @@ export default function ToolsPage() {
         {/* MCP Servers */}
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="font-medium">MCP Servers</h2>
+            <h2 className="font-medium">{t("mcpServers.heading")}</h2>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Enable a server here, then select it per script (its right panel). Tools are injected via{" "}
+              {t("mcpServers.description.prefix")}{" "}
               <code className="font-mono bg-muted px-1 rounded">get_tools()</code> /{" "}
-              <code className="font-mono bg-muted px-1 rounded">get_agent()</code> only for the servers a
-              script selects (and that are enabled) — not globally.
+              <code className="font-mono bg-muted px-1 rounded">get_agent()</code>{" "}
+              {t("mcpServers.description.suffix")}
             </p>
           </div>
           <Button size="sm" onClick={openCreate}>
             <Plus className="h-4 w-4" />
-            Add
+            {t("mcpServers.addButton")}
           </Button>
         </div>
 
         <div className="space-y-3">
           {servers.length === 0 && (
             <p className="text-sm text-muted-foreground text-center py-8">
-              No MCP servers configured. Add one to extend your scripts with external tools.
+              {t("mcpServers.empty")}
             </p>
           )}
           {servers.map(srv => (
@@ -465,14 +467,14 @@ export default function ToolsPage() {
                     {TRANSPORT_ICONS[srv.transport]}
                     {srv.transport}
                   </Badge>
-                  {!srv.enabled && <Badge variant="outline">disabled</Badge>}
+                  {!srv.enabled && <Badge variant="outline">{t("mcpServers.disabledBadge")}</Badge>}
                   {srv.auth_type === "oauth2" && (
                     srv.oauth_connected
                       ? <Badge variant="outline" className="gap-1 border-green-600/40 text-green-600">
-                          <ShieldCheck className="h-3 w-3" />authorized
+                          <ShieldCheck className="h-3 w-3" />{t("mcpServers.authorizedBadge")}
                         </Badge>
                       : <Badge variant="outline" className="gap-1 border-amber-600/40 text-amber-600">
-                          <ShieldAlert className="h-3 w-3" />not connected
+                          <ShieldAlert className="h-3 w-3" />{t("mcpServers.notConnectedBadge")}
                         </Badge>
                   )}
                 </div>
@@ -482,33 +484,33 @@ export default function ToolsPage() {
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 <Button variant="ghost" size="sm" onClick={() => testConnection(srv)}
-                  disabled={probing === srv.id} title="Test connection & list tools">
+                  disabled={probing === srv.id} title={t("mcpServers.testTitle")}>
                   {probing === srv.id
                     ? <Loader2 className="h-4 w-4 animate-spin" />
                     : <Activity className="h-4 w-4" />}
-                  <span className="text-xs ml-1">Test</span>
+                  <span className="text-xs ml-1">{t("mcpServers.testButton")}</span>
                 </Button>
                 {srv.auth_type === "oauth2" && (
                   <Button variant="ghost" size="sm" onClick={() => connectOauth(srv)}
-                    disabled={connecting === srv.id} title={srv.oauth_connected ? "Re-authorize" : "Sign in"}>
+                    disabled={connecting === srv.id} title={srv.oauth_connected ? t("mcpServers.reauthorizeTitle") : t("mcpServers.signInTitle")}>
                     {connecting === srv.id
                       ? <Loader2 className="h-4 w-4 animate-spin" />
                       : <Plug className="h-4 w-4" />}
-                    <span className="text-xs ml-1">{srv.oauth_connected ? "Reconnect" : "Connect"}</span>
+                    <span className="text-xs ml-1">{srv.oauth_connected ? t("mcpServers.reconnectButton") : t("mcpServers.connectButton")}</span>
                   </Button>
                 )}
                 {srv.auth_type === "oauth2" && srv.oauth_connected && (
-                  <Button variant="ghost" size="icon" onClick={() => disconnectOauth(srv)} title="Disconnect">
+                  <Button variant="ghost" size="icon" onClick={() => disconnectOauth(srv)} title={t("mcpServers.disconnectTitle")}>
                     <Unplug className="h-4 w-4 text-muted-foreground" />
                   </Button>
                 )}
-                <Button variant="ghost" size="icon" onClick={() => toggleEnabled(srv)} title={srv.enabled ? "Disable" : "Enable"}>
+                <Button variant="ghost" size="icon" onClick={() => toggleEnabled(srv)} title={srv.enabled ? t("mcpServers.disableTitle") : t("mcpServers.enableTitle")}>
                   {srv.enabled
                     ? <ToggleRight className="h-4 w-4 text-primary" />
                     : <ToggleLeft className="h-4 w-4 text-muted-foreground" />}
                 </Button>
                 <Button variant="ghost" size="icon" onClick={() => openEdit(srv)}>
-                  <span className="text-xs">Edit</span>
+                  <span className="text-xs">{t("mcpServers.editButton")}</span>
                 </Button>
                 <Button variant="ghost" size="icon" onClick={() => remove(srv.id)}>
                   <Trash2 className="h-4 w-4 text-destructive" />
@@ -521,7 +523,7 @@ export default function ToolsPage() {
         {/* Usage hint */}
         {servers.some(s => s.enabled) && (
           <div className="mt-6 rounded-lg border border-border bg-secondary/20 p-4 text-xs text-muted-foreground space-y-2">
-            <p className="font-medium text-foreground">Script usage</p>
+            <p className="font-medium text-foreground">{t("mcpServers.usageHint.heading")}</p>
             <pre className="font-mono text-xs overflow-x-auto">{`from agentflow import get_agent, get_tools
 
 # Zero-config: built-ins + this script's selected MCP servers + bound skills
@@ -543,21 +545,21 @@ def run(input: dict) -> dict:
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="font-medium flex items-center gap-1.5">
-              <Sparkles className="h-4 w-4 text-primary" /> Skills
+              <Sparkles className="h-4 w-4 text-primary" /> {t("skills.heading")}
             </h2>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Reusable instructions (SKILL.md + files) an agent loads on demand.
-              Bind them per script; <code className="font-mono bg-muted px-1 rounded">get_agent()</code> exposes them via a <code className="font-mono bg-muted px-1 rounded">read_skill</code> tool.
+              {t("skills.description.prefix")}{" "}
+              <code className="font-mono bg-muted px-1 rounded">get_agent()</code> {t("skills.description.middle")} <code className="font-mono bg-muted px-1 rounded">read_skill</code> {t("skills.description.suffix")}
             </p>
           </div>
           <div className="flex items-center gap-2">
             <Button size="sm" variant="outline" onClick={() => setMarketplaceOpen(true)}>
               <Store className="h-4 w-4" />
-              Browse Marketplace
+              {t("skills.browseMarketplace")}
             </Button>
             <Button size="sm" onClick={() => { setSkillForm({ name: "", description: "" }); setSkillDialogOpen(true); }}>
               <Plus className="h-4 w-4" />
-              New skill
+              {t("skills.newSkill")}
             </Button>
           </div>
         </div>
@@ -565,7 +567,7 @@ def run(input: dict) -> dict:
         <div className="space-y-3">
           {skillList.length === 0 && (
             <p className="text-sm text-muted-foreground text-center py-8">
-              No skills yet. Create one to package reusable agent instructions and files.
+              {t("skills.empty")}
             </p>
           )}
           {skillList.map(sk => (
@@ -573,19 +575,19 @@ def run(input: dict) -> dict:
               <Link href={`/skill?id=${sk.id}`} className="min-w-0 flex-1 group">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-medium text-sm group-hover:text-primary">{sk.name}</span>
-                  {!sk.enabled && <Badge variant="outline">disabled</Badge>}
+                  {!sk.enabled && <Badge variant="outline">{t("skills.disabledBadge")}</Badge>}
                 </div>
                 <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                  {sk.description || "No description"}
+                  {sk.description || t("skills.noDescription")}
                 </p>
               </Link>
               <div className="flex items-center gap-1 shrink-0">
-                <Button variant="ghost" size="icon" onClick={() => toggleSkillEnabled(sk)} title={sk.enabled ? "Disable" : "Enable"}>
+                <Button variant="ghost" size="icon" onClick={() => toggleSkillEnabled(sk)} title={sk.enabled ? t("skills.disableTitle") : t("skills.enableTitle")}>
                   {sk.enabled
                     ? <ToggleRight className="h-4 w-4 text-primary" />
                     : <ToggleLeft className="h-4 w-4 text-muted-foreground" />}
                 </Button>
-                <Button variant="ghost" size="icon" onClick={() => router.push(`/skill?id=${sk.id}`)} title="Edit">
+                <Button variant="ghost" size="icon" onClick={() => router.push(`/skill?id=${sk.id}`)} title={t("skills.editTitle")}>
                   <Pencil className="h-4 w-4" />
                 </Button>
                 <Button variant="ghost" size="icon" onClick={() => removeSkill(sk.id)}>
@@ -599,8 +601,8 @@ def run(input: dict) -> dict:
         {/* Skills usage hint */}
         {skillList.length > 0 && (
           <div className="mt-6 rounded-lg border border-border bg-secondary/20 p-4 text-xs text-muted-foreground space-y-2">
-            <p className="font-medium text-foreground">Script usage</p>
-            <p>Bind skills to a script in its right panel, then:</p>
+            <p className="font-medium text-foreground">{t("skills.usageHint.heading")}</p>
+            <p>{t("skills.usageHint.intro")}</p>
             <pre className="font-mono text-xs overflow-x-auto">{`from agentflow import get_agent, get_deep_agent
 
 # Lightweight — agent loads a skill's SKILL.md via the built-in read_skill tool
@@ -615,11 +617,11 @@ async def run(input: dict) -> dict:
     result = await agent.ainvoke({"messages": [("user", input["message"])]})
     return {"reply": result["messages"][-1].content}`}</pre>
             <p>
-              Full examples:{" "}
+              {t("skills.usageHint.examplesPrefix")}{" "}
               <code className="font-mono bg-muted px-1 rounded">examples/skill_agent.py</code>{" "}
               &{" "}
               <code className="font-mono bg-muted px-1 rounded">examples/skill_deep_agent.py</code>.
-              When a skill loads you&apos;ll see a <span className="font-medium">Loaded skill: …</span> line in the run log.
+              {" "}{t("skills.usageHint.loadedPrefix")} <span className="font-medium">Loaded skill: …</span> {t("skills.usageHint.loadedSuffix")}
             </p>
           </div>
         )}
@@ -636,30 +638,30 @@ async def run(input: dict) -> dict:
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editId ? "Edit MCP Server" : "Add MCP Server"}</DialogTitle>
+            <DialogTitle>{editId ? t("mcpServers.dialog.editTitle") : t("mcpServers.dialog.addTitle")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Name</Label>
+                <Label>{t("mcpServers.dialog.name")}</Label>
                 <Input
                   value={form.name}
                   onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
-                  placeholder="my-server"
+                  placeholder={t("mcpServers.dialog.namePlaceholder")}
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>Transport</Label>
+                <Label>{t("mcpServers.dialog.transport")}</Label>
                 <Select
                   value={form.transport}
                   onValueChange={v => setForm(p => ({ ...p, transport: v as Transport }))}
                 >
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="http">http (Streamable HTTP)</SelectItem>
-                    <SelectItem value="sse">sse (Server-Sent Events)</SelectItem>
-                    <SelectItem value="stdio">stdio (local process)</SelectItem>
-                    <SelectItem value="websocket">websocket</SelectItem>
+                    <SelectItem value="http">{t("mcpServers.dialog.transportHttp")}</SelectItem>
+                    <SelectItem value="sse">{t("mcpServers.dialog.transportSse")}</SelectItem>
+                    <SelectItem value="stdio">{t("mcpServers.dialog.transportStdio")}</SelectItem>
+                    <SelectItem value="websocket">{t("mcpServers.dialog.transportWebsocket")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -667,39 +669,39 @@ async def run(input: dict) -> dict:
 
             {isNetwork ? (
               <div className="space-y-1.5">
-                <Label>URL</Label>
+                <Label>{t("mcpServers.dialog.url")}</Label>
                 <Input
                   value={form.url}
                   onChange={e => setForm(p => ({ ...p, url: e.target.value }))}
-                  placeholder="http://localhost:8001/mcp"
+                  placeholder={t("mcpServers.dialog.urlPlaceholder")}
                 />
               </div>
             ) : (
               <>
                 <div className="space-y-1.5">
-                  <Label>Command</Label>
+                  <Label>{t("mcpServers.dialog.command")}</Label>
                   <Input
                     value={form.command}
                     onChange={e => setForm(p => ({ ...p, command: e.target.value }))}
-                    placeholder="python"
+                    placeholder={t("mcpServers.dialog.commandPlaceholder")}
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Args <span className="text-muted-foreground">(one per line)</span></Label>
+                  <Label>{t("mcpServers.dialog.args")} <span className="text-muted-foreground">{t("mcpServers.dialog.argsHint")}</span></Label>
                   <Textarea
                     value={form.args}
                     onChange={e => setForm(p => ({ ...p, args: e.target.value }))}
-                    placeholder={"/path/to/server.py\n--port\n8001"}
+                    placeholder={t("mcpServers.dialog.argsPlaceholder")}
                     rows={3}
                     className="font-mono text-xs"
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Env vars <span className="text-muted-foreground">(JSON object, optional)</span></Label>
+                  <Label>{t("mcpServers.dialog.envVars")} <span className="text-muted-foreground">{t("mcpServers.dialog.envVarsHint")}</span></Label>
                   <Textarea
                     value={form.env_vars}
                     onChange={e => setForm(p => ({ ...p, env_vars: e.target.value }))}
-                    placeholder={'{"MY_API_KEY": "..."}'}
+                    placeholder={t("mcpServers.dialog.envVarsPlaceholder")}
                     rows={2}
                     className="font-mono text-xs"
                   />
@@ -710,43 +712,42 @@ async def run(input: dict) -> dict:
             {isNetwork && (
               <>
                 <div className="space-y-1.5">
-                  <Label>Authentication</Label>
+                  <Label>{t("mcpServers.dialog.authentication")}</Label>
                   <Select
                     value={form.auth_type}
                     onValueChange={v => setForm(p => ({ ...p, auth_type: v as AuthType }))}
                   >
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">None / static headers</SelectItem>
-                      <SelectItem value="oauth2">OAuth 2.0 (browser sign-in)</SelectItem>
+                      <SelectItem value="none">{t("mcpServers.dialog.authNone")}</SelectItem>
+                      <SelectItem value="oauth2">{t("mcpServers.dialog.authOauth2")}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
                 {form.auth_type === "oauth2" && (
                   <div className="space-y-1.5">
-                    <Label>OAuth scope <span className="text-muted-foreground">(optional)</span></Label>
+                    <Label>{t("mcpServers.dialog.oauthScope")} <span className="text-muted-foreground">{t("mcpServers.dialog.optional")}</span></Label>
                     <Input
                       value={form.oauth_scope}
                       onChange={e => setForm(p => ({ ...p, oauth_scope: e.target.value }))}
-                      placeholder="space-separated scopes"
+                      placeholder={t("mcpServers.dialog.oauthScopePlaceholder")}
                       className="font-mono text-xs"
                     />
                     <p className="text-xs text-muted-foreground">
-                      Save the server, then click <span className="font-medium">Connect</span> to sign in.
-                      Endpoints are auto-discovered (RFC 9728 / 8414) and a client is registered
-                      dynamically when supported.
+                      {t("mcpServers.dialog.oauthHint.prefix")} <span className="font-medium">{t("mcpServers.connectButton")}</span>{" "}
+                      {t("mcpServers.dialog.oauthHint.suffix")}
                     </p>
                   </div>
                 )}
 
                 {form.auth_type === "none" && (
                   <div className="space-y-1.5">
-                    <Label>Headers <span className="text-muted-foreground">(JSON object, optional)</span></Label>
+                    <Label>{t("mcpServers.dialog.headers")} <span className="text-muted-foreground">{t("mcpServers.dialog.headersHint")}</span></Label>
                     <Textarea
                       value={form.headers}
                       onChange={e => setForm(p => ({ ...p, headers: e.target.value }))}
-                      placeholder={'{"Authorization": "Bearer ..."}'}
+                      placeholder={t("mcpServers.dialog.headersPlaceholder")}
                       rows={2}
                       className="font-mono text-xs"
                     />
@@ -763,12 +764,12 @@ async def run(input: dict) -> dict:
                 onChange={e => setForm(p => ({ ...p, enabled: e.target.checked }))}
                 className="rounded"
               />
-              <span className="text-sm">Enabled (inject into all script runs)</span>
+              <span className="text-sm">{t("mcpServers.dialog.enabledCheckbox")}</span>
             </label>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</Button>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>{t("mcpServers.dialog.cancel")}</Button>
+            <Button onClick={save} disabled={saving}>{saving ? t("mcpServers.dialog.saving") : t("mcpServers.dialog.save")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -777,27 +778,27 @@ async def run(input: dict) -> dict:
       <Dialog open={!!probeResult} onOpenChange={o => { if (!o) setProbeResult(null); }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{probeResult?.srv.name} — connection test</DialogTitle>
+            <DialogTitle>{t("mcpServers.probeDialog.title", { name: probeResult?.srv.name })}</DialogTitle>
           </DialogHeader>
           {probeResult && (probeResult.result.ok ? (
             <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
               <p className="text-xs text-muted-foreground">
-                Connected · {probeResult.result.tools.length} tool(s)
+                {t("mcpServers.probeDialog.connectedCount", { count: probeResult.result.tools.length })}
               </p>
               {probeResult.result.tools.length === 0 && (
-                <p className="text-sm text-muted-foreground">This server exposes no tools.</p>
+                <p className="text-sm text-muted-foreground">{t("mcpServers.probeDialog.noTools")}</p>
               )}
-              {probeResult.result.tools.map(t => (
-                <details key={t.name} className="rounded-md border border-border p-2.5">
+              {probeResult.result.tools.map(tool => (
+                <details key={tool.name} className="rounded-md border border-border p-2.5">
                   <summary className="cursor-pointer text-sm font-mono text-primary">
-                    {t.name}
-                    {t.title && <span className="text-muted-foreground font-sans ml-2">{t.title}</span>}
+                    {tool.name}
+                    {tool.title && <span className="text-muted-foreground font-sans ml-2">{tool.title}</span>}
                   </summary>
-                  {t.description && (
-                    <p className="text-xs text-muted-foreground mt-1.5 whitespace-pre-wrap">{t.description}</p>
+                  {tool.description && (
+                    <p className="text-xs text-muted-foreground mt-1.5 whitespace-pre-wrap">{tool.description}</p>
                   )}
                   <pre className="mt-2 text-[11px] font-mono bg-muted/50 rounded p-2 overflow-x-auto">
-                    {JSON.stringify(t.input_schema, null, 2)}
+                    {JSON.stringify(tool.input_schema, null, 2)}
                   </pre>
                 </details>
               ))}
@@ -810,20 +811,20 @@ async def run(input: dict) -> dict:
               </div>
               {probeResult.result.needs_auth && probeResult.srv.auth_type === "oauth2" && (
                 <Button size="sm" onClick={() => { connectOauth(probeResult.srv); setProbeResult(null); }}>
-                  <Plug className="h-4 w-4" /> Connect
+                  <Plug className="h-4 w-4" /> {t("mcpServers.connectButton")}
                 </Button>
               )}
               {probeResult.result.needs_auth && probeResult.srv.auth_type !== "oauth2" && (
                 <p className="text-xs text-muted-foreground">
-                  This server requires authentication. Edit it and set Authentication to
-                  {" "}<span className="font-medium">OAuth 2.0</span>, or add an{" "}
-                  <code className="font-mono bg-muted px-1 rounded">Authorization</code> header.
+                  {t("mcpServers.probeDialog.authRequiredHint.prefix")}
+                  {" "}<span className="font-medium">{t("mcpServers.probeDialog.oauth2Label")}</span>{t("mcpServers.probeDialog.authRequiredHint.suffix")}{" "}
+                  <code className="font-mono bg-muted px-1 rounded">Authorization</code> {t("mcpServers.probeDialog.authRequiredHint.suffix2")}
                 </p>
               )}
             </div>
           ))}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setProbeResult(null)}>Close</Button>
+            <Button variant="outline" onClick={() => setProbeResult(null)}>{t("mcpServers.probeDialog.close")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -832,35 +833,35 @@ async def run(input: dict) -> dict:
       <Dialog open={skillDialogOpen} onOpenChange={setSkillDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>New skill</DialogTitle>
+            <DialogTitle>{t("skills.dialog.title")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <Label>Name</Label>
+              <Label>{t("skills.dialog.name")}</Label>
               <Input
                 value={skillForm.name}
                 onChange={e => setSkillForm(p => ({ ...p, name: e.target.value }))}
-                placeholder="pdf-processing"
+                placeholder={t("skills.dialog.namePlaceholder")}
                 onKeyDown={e => { if (e.key === "Enter") createSkill(); }}
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Description <span className="text-muted-foreground">(shown to the agent)</span></Label>
+              <Label>{t("skills.dialog.description")} <span className="text-muted-foreground">{t("skills.dialog.descriptionHint")}</span></Label>
               <Textarea
                 value={skillForm.description}
                 onChange={e => setSkillForm(p => ({ ...p, description: e.target.value }))}
-                placeholder="What this skill does and when to use it"
+                placeholder={t("skills.dialog.descriptionPlaceholder")}
                 rows={3}
               />
             </div>
             <p className="text-xs text-muted-foreground">
-              A starter <code className="font-mono bg-muted px-1 rounded">SKILL.md</code> is created — edit it and add files next.
+              {t("skills.dialog.hint.prefix")} <code className="font-mono bg-muted px-1 rounded">SKILL.md</code> {t("skills.dialog.hint.suffix")}
             </p>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setSkillDialogOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setSkillDialogOpen(false)}>{t("skills.dialog.cancel")}</Button>
             <Button onClick={createSkill} disabled={creatingSkill}>
-              {creatingSkill ? "Creating…" : "Create & edit"}
+              {creatingSkill ? t("skills.dialog.creating") : t("skills.dialog.createAndEdit")}
             </Button>
           </DialogFooter>
         </DialogContent>
