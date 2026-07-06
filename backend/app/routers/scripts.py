@@ -1,4 +1,5 @@
 import json
+import shutil
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse
@@ -8,8 +9,9 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.config import DATA_DIR
 from app.database import get_db
-from app.models import Script, ScriptFile, ScriptRevision, ScriptInputPreset
+from app.models import Script, ScriptFile, ScriptRevision, ScriptInputPreset, Execution
 from app.schemas import (
     ScriptCreate, ScriptUpdate, ScriptDetail, ScriptSummary, ScriptFileUpsert, ScriptFileOut,
     RevisionCreate, RevisionLabelUpdate, RevisionSummaryOut, RevisionDetailOut,
@@ -85,11 +87,39 @@ def update_script(script_id: str, body: ScriptUpdate, db: Session = Depends(get_
 
 
 @router.delete("/{script_id}", status_code=204)
-def delete_script(script_id: str, db: Session = Depends(get_db)):
+async def delete_script(script_id: str, db: Session = Depends(get_db)):
     script = _get_or_404(script_id, db)
-    db.delete(script)
+    name = script.name
+
+    # Stop any in-flight runs of this script *before* touching the DB / disk:
+    # a live venv-python / run subprocess keeps file handles open, so the
+    # rmtree below couldn't fully remove .venv on Windows. stop_execution waits
+    # for the process to exit, releasing the locks. (Deleting a still-queued
+    # run's row is safe: start_execution's top-level try/except tolerates the
+    # row vanishing — it just logs and releases its slot.)
+    from services.execution_engine import stop_execution
+    in_flight = (
+        db.query(Execution)
+        .filter(
+            Execution.script_id == script_id,
+            Execution.status.in_(["running", "queued", "pending"]),
+        )
+        .all()
+    )
+    for exc in in_flight:
+        try:
+            await stop_execution(exc.id)
+        except Exception:
+            logger.warning("[script {}] failed to stop in-flight run {} on delete", script_id, exc.id)
+
+    db.delete(script)  # cascade removes files/executions/logs/cron/revisions/presets rows
     db.commit()
-    logger.info("Script deleted: {} ({})", script_id, script.name)
+
+    # Remove the on-disk folder too (.venv / runs / workspace / materialized
+    # files). Without this the whole dir — the venv alone is hundreds of MB —
+    # would leak forever under data/scripts/<id>/ on every script delete.
+    shutil.rmtree(DATA_DIR / script_id, ignore_errors=True)
+    logger.info("Script deleted: {} ({})", script_id, name)
 
 
 # ── File management ────────────────────────────────────────────────────────────
