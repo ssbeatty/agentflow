@@ -60,7 +60,7 @@
       "envReady": "助手环境已就绪",
       "envSetupFailed": "环境设置失败——请查看日志",
       "envConnectionFailed": "环境设置连接失败",
-      "initEnvFirst": "请先初始化助手环境",
+      "initEnvFirst": "后端缺少助手依赖,请更新后端依赖并重启后端",
       "revertedTurn": "已撤销本轮更改",
       "revertedFile": "已撤销 {{filename}}",
       "revertFailed": "撤销失败：{{error}}"
@@ -82,8 +82,8 @@
     },
     "newChat": "新建对话",
     "setup": {
-      "title": "首次设置",
-      "description": "安装基础依赖包（langchain / langgraph，约 1–3 分钟，仅需一次）。",
+      "title": "缺少后端依赖",
+      "description": "助手运行在后端进程,复用后端的 LangChain 依赖。请执行 `pip install -r backend/requirements.txt`,然后重启后端。",
       "initializing": "初始化中…",
       "initialize": "初始化环境"
     },

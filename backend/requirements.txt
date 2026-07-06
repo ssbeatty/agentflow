@@ -18,6 +18,23 @@ loguru>=0.7.0
 mcp>=1.28.0
 httpx>=0.27.0
 
+# LangChain / LangGraph stack — required by the BUILT-IN "AI 脚本助手" assistant
+# (services/assistant_seed.py). Unlike user scripts (which each get an isolated
+# per-script venv), the assistant is platform code, so it runs on the *backend*
+# python and reuses these deps — upgrading the platform upgrades the assistant,
+# no per-script venv to maintain. Keep this list in sync with
+# venv_manager.BASELINE_PACKAGES (the user-script baseline installs the same set
+# into each script venv). httpx / ddgs / beautifulsoup4 above are shared.
+langchain-core
+langchain-openai
+langchain-deepseek
+langgraph
+langchain-mcp-adapters
+nest-asyncio
+deepagents
+ddgs
+beautifulsoup4
+
 # Optional DB drivers — installed in the docker image so DATABASE_URL can
 # switch between sqlite / postgres / mysql without changing the image.
 psycopg2-binary>=2.9.9

@@ -148,10 +148,6 @@ export default function AssistantPanel({
   const [sessions, setSessions] = useState<Session[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
 
-  // first-run venv setup
-  const [venvBusy, setVenvBusy] = useState(false);
-  const [venvLines, setVenvLines] = useState<string[]>([]);
-
   const wsRef = useRef<WebSocket | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   // Mirrors the streaming assistant message's blocks, so finalize() can check
@@ -266,29 +262,6 @@ export default function AssistantPanel({
   const deleteSession = useCallback((id: string) => {
     setSessions((prev) => prev.filter((s) => s.id !== id));
   }, []);
-
-  // ── venv setup (reuses the install WS) ──────────────────────────────────────
-  const initVenv = useCallback(() => {
-    if (!info || venvBusy) return;
-    setVenvBusy(true);
-    setVenvLines([]);
-    const proto = window.location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(`${proto}://${window.location.host}/ws/install/${info.script_id}?action=venv`);
-    ws.onmessage = (e) => {
-      let evt: { type: string; text?: string; done?: boolean; message?: string };
-      try { evt = JSON.parse(e.data); } catch { return; }
-      if (evt.type === "error") { toast.error(evt.message ? summarizeError(evt.message) : t("assistantPanel.toast.initializationFailed")); return; }
-      if (evt.text) setVenvLines((prev) => [...prev.slice(-80), evt.text!]);
-      if (evt.done) {
-        ws.close();
-        setVenvBusy(false);
-        const ok = evt.text === "DONE" || !(evt.text || "").startsWith("ERROR:");
-        if (ok) { setInfo((p) => p ? { ...p, venv_ready: true } : p); toast.success(t("assistantPanel.toast.envReady")); }
-        else toast.error(t("assistantPanel.toast.envSetupFailed"));
-      }
-    };
-    ws.onerror = () => { setVenvBusy(false); toast.error(t("assistantPanel.toast.envConnectionFailed")); };
-  }, [info, venvBusy, t]);
 
   // ── turn lifecycle ──────────────────────────────────────────────────────────
   // A turn can stream reasoning (<think>…</think>) and still end with no visible
@@ -489,13 +462,6 @@ export default function AssistantPanel({
               <PackagePlus className="h-3.5 w-3.5" />{t("assistantPanel.setup.title")}
             </div>
             <p className="text-muted-foreground leading-relaxed">{t("assistantPanel.setup.description")}</p>
-            <Button size="sm" onClick={initVenv} disabled={venvBusy} className="h-7 text-xs">
-              {venvBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <PackagePlus className="h-3 w-3" />}
-              {venvBusy ? t("assistantPanel.setup.initializing") : t("assistantPanel.setup.initialize")}
-            </Button>
-            {venvLines.length > 0 && (
-              <pre className="mt-1 max-h-32 overflow-auto rounded bg-black/40 p-2 font-mono text-[10px] text-muted-foreground/80 whitespace-pre-wrap">{venvLines.join("\n")}</pre>
-            )}
           </div>
         )}
 

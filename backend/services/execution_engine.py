@@ -466,7 +466,17 @@ async def start_execution(execution_id: str) -> None:
         )
         input_file.write_text(json.dumps(resolved_input), encoding="utf-8")
 
-        py = get_venv_python(exc_row.script_id) if venv_exists(exc_row.script_id) else Path(sys.executable)
+        # The built-in AI assistant is PLATFORM code (not a user script), so it
+        # runs on the backend python and reuses the platform's langchain deps
+        # (requirements.txt) — no per-script venv to build or keep updated.
+        # Every other script uses its own venv (or backend python if it has none).
+        from services.assistant_seed import ASSISTANT_SCRIPT_NAME
+        if script.name == ASSISTANT_SCRIPT_NAME:
+            py, py_label = Path(sys.executable), "assistant→backend-py"
+        elif venv_exists(exc_row.script_id):
+            py, py_label = get_venv_python(exc_row.script_id), "yes"
+        else:
+            py, py_label = Path(sys.executable), "no→backend-py"
 
         exc_row.status = "running"
         exc_row.started_at = datetime.utcnow()
@@ -522,7 +532,7 @@ async def start_execution(execution_id: str) -> None:
         _prof(execution_id, (
             f"spawned pid={proc.pid} "
             f"(queue_wait={_t_slot - _t_enter:.2f}s, prep={_t_spawn - _t_slot:.2f}s, "
-            f"venv={'yes' if venv_exists(exc_row.script_id) else 'no→backend-py'})"
+            f"venv={py_label})"
         ))
 
         def _pump(stream, is_stderr: bool):

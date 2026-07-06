@@ -136,6 +136,16 @@ def seed_assistant(db) -> str:
         if changed:
             db.commit()
 
+    # The assistant runs on the backend python (platform deps in
+    # requirements.txt), so it needs NO per-script venv. Remove a stale one a
+    # previous build may have created — frees the heavy langchain venv from disk
+    # and guarantees execution never accidentally selects it over backend python.
+    try:
+        from services.venv_manager import delete_venv
+        delete_venv(script.id)
+    except Exception:
+        pass
+
     return script.id
 
 
