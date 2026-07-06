@@ -152,6 +152,10 @@ class ExecutionSummary(BaseModel):
     created_at: datetime
     retry_count: int = 0
     max_retries: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    llm_calls: int = 0
 
     model_config = {"from_attributes": True}
 
@@ -606,3 +610,61 @@ class ApiKeyOut(BaseModel):
 
 class ApiKeyCreated(ApiKeyOut):
     key: str                   # full plaintext key — returned exactly once
+
+
+# ── Eval (test cases + regression runs) ───────────────────────────────────────
+
+class AssertionSpec(BaseModel):
+    # type: contains | not_contains | regex | equals | judge
+    type: str
+    value: str = ""
+    threshold: Optional[int] = None   # judge pass cutoff (0–10); default applied at run time
+
+
+class EvalCaseCreate(BaseModel):
+    script_id: str
+    name: str = "case"
+    input_json: str = "{}"
+    assertions: list[AssertionSpec] = []
+
+
+class EvalCaseUpdate(BaseModel):
+    name: Optional[str] = None
+    input_json: Optional[str] = None
+    assertions: Optional[list[AssertionSpec]] = None
+
+
+class EvalCaseOut(BaseModel):
+    id: str
+    script_id: str
+    name: str
+    input_json: str
+    assertions: list[AssertionSpec] = []
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class EvalRunCreate(BaseModel):
+    script_id: str
+    revision_number: Optional[int] = None
+
+
+class EvalRunSummary(BaseModel):
+    id: str
+    script_id: str
+    status: str
+    revision_number: Optional[int] = None
+    judge_model: Optional[str] = None
+    total: int = 0
+    passed: int = 0
+    error: Optional[str] = None
+    created_at: datetime
+    finished_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class EvalRunDetail(EvalRunSummary):
+    results_json: Any = []

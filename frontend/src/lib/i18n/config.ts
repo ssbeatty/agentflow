@@ -33,6 +33,8 @@ import converseEn from "./locales/en/converse.json";
 import converseZh from "./locales/zh/converse.json";
 import assistantEn from "./locales/en/assistant.json";
 import assistantZh from "./locales/zh/assistant.json";
+import analyticsEn from "./locales/en/analytics.json";
+import analyticsZh from "./locales/zh/analytics.json";
 
 export const LOCALE_STORAGE_KEY = "agentflow_locale";
 
@@ -55,6 +57,7 @@ const resources = {
     scriptPanels: scriptPanelsEn,
     converse: converseEn,
     assistant: assistantEn,
+    analytics: analyticsEn,
   },
   zh: {
     common: commonZh,
@@ -72,6 +75,7 @@ const resources = {
     scriptPanels: scriptPanelsZh,
     converse: converseZh,
     assistant: assistantZh,
+    analytics: analyticsZh,
   },
 } as const;
 

@@ -39,6 +39,14 @@ class Script(Base):
         "ScriptInputPreset", back_populates="script", cascade="all, delete-orphan",
         order_by="ScriptInputPreset.created_at",
     )
+    eval_cases = relationship(
+        "EvalCase", back_populates="script", cascade="all, delete-orphan",
+        order_by="EvalCase.created_at",
+    )
+    eval_runs = relationship(
+        "EvalRun", back_populates="script", cascade="all, delete-orphan",
+        order_by="EvalRun.created_at.desc()",
+    )
 
 
 class ScriptFile(Base):
@@ -99,6 +107,17 @@ class Execution(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     retry_count = Column(Integer, default=0)
     max_retries = Column(Integer, default=0)
+    # Token usage aggregated across every LLM call in this run. Captured by the
+    # tracer (agentflow/_tracer.py), emitted once as a `{"type":"usage"}` event
+    # by the runner, and persisted at finalization. 0 = no usage recorded (a
+    # plain non-LLM script, a provider that didn't report usage, or a crash
+    # before any LLM call). `llm_calls` = number of model round-trips.
+    # server_default mirrors the Python default so existing rows populate on ADD
+    # and Alembic autogenerate sees no drift (see revision 0006).
+    prompt_tokens = Column(Integer, default=0, server_default="0")
+    completion_tokens = Column(Integer, default=0, server_default="0")
+    total_tokens = Column(Integer, default=0, server_default="0")
+    llm_calls = Column(Integer, default=0, server_default="0")
 
     script = relationship("Script", back_populates="executions")
     logs = relationship("ExecutionLog", back_populates="execution", cascade="all, delete-orphan",
@@ -331,6 +350,58 @@ class ApiKey(Base):
     last_used_at = Column(DateTime, nullable=True)
     revoked = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class EvalCase(Base):
+    """One test case in a script's eval dataset: an input + a set of assertions
+    the script's output must satisfy. This is what turns "did my prompt change
+    make things better or worse?" from vibes into a pass/fail number.
+
+    `assertions` is a JSON list of `{type, value, threshold?}`:
+      - contains / not_contains : substring (in / not in the stringified output)
+      - regex                   : output matches the pattern
+      - equals                  : stringified output equals value exactly
+      - judge                   : an LLM grades the output against `value`
+                                  (0–10), passes if score >= `threshold` (def 7)
+    Reuses raw JSON text for `input_json` like ScriptInputPreset (preserves
+    formatting; the engine parses it into the run input)."""
+    __tablename__ = "eval_cases"
+
+    id = Column(String, primary_key=True, default=_id)
+    script_id = Column(String, ForeignKey("scripts.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(255), nullable=False, default="case")
+    input_json = Column(Text, default="{}")
+    assertions = Column(JSON, default=list)   # list[{type, value, threshold?}]
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    script = relationship("Script", back_populates="eval_cases")
+
+
+class EvalRun(Base):
+    """One batch execution of a script's whole eval dataset at a point in time.
+
+    Each case is run through the real execution engine (so it exercises the same
+    venv / LLM / tracer path a normal run does — and its token usage is tracked),
+    then its assertions are graded. `results_json` holds the per-case detail;
+    `passed`/`total` the headline. `revision_number` records which script version
+    it ran against, so a run can be compared to the previous one and pinned to a
+    ScriptRevision (the "improve prompt → eval → don't regress → promote" loop)."""
+    __tablename__ = "eval_runs"
+
+    id = Column(String, primary_key=True, default=_id)
+    script_id = Column(String, ForeignKey("scripts.id", ondelete="CASCADE"), nullable=False)
+    status = Column(String(20), default="running")   # running | completed | failed
+    revision_number = Column(Integer, nullable=True)
+    judge_model = Column(String(255), nullable=True)
+    total = Column(Integer, default=0)
+    passed = Column(Integer, default=0)
+    results_json = Column(JSON, default=list)   # list[{case_id,name,passed,output,error,execution_id,assertions:[...]}]
+    error = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    finished_at = Column(DateTime, nullable=True)
+
+    script = relationship("Script", back_populates="eval_runs")
 
 
 class CronJob(Base):

@@ -85,3 +85,46 @@ def test_successful_run_completes_and_returns_output(db):
     assert execution.status == "completed"
     assert execution.error in (None, "")
     assert execution.output_data == {"echo": 42}
+
+
+def test_stopped_run_is_cancelled_not_failed(db):
+    # Regression: stop_execution() kills the subprocess, which exits non-zero.
+    # Without remembering the stop was deliberate, finalization marked it "failed"
+    # with a misleading "Process exited with code 1 without reporting an error …"
+    # synth message + a WARNING log. A user-initiated stop must record "cancelled"
+    # and leave no error.
+    main_py = (
+        "import time\n\n"
+        "def run(input):\n"
+        "    time.sleep(30)\n"
+        "    return {'done': True}\n"
+    )
+    script = Script(name="stoppable", entry_function="run")
+    db.add(script)
+    db.flush()
+    db.add(ScriptFile(script_id=script.id, filename="main.py", content=main_py, is_main=True))
+    execution = Execution(script_id=script.id, status="pending", input_data={})
+    db.add(execution)
+    db.commit()
+    eid = execution.id
+
+    async def _drive():
+        task = execution_engine.spawn_execution(eid)
+        # Wait until the subprocess is actually registered, then stop it mid-run.
+        for _ in range(100):
+            if eid in execution_engine._procs:
+                break
+            await asyncio.sleep(0.1)
+        await asyncio.sleep(0.3)
+        await execution_engine.stop_execution(eid)
+        await task
+
+    asyncio.run(_drive())
+
+    db.expire_all()
+    row = db.query(Execution).filter_by(id=eid).first()
+    assert row.status == "cancelled"
+    assert not (row.error or ""), "a cancelled run must not carry a synth failure error"
+    # No engine-level error log should be persisted for a deliberate stop.
+    err_logs = db.query(ExecutionLog).filter_by(execution_id=eid, level="error").all()
+    assert err_logs == [], "a cancelled run should not log an error"

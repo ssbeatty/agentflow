@@ -1,0 +1,36 @@
+{
+  "title": "Dashboard",
+  "subtitle": "LLM usage and run activity across your scripts",
+  "range": {
+    "7d": "7 days",
+    "30d": "30 days"
+  },
+  "kpi": {
+    "tokens": "Tokens",
+    "calls": "LLM calls",
+    "runs": "Runs",
+    "successRate": "Success rate",
+    "promptCompletion": "{{prompt}} in · {{completion}} out"
+  },
+  "chart": {
+    "title": "Token usage",
+    "tokensOn": "{{tokens}} tokens · {{runs}} runs",
+    "empty": "No token usage in this period yet"
+  },
+  "topScripts": {
+    "title": "Top scripts by tokens",
+    "empty": "No usage yet"
+  },
+  "outcomes": {
+    "title": "Run outcomes",
+    "empty": "No runs yet",
+    "completed": "Completed",
+    "failed": "Failed",
+    "cancelled": "Cancelled",
+    "running": "Running",
+    "pending": "Pending",
+    "queued": "Queued",
+    "unknown": "Other"
+  },
+  "empty": "No activity yet — run a script to see usage here."
+}

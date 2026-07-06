@@ -33,6 +33,7 @@
     "streaming-chat": { "label": "Streaming Chat", "description": "Streaming LLM, typewriter output, reasoning-aware" },
     "rich-chat": { "label": "Rich Chat", "description": "LLM tool-calls to render markdown / table / chart / image" },
     "react-agent": { "label": "ReAct Agent", "description": "get_agent with web_search + web_fetch" },
+    "daily-digest": { "label": "Daily Digest", "description": "Scheduled: research a topic on the web, push a digest to a webhook" },
     "skills-mcp": { "label": "Skills + MCP", "description": "Use bound skills and MCP server tools" },
     "deep-agent": { "label": "Deep Agent", "description": "get_deep_agent: planning, sub-agents, skill filesystem" },
     "graph-loop": { "label": "LangGraph Loop", "description": "Multi-node graph with a cycle + conditional edge" },

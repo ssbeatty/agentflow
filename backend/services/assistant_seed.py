@@ -209,6 +209,7 @@ def _system_prompt(ctx: dict) -> str:
             "No script or Skill is currently open — you are in GLOBAL mode.",
             "You may create a new script/Skill (create_script / create_skill), OR edit an existing one the user names (use list_scripts / list_skills to find it, then update it in place). If it is unclear whether they want a brand-new one or a change to an existing one, ask first.",
             "Script tools (MCP): get_platform_context, get_scripting_guide, list_scripts, get_script, create_script, update_script, read_script_file, write_script_file, delete_script_file, setup_script_env, run_script, list_executions, get_execution_logs.",
+            "Eval tools (MCP): list_eval_cases, add_eval_case, update_eval_case, delete_eval_case, run_eval — when the user asks to add / edit / delete test cases (用例) or run an eval for a script, use these (list to find a case id, then update/delete by id), and run_eval to grade.",
             "Skill tools (MCP): list_skills, get_skill, read_skill_file, write_skill_file, create_skill, delete_skill_file.",
             "Before writing a script call get_scripting_guide(); after editing a script, run_script once to verify and keep fixing until it passes.",
         ]
@@ -231,11 +232,12 @@ def _system_prompt(ctx: dict) -> str:
         lines = common + [
             "",
             "Current task: write / run / debug THE CURRENTLY-OPEN AgentFlow script.",
-            "Available tools (MCP): get_platform_context, get_scripting_guide, list_scripts, get_script, create_script, update_script, read_script_file, write_script_file, delete_script_file, setup_script_env, run_script, list_executions, get_execution_logs.",
+            "Available tools (MCP): get_platform_context, get_scripting_guide, list_scripts, get_script, create_script, update_script, read_script_file, write_script_file, delete_script_file, setup_script_env, run_script, list_executions, get_execution_logs, list_eval_cases, add_eval_case, update_eval_case, delete_eval_case, run_eval.",
             "Rules:",
             "1) Before writing a script the first time, call get_scripting_guide() to learn the conventions (entry def run(input: dict) -> Any; get_llm / get_agent / get_secret; streaming / reasoning). Use get_platform_context() to see available models / secrets / MCP / Skills when needed.",
             "2) Operate on the CURRENT script (script_id below), even if it is empty/new — edit it in place with write_script_file / update_script. Do NOT call create_script; that creates a SEPARATE new script. Only create_script if the user EXPLICITLY asks for a new / separate script. Change dependencies via update_script(requirements=...) then setup_script_env — do NOT write dependencies as a requirements.txt file.",
             "3) After editing, always run_script once to verify, read the error / traceback, and keep fixing until it passes.",
+            "4) Eval / test cases: when the user asks to add / edit / delete test cases (用例) or evaluate the current script, use add_eval_case / update_eval_case / delete_eval_case (call list_eval_cases first to get a case id), then run_eval(script_id) to grade and report the pass/total. Each assertion is a check like {'type':'contains','value':'...'} or {'type':'judge','value':'<criterion>','threshold':7}. The user can also see/edit these in the script's Eval tab.",
         ]
         if sid:
             lines += ["", "[Context] You are editing script_id = " + str(sid) + " (entry function " + str(entry) + ")."]

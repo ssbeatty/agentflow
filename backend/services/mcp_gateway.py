@@ -27,8 +27,8 @@ from mcp.server.fastmcp import FastMCP
 
 from app.database import SessionLocal
 from app.models import (
-    Channel, Execution, ExecutionLog, MCPServerConfig, Script, ScriptFile,
-    SearchConfig, Secret,
+    Channel, EvalCase, EvalRun, Execution, ExecutionLog, MCPServerConfig,
+    Script, ScriptFile, SearchConfig, Secret,
 )
 from services.script_files import normalize_script_filename
 from services.venv_manager import stream_create_venv, stream_install, venv_exists
@@ -552,6 +552,157 @@ def get_execution_logs(execution_id: str, level: str | None = None,
         }
     finally:
         db.close()
+
+
+# ── eval / regression (test dataset + graded runs) ────────────────────────────
+
+@gateway.tool()
+def list_eval_cases(script_id: str) -> list[dict]:
+    """List a script's eval test cases (id, name, input, assertions). An eval
+    case is an input + assertions the script's output must satisfy; run_eval
+    grades them all into a pass/fail score."""
+    db = SessionLocal()
+    try:
+        return [
+            {"id": c.id, "name": c.name, "input_json": c.input_json,
+             "assertions": c.assertions or []}
+            for c in db.query(EvalCase).filter_by(script_id=script_id)
+            .order_by(EvalCase.created_at).all()
+        ]
+    finally:
+        db.close()
+
+
+@gateway.tool()
+def add_eval_case(script_id: str, name: str, input_json: str,
+                  assertions: list[dict]) -> dict:
+    """Add one eval test case to a script's dataset.
+
+    - input_json: a JSON object string, the input passed to the script, e.g.
+      '{"message": "how do I get a refund?"}'
+    - assertions: a list of checks the output must pass, each
+      {"type": ..., "value": ..., "threshold"?: int}:
+        contains / not_contains : substring is / isn't in the output
+        regex                   : output matches the pattern
+        equals                  : output equals value exactly
+        judge                   : an LLM scores the output 0-10 against `value`
+                                  (a criterion), passes if >= threshold (default 7)
+      e.g. [{"type":"contains","value":"7 days"},
+            {"type":"judge","value":"is the tone polite and helpful?","threshold":7}]
+    """
+    try:
+        obj = json.loads(input_json or "{}")
+        if not isinstance(obj, dict):
+            return {"error": "input_json must be a JSON object"}
+    except json.JSONDecodeError as e:
+        return {"error": f"input_json is not valid JSON: {e}"}
+    db = SessionLocal()
+    try:
+        if not _script_or_error(db, script_id):
+            return {"error": f"script {script_id} not found"}
+        case = EvalCase(
+            script_id=script_id, name=name or "case",
+            input_json=input_json or "{}",
+            assertions=[a for a in (assertions or []) if isinstance(a, dict)],
+        )
+        db.add(case)
+        db.commit()
+        db.refresh(case)
+        return {"id": case.id, "name": case.name}
+    finally:
+        db.close()
+
+
+@gateway.tool()
+def update_eval_case(case_id: str, name: str | None = None,
+                     input_json: str | None = None,
+                     assertions: list[dict] | None = None) -> dict:
+    """Update an eval test case (get its id from list_eval_cases). Pass only the
+    fields to change — name, input_json (a JSON object string), and/or assertions
+    (same shape as add_eval_case). Omitted fields are left unchanged."""
+    if input_json is not None:
+        try:
+            obj = json.loads(input_json or "{}")
+            if not isinstance(obj, dict):
+                return {"error": "input_json must be a JSON object"}
+        except json.JSONDecodeError as e:
+            return {"error": f"input_json is not valid JSON: {e}"}
+    db = SessionLocal()
+    try:
+        case = db.query(EvalCase).filter_by(id=case_id).first()
+        if not case:
+            return {"error": f"eval case {case_id} not found"}
+        if name is not None:
+            case.name = name
+        if input_json is not None:
+            case.input_json = input_json
+        if assertions is not None:
+            case.assertions = [a for a in assertions if isinstance(a, dict)]
+        db.commit()
+        return {"id": case.id, "name": case.name}
+    finally:
+        db.close()
+
+
+@gateway.tool()
+def delete_eval_case(case_id: str) -> dict:
+    """Delete an eval test case by id (from list_eval_cases)."""
+    db = SessionLocal()
+    try:
+        case = db.query(EvalCase).filter_by(id=case_id).first()
+        if not case:
+            return {"error": f"eval case {case_id} not found"}
+        db.delete(case)
+        db.commit()
+        return {"deleted": case_id}
+    finally:
+        db.close()
+
+
+@gateway.tool()
+async def run_eval(script_id: str, timeout: float = 600.0) -> dict:
+    """Run a script's whole eval dataset and block until it finishes. Each case
+    is executed through the real engine, then graded. Returns the pass/total
+    score plus per-case results (which assertions failed and why) so you can fix
+    the script and re-run. Add cases first with add_eval_case."""
+    from services.eval_engine import start_eval_run
+
+    timeout = max(1.0, min(float(timeout), RUN_TIMEOUT_MAX))
+    db = SessionLocal()
+    try:
+        if not _script_or_error(db, script_id):
+            return {"error": f"script {script_id} not found"}
+        n = db.query(EvalCase).filter_by(script_id=script_id).count()
+        if n == 0:
+            return {"error": "no eval cases to run — add some with add_eval_case first"}
+        run = EvalRun(script_id=script_id, status="running", total=n)
+        db.add(run)
+        db.commit()
+        db.refresh(run)
+        run_id = run.id
+    finally:
+        db.close()
+
+    start_eval_run(run_id)
+    # Poll the run row until it leaves "running" (the engine runs cases in a
+    # background task; this makes the tool a single blocking round-trip).
+    waited = 0.0
+    while waited < timeout:
+        await asyncio.sleep(1.0)
+        waited += 1.0
+        db = SessionLocal()
+        try:
+            run = db.query(EvalRun).filter_by(id=run_id).first()
+            if run and run.status != "running":
+                return {
+                    "run_id": run.id, "status": run.status,
+                    "passed": run.passed, "total": run.total,
+                    "error": run.error, "results": run.results_json or [],
+                }
+        finally:
+            db.close()
+    return {"run_id": run_id, "status": "running",
+            "error": f"eval still running after {timeout:.0f}s (results not ready yet)"}
 
 
 # ── ASGI middleware (routing + auth gate) ─────────────────────────────────────

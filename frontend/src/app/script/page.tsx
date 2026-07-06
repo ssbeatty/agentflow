@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import {
   ArrowLeft, Play, Square, Save, Terminal, Settings2,
   Clock, ChevronRight, Loader2, CalendarClock, Workflow,
-  History, CheckCircle2, XCircle, MinusCircle, Copy, Trash2, Wrench, Check, Sparkles,
+  History, CheckCircle2, XCircle, MinusCircle, Copy, Trash2, Wrench, Check, Sparkles, Coins, FlaskConical,
 } from "lucide-react";
 import { toast } from "sonner";
 import { scripts, executions, mcpServers, skills as skillsApi, revisions as revisionsApi, inputPresets } from "@/lib/api";
@@ -30,6 +30,7 @@ import { useAssistantTarget, type ChangedFile } from "@/components/assistant/Ass
 import InputPresetEditor from "@/components/InputPresetEditor";
 import FileUploadPanel from "@/components/FileUploadPanel";
 import ArtifactsPanel from "@/components/ArtifactsPanel";
+import EvalPanel from "@/components/EvalPanel";
 import { summarizeError } from "@/lib/utils";
 
 type RunStatus = "idle" | "queued" | "running" | "completed" | "failed" | "cancelled";
@@ -720,6 +721,9 @@ function ScriptPage() {
                 <TabsTrigger value="runs" className="text-xs gap-1.5">
                   <History className="h-3 w-3" />{t("tabs.runs")}
                 </TabsTrigger>
+                <TabsTrigger value="eval" className="text-xs gap-1.5">
+                  <FlaskConical className="h-3 w-3" />{t("tabs.eval")}
+                </TabsTrigger>
               </TabsList>
               <div className="flex-1 overflow-hidden">
                 <TabsContent value="logs" className="h-full m-0">
@@ -757,6 +761,9 @@ function ScriptPage() {
                       setActiveTab("logs");
                     }}
                   />
+                </TabsContent>
+                <TabsContent value="eval" className="h-full m-0">
+                  <EvalPanel scriptId={id} />
                 </TabsContent>
               </div>
             </Tabs>
@@ -983,7 +990,7 @@ function ScriptPage() {
 
 import { cronJobs } from "@/lib/api";
 import type { CronJob, ExecutionSummary } from "@/lib/types";
-import { formatDate } from "@/lib/utils";
+import { formatDate, compactNumber } from "@/lib/utils";
 import { Plus } from "lucide-react";
 
 const CRON_PRESETS = [
@@ -1338,6 +1345,14 @@ function RunsTab({
                 {statusIcon(e.status)}
                 <span className="font-mono text-muted-foreground">{e.id.slice(0, 8)}</span>
                 <span className="text-muted-foreground">{t(`status.${e.status}`, { defaultValue: e.status })}</span>
+                {!!e.total_tokens && (
+                  <span
+                    className="flex items-center gap-0.5 text-muted-foreground/70 tabular-nums shrink-0"
+                    title={t("runs.tokensTitle", { calls: e.llm_calls ?? 0 })}
+                  >
+                    <Coins className="h-2.5 w-2.5" />{compactNumber(e.total_tokens)}
+                  </span>
+                )}
                 <span className="ml-auto text-muted-foreground shrink-0">{formatDate(e.created_at)}</span>
               </button>
               {confirmDelId === e.id ? (

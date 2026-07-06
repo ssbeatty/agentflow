@@ -389,8 +389,16 @@ export default function AssistantPanel({
 
   const stop = useCallback(async () => {
     if (!execId) return;
-    try { await executionsApi.stop(execId); } catch { /* ignore */ }
+    // End the turn locally right away. The backend's terminal WS status races
+    // with closing the socket below (the stop request blocks server-side until
+    // the process is killed), so relying on that event leaves the UI stuck on
+    // "generating…". Reset here for instant feedback; keep whatever streamed so far.
     wsRef.current?.close();
+    wsRef.current = null;
+    setMessages((prev) => prev.map((m) => (m.streaming ? { ...m, streaming: false } : m)));
+    setSending(false);
+    setExecId(null);
+    try { await executionsApi.stop(execId); } catch { /* ignore */ }
   }, [execId]);
 
   const doRevert = useCallback(async (filenames: string[]) => {

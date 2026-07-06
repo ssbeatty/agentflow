@@ -23,12 +23,84 @@ from __future__ import annotations
 
 import json
 import sys
+import threading
 import time
 from contextvars import ContextVar
 from typing import Any
 from uuid import UUID
 
 _PREFIX = "__AGENTFLOW__"
+
+# ── LLM token-usage accumulation ──────────────────────────────────────────────
+# The tracer sees every LLM round-trip (on_llm_end), so it's the natural place to
+# tally token usage across a whole run. Totals accumulate here; the runner reads
+# them once at the end via get_usage_totals() and emits a single "usage" event
+# that the engine persists onto the Execution row (powers the cost dashboard).
+# Guarded by a lock: the handler is run_inline (usually single-threaded per run),
+# but async agents can interleave callbacks, so keep the read-modify-write atomic.
+_usage_lock = threading.Lock()
+_usage_totals: dict[str, int] = {
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "total_tokens": 0,
+    "llm_calls": 0,
+}
+
+
+def _coerce_int(v: Any) -> int:
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _extract_usage(response: Any) -> tuple[int, int, int]:
+    """Pull (prompt, completion, total) token counts out of an LLMResult,
+    normalizing across providers. Prefers per-message `usage_metadata` (the
+    langchain-standard field set by ChatOpenAI/ChatAnthropic/…), summed across
+    generations; falls back to `llm_output['token_usage']` (OpenAI) /
+    `['usage']` (Anthropic). Missing/garbled usage → zeros (never raises)."""
+    prompt = completion = total = 0
+    try:
+        for gen_list in (getattr(response, "generations", None) or []):
+            for gen in (gen_list or []):
+                msg = getattr(gen, "message", None)
+                um = getattr(msg, "usage_metadata", None) if msg is not None else None
+                if isinstance(um, dict):
+                    prompt += _coerce_int(um.get("input_tokens"))
+                    completion += _coerce_int(um.get("output_tokens"))
+                    total += _coerce_int(um.get("total_tokens"))
+    except Exception:
+        pass
+    if prompt or completion or total:
+        return prompt, completion, (total or prompt + completion)
+    try:
+        llm_output = getattr(response, "llm_output", None)
+        if isinstance(llm_output, dict):
+            u = llm_output.get("token_usage") or llm_output.get("usage") or {}
+            if isinstance(u, dict):
+                prompt = _coerce_int(u.get("prompt_tokens") or u.get("input_tokens"))
+                completion = _coerce_int(u.get("completion_tokens") or u.get("output_tokens"))
+                total = _coerce_int(u.get("total_tokens")) or prompt + completion
+    except Exception:
+        pass
+    return prompt, completion, total
+
+
+def _accumulate_usage(response: Any) -> None:
+    """Record one LLM round-trip: bump the call counter and add its tokens."""
+    p, c, t = _extract_usage(response)
+    with _usage_lock:
+        _usage_totals["llm_calls"] += 1
+        _usage_totals["prompt_tokens"] += p
+        _usage_totals["completion_tokens"] += c
+        _usage_totals["total_tokens"] += t
+
+
+def get_usage_totals() -> dict[str, int]:
+    """Snapshot of the run's accumulated token usage (read by the runner)."""
+    with _usage_lock:
+        return dict(_usage_totals)
 _MAX_PAYLOAD = 262_144  # chars per node/tool input/output blob before truncation.
 # This is a *safety ceiling*, not a display limit — it only exists so a pathological
 # state (a giant document / embedding sitting in the graph state) can't push tens of
@@ -278,6 +350,9 @@ class AgentflowTracer(BaseCallbackHandler):
         )
 
     def on_llm_end(self, response, *, run_id, parent_run_id=None, **kwargs):
+        # Tally token usage for every LLM round-trip, even ones we didn't "start"
+        # (filtered), so the run's cost total is complete.
+        _accumulate_usage(response)
         if str(run_id) not in self._starts:
             return
         self._end(

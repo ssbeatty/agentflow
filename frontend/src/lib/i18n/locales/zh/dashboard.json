@@ -32,6 +32,7 @@
     "streaming-chat": { "label": "流式对话", "description": "流式 LLM 输出,打字机效果,支持推理展示" },
     "rich-chat": { "label": "富媒体对话", "description": "LLM 通过工具调用渲染 Markdown / 表格 / 图表 / 图片" },
     "react-agent": { "label": "ReAct 智能体", "description": "使用 web_search + web_fetch 的 get_agent" },
+    "daily-digest": { "label": "每日简报", "description": "定时:联网研究一个主题,把简报推送到 webhook" },
     "skills-mcp": { "label": "技能 + MCP", "description": "使用绑定的技能和 MCP 服务器工具" },
     "deep-agent": { "label": "深度智能体", "description": "get_deep_agent:规划、子智能体、技能文件系统" },
     "graph-loop": { "label": "LangGraph 循环", "description": "带循环和条件边的多节点图" },

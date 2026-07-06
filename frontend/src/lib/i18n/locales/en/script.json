@@ -36,7 +36,8 @@
     "output": "Output",
     "artifacts": "Artifacts",
     "schedule": "Schedule",
-    "runs": "Runs"
+    "runs": "Runs",
+    "eval": "Eval"
   },
   "run": {
     "noOutput": "No output yet."
@@ -96,6 +97,41 @@
     "save": "Save",
     "empty": "No schedules yet"
   },
+  "eval": {
+    "dataset": "Dataset",
+    "caseCount": "{{count}} cases",
+    "addCase": "Add case",
+    "runEval": "Run Eval",
+    "empty": "No test cases yet. Add a case (an input + assertions) and run the eval to score your script.",
+    "history": "Run history",
+    "running": "running",
+    "failedShort": "failed",
+    "passed": "passed",
+    "vsPrev": "vs previous",
+    "noChange": "no change vs previous",
+    "judge": "judge",
+    "newCaseName": "Case {{n}}",
+    "assertionCount": "{{count}} assertions",
+    "deleteCase": "Delete case",
+    "caseNameLabel": "Name",
+    "inputLabel": "Input (JSON)",
+    "assertionsLabel": "Assertions",
+    "addAssertion": "assertion",
+    "valuePlaceholder": "value",
+    "judgePlaceholder": "grading criterion, e.g. \"is the answer polite and correct?\"",
+    "thresholdTitle": "Pass threshold (0–10)",
+    "assertionTypes": {
+      "contains": "contains",
+      "not_contains": "not contains",
+      "regex": "regex",
+      "equals": "equals",
+      "judge": "LLM judge"
+    },
+    "toast": {
+      "done": "Eval finished: {{passed}}/{{total}} passed",
+      "failed": "Eval run failed"
+    }
+  },
   "runs": {
     "toast": {
       "cleared": "Cleared {{count}} records"
@@ -112,6 +148,7 @@
     "empty": "No runs yet.",
     "confirmDeleteTitle": "Confirm delete",
     "cancelTitle": "Cancel",
-    "deleteRecordTitle": "Delete this record"
+    "deleteRecordTitle": "Delete this record",
+    "tokensTitle": "{{calls}} LLM calls"
   }
 }

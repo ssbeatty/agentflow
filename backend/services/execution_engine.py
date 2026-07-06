@@ -104,6 +104,14 @@ install_manager = _WsManager()
 # active subprocess handles: execution_id -> Popen
 _procs: dict[str, subprocess.Popen] = {}
 
+# execution_ids intentionally stopped via stop_execution(). Finalization checks
+# this so a user-initiated stop is recorded as "cancelled" (a normal action),
+# NOT "failed" with a misleading "Process exited with code 1 without reporting an
+# error …" synth message + a spurious WARNING log + a possible auto-retry. A
+# killed process just exits non-zero, indistinguishable from a crash unless we
+# remember we asked for it.
+_cancelled_ids: set[str] = set()
+
 # strong refs so background tasks aren't garbage-collected mid-run
 _tasks: set[asyncio.Task] = set()
 
@@ -243,17 +251,29 @@ async def _main():
             if isinstance(result, (dict, list, str, int, float, bool, type(None)))
             else str(result)}})
 
-    if _mcp:
+    try:
+        if _mcp:
+            try:
+                from langchain_mcp_adapters.client import MultiServerMCPClient
+                _client = MultiServerMCPClient(_mcp)
+                _af._injected_tools = await _client.get_tools()
+                await _run()
+            except ImportError:
+                print("[agentflow] langchain-mcp-adapters not installed; MCP tools unavailable", file=sys.stderr)
+                await _run()
+        else:
+            await _run()
+    finally:
+        # Emit aggregated LLM token usage exactly once (even if the run raised —
+        # partial usage before a crash is still worth recording). Unknown event
+        # type is handled by the engine drain loop, not shown in Logs.
         try:
-            from langchain_mcp_adapters.client import MultiServerMCPClient
-            _client = MultiServerMCPClient(_mcp)
-            _af._injected_tools = await _client.get_tools()
-            await _run()
-        except ImportError:
-            print("[agentflow] langchain-mcp-adapters not installed; MCP tools unavailable", file=sys.stderr)
-            await _run()
-    else:
-        await _run()
+            from agentflow._tracer import get_usage_totals as _gut
+            _u = _gut()
+            if _u.get("llm_calls"):
+                _emit({{"type": "usage", **_u}})
+        except Exception:
+            pass
 
 try:
     asyncio.run(_main())
@@ -550,12 +570,13 @@ async def start_execution(execution_id: str) -> None:
 
         result_data: Any = None
         error_data: dict | None = None
+        usage_data: dict | None = None
         eof_count = 0
         first_output_at: float | None = None
         result_at: float | None = None
 
         async def _drain():
-            nonlocal result_data, error_data, eof_count, first_output_at, result_at
+            nonlocal result_data, error_data, usage_data, eof_count, first_output_at, result_at
             while eof_count < 2:
                 is_stderr, line = await queue.get()
                 if line is None:
@@ -622,6 +643,10 @@ async def start_execution(execution_id: str) -> None:
                     elif t == "result":
                         result_data = payload.get("data")
                         result_at = time.perf_counter()
+                    elif t == "usage":
+                        # Aggregated LLM token usage for the whole run; persisted
+                        # onto the Execution row at finalization (below).
+                        usage_data = payload
                     elif t == "error":
                         error_data = payload
                         # Persist the crash as a log too, so it shows in the Logs
@@ -683,9 +708,19 @@ async def start_execution(execution_id: str) -> None:
 
         exc_row = db.query(Execution).filter_by(id=execution_id).first()
         exc_row.finished_at = datetime.utcnow()
+        if usage_data:
+            exc_row.prompt_tokens = int(usage_data.get("prompt_tokens") or 0)
+            exc_row.completion_tokens = int(usage_data.get("completion_tokens") or 0)
+            exc_row.total_tokens = int(usage_data.get("total_tokens") or 0)
+            exc_row.llm_calls = int(usage_data.get("llm_calls") or 0)
         if proc.returncode == 0:
             exc_row.status = "completed"
             exc_row.output_data = result_data
+        elif execution_id in _cancelled_ids:
+            # User asked to stop this run (stop_execution). A terminated process
+            # exits non-zero, but this is a normal cancellation, not a crash —
+            # no synth error, no WARNING log, no auto-retry.
+            exc_row.status = "cancelled"
         else:
             exc_row.status = "failed"
             if error_data:
@@ -765,6 +800,7 @@ async def start_execution(execution_id: str) -> None:
         if slot_acquired:
             _get_semaphore().release()
         _procs.pop(execution_id, None)
+        _cancelled_ids.discard(execution_id)
         db.close()
         _schedule_ws_cleanup(execution_id)
 
@@ -824,6 +860,9 @@ async def stop_execution(execution_id: str) -> bool:
     proc = _procs.get(execution_id)
     if not proc:
         return False
+    # Remember this was a deliberate stop so finalization records "cancelled",
+    # not "failed" (a killed process just exits non-zero — see _cancelled_ids).
+    _cancelled_ids.add(execution_id)
     logger.info("[{}] stop requested (pid={})", execution_id[:8], proc.pid)
     proc.terminate()
     try:

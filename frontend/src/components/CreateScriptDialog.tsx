@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import { FileCode, MessageSquare, Type, Sparkles, Bot, Puzzle, Brain, Workflow, KeyRound, FileInput } from "lucide-react";
+import { FileCode, MessageSquare, Type, Sparkles, Bot, Puzzle, Brain, Workflow, KeyRound, FileInput, Newspaper } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ── Templates ──────────────────────────────────────────────────────────────────
@@ -56,7 +56,12 @@ def run(input: dict) -> dict:
     messages.append(("human", message))
 
     result = agent.invoke({"messages": messages})
-    return {"reply": result["messages"][-1].content}
+    final = result["messages"][-1]
+    # DeepSeek reasoner models sometimes leave content="" and put the actual
+    # reply in additional_kwargs.reasoning_content — fall back so we never
+    # return an empty string.
+    reply = final.content or final.additional_kwargs.get("reasoning_content", "")
+    return {"reply": reply}
 `,
   },
   {
@@ -226,6 +231,48 @@ def run(input: dict) -> dict:
 
     log(f"Agent messages: {len(result['messages'])}", step="done")
     return {"question": question, "answer": answer}
+`,
+  },
+  {
+    id: "daily-digest",
+    icon: <Newspaper className="h-4 w-4" />,
+    entryFunction: "run",
+    mainPy:
+`from agentflow import get_agent, get_secret, http_post, log
+
+
+def run(input: dict) -> dict:
+    """Daily news digest -> webhook push. Run once to preview, or schedule it.
+
+    Setup: add an LLM channel (Settings) + an optional WEBHOOK_URL secret
+    (Secrets), then a cron in the Schedule tab with input like
+    {"topic": "AI agents", "count": 5}.
+    """
+    topic = (input.get("topic") or "AI agents").strip()
+    count = int(input.get("count") or 5)
+    log(f"Researching {topic} ({count} items)...", step="research")
+
+    agent = get_agent(system_prompt=(
+        f"You are a news research assistant. Use web_search to find the most "
+        f"recent developments on the topic, then write exactly {count} bullet "
+        f"points, most important first, one concrete sentence each, ending each "
+        f"bullet with its source URL in parentheses. No padding, no repetition."
+    ))
+    result = agent.invoke({"messages": [("human",
+        f"Give me today's digest on: {topic}. Use up-to-date web results.")]})
+    digest = result["messages"][-1].content
+
+    pushed = False
+    url = get_secret("WEBHOOK_URL")
+    if url:
+        resp = http_post(url, json={"title": f"News: {topic}", "body": digest})
+        log(f"Pushed to webhook (HTTP {resp.status_code}).", step="notify")
+        pushed = True
+    else:
+        log("No WEBHOOK_URL secret set - returning digest without pushing.",
+            level="warning", step="notify")
+
+    return {"topic": topic, "digest": digest, "pushed": pushed}
 `,
   },
   {

@@ -65,6 +65,73 @@ export interface ExecutionSummary {
   started_at?: string;
   finished_at?: string;
   created_at: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  llm_calls?: number;
+}
+
+// Aggregated LLM token usage over a window (GET /executions/usage-stats).
+export interface UsageStats {
+  days: number;
+  total_tokens: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  llm_calls: number;
+  runs: number;
+  status_counts: Record<string, number>;
+  daily: { date: string; total_tokens: number; runs: number }[];
+  by_script: { script_id: string; name: string; total_tokens: number; runs: number }[];
+}
+
+// ── Eval (test cases + regression runs) ─────────────────────────────────────
+
+export type AssertionType = "contains" | "not_contains" | "regex" | "equals" | "judge";
+
+export interface Assertion {
+  type: AssertionType;
+  value: string;
+  threshold?: number | null;
+}
+
+export interface EvalCase {
+  id: string;
+  script_id: string;
+  name: string;
+  input_json: string;
+  assertions: Assertion[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GradedAssertion extends Assertion {
+  passed: boolean;
+  detail?: string;
+  score?: number;
+}
+
+export interface EvalCaseResult {
+  case_id: string;
+  name: string;
+  passed: boolean;
+  output?: unknown;
+  error?: string | null;
+  execution_id?: string | null;
+  assertions: GradedAssertion[];
+}
+
+export interface EvalRun {
+  id: string;
+  script_id: string;
+  status: "running" | "completed" | "failed";
+  revision_number?: number | null;
+  judge_model?: string | null;
+  total: number;
+  passed: number;
+  error?: string | null;
+  created_at: string;
+  finished_at?: string | null;
+  results_json?: EvalCaseResult[];
 }
 
 export interface LLMConfig {

@@ -1,6 +1,7 @@
 {
   "app": { "name": "AgentFlow" },
   "nav": {
+    "dashboard": "Dashboard",
     "chat": "Chat",
     "docs": "Docs",
     "tools": "Tools",

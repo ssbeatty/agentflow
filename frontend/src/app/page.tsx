@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useTranslation } from "react-i18next";
-import { Plus, Play, Clock, Settings, Zap, MessageSquare, BookOpen, Wrench, ShieldCheck, Lock } from "lucide-react";
+import { Plus, Play, Clock, Settings, Zap, MessageSquare, BookOpen, Wrench, ShieldCheck, Lock, LayoutDashboard } from "lucide-react";
 import { toast } from "sonner";
 import { scripts } from "@/lib/api";
 import type { ScriptSummary } from "@/lib/types";
@@ -38,6 +38,12 @@ export default function Dashboard() {
           <span className="font-semibold text-base">{t("common:app.name")}</span>
         </div>
         <div className="flex items-center gap-2">
+          <Link href="/dashboard">
+            <Button variant="ghost" size="sm" className="gap-1.5">
+              <LayoutDashboard className="h-4 w-4" />
+              {t("common:nav.dashboard")}
+            </Button>
+          </Link>
           <Link href="/converse">
             <Button variant="ghost" size="sm" className="gap-1.5">
               <MessageSquare className="h-4 w-4" />

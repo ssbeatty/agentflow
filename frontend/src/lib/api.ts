@@ -1,6 +1,7 @@
 import type {
   Script, ScriptSummary, ScriptFile,
-  Execution, ExecutionSummary,
+  Execution, ExecutionSummary, UsageStats,
+  EvalCase, EvalRun, Assertion,
   LLMConfig,
   CronJob,
   Channel,
@@ -162,6 +163,8 @@ export const executions = {
   list: (scriptId?: string) =>
     req<ExecutionSummary[]>(`/executions${scriptId ? `?script_id=${scriptId}` : ""}`),
 
+  usageStats: (days = 7) => req<UsageStats>(`/executions/usage-stats?days=${days}`),
+
   get: (id: string) => req<Execution>(`/executions/${id}`),
 
   create: (scriptId: string, inputData: Record<string, unknown> = {}) =>
@@ -176,6 +179,31 @@ export const executions = {
 
   clear: (scriptId: string) =>
     req<{ deleted: number }>(`/executions?script_id=${encodeURIComponent(scriptId)}`, { method: "DELETE" }),
+};
+
+// ── Evals (test cases + regression runs) ─────────────────────────────────────
+
+export const evals = {
+  listCases: (scriptId: string) =>
+    req<EvalCase[]>(`/evals/cases?script_id=${encodeURIComponent(scriptId)}`),
+
+  createCase: (body: { script_id: string; name: string; input_json: string; assertions: Assertion[] }) =>
+    req<EvalCase>("/evals/cases", { method: "POST", body: JSON.stringify(body) }),
+
+  updateCase: (id: string, body: Partial<{ name: string; input_json: string; assertions: Assertion[] }>) =>
+    req<EvalCase>(`/evals/cases/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+
+  deleteCase: (id: string) => req<void>(`/evals/cases/${id}`, { method: "DELETE" }),
+
+  listRuns: (scriptId: string) =>
+    req<EvalRun[]>(`/evals/runs?script_id=${encodeURIComponent(scriptId)}`),
+
+  getRun: (id: string) => req<EvalRun>(`/evals/runs/${id}`),
+
+  startRun: (body: { script_id: string; revision_number?: number | null }) =>
+    req<EvalRun>("/evals/runs", { method: "POST", body: JSON.stringify(body) }),
+
+  deleteRun: (id: string) => req<void>(`/evals/runs/${id}`, { method: "DELETE" }),
 };
 
 // ── LLM Configs ────────────────────────────────────────────────────────────────

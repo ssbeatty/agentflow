@@ -20,6 +20,8 @@
 | 📦 **隔离 venv** | 每个脚本一套独立环境，自动预装 langchain / langgraph 全家桶 |
 | 🔌 **接任何 LLM** | OpenAI / Anthropic / DeepSeek / Ollama / 任何 OpenAI 兼容网关，UI 配置、脚本里 `get_llm()` 即用 |
 | ▶️ **运行 & 调试** | WebSocket 实时日志流、结构化日志、Output / Flow / Artifacts 面板、历史回看 |
+| 📊 **成本可观测** | 每次运行自动记录 LLM token 用量,首页看近 7 天趋势 / 消耗 Top 脚本,Runs 里每条带 token 数 |
+| 🧪 **评估 & 回归** | 给脚本建测试集(输入 + 断言,支持包含/正则/LLM 裁判),一键跑批出通过率,和上一版对比防回归 |
 | 💬 **内置聊天页** | 选个脚本直接对话，自动维护上下文；支持流式输出与「思考过程」折叠展示 |
 | 🔧 **MCP 工具 & 🧩 Skills** | 接外部 MCP server、装可复用的 Agent Skill，按脚本勾选后自动注入 agent |
 | ⏰ **定时触发** | cron 表达式（APScheduler）后台跑 |

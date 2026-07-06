@@ -35,7 +35,8 @@
     "output": "输出",
     "artifacts": "产物",
     "schedule": "定时",
-    "runs": "运行记录"
+    "runs": "运行记录",
+    "eval": "评估"
   },
   "run": {
     "noOutput": "暂无输出。"
@@ -95,6 +96,41 @@
     "save": "保存",
     "empty": "暂无定时任务"
   },
+  "eval": {
+    "dataset": "测试集",
+    "caseCount": "{{count}} 条用例",
+    "addCase": "添加用例",
+    "runEval": "运行评估",
+    "empty": "还没有测试用例。添加一条用例(输入 + 断言)并运行评估,给你的脚本打分。",
+    "history": "历史运行",
+    "running": "运行中",
+    "failedShort": "失败",
+    "passed": "通过",
+    "vsPrev": "对比上次",
+    "noChange": "与上次持平",
+    "judge": "裁判",
+    "newCaseName": "用例 {{n}}",
+    "assertionCount": "{{count}} 条断言",
+    "deleteCase": "删除用例",
+    "caseNameLabel": "名称",
+    "inputLabel": "输入(JSON)",
+    "assertionsLabel": "断言",
+    "addAssertion": "断言",
+    "valuePlaceholder": "值",
+    "judgePlaceholder": "评分标准,例如「回答是否礼貌且正确?」",
+    "thresholdTitle": "通过阈值(0–10)",
+    "assertionTypes": {
+      "contains": "包含",
+      "not_contains": "不包含",
+      "regex": "正则匹配",
+      "equals": "完全相等",
+      "judge": "LLM 裁判"
+    },
+    "toast": {
+      "done": "评估完成:{{passed}}/{{total}} 通过",
+      "failed": "评估运行失败"
+    }
+  },
   "runs": {
     "toast": {
       "cleared": "已清除 {{count}} 条记录"
@@ -111,6 +147,7 @@
     "empty": "暂无运行记录。",
     "confirmDeleteTitle": "确认删除",
     "cancelTitle": "取消",
-    "deleteRecordTitle": "删除此记录"
+    "deleteRecordTitle": "删除此记录",
+    "tokensTitle": "{{calls}} 次 LLM 调用"
   }
 }

@@ -1,0 +1,36 @@
+{
+  "title": "仪表盘",
+  "subtitle": "所有脚本的 LLM 用量与运行概览",
+  "range": {
+    "7d": "7 天",
+    "30d": "30 天"
+  },
+  "kpi": {
+    "tokens": "Token 总量",
+    "calls": "LLM 调用",
+    "runs": "运行次数",
+    "successRate": "成功率",
+    "promptCompletion": "输入 {{prompt}} · 输出 {{completion}}"
+  },
+  "chart": {
+    "title": "Token 用量趋势",
+    "tokensOn": "{{tokens}} tokens · {{runs}} 次运行",
+    "empty": "本时段还没有 token 用量"
+  },
+  "topScripts": {
+    "title": "消耗最多的脚本",
+    "empty": "暂无数据"
+  },
+  "outcomes": {
+    "title": "运行结果分布",
+    "empty": "暂无运行",
+    "completed": "成功",
+    "failed": "失败",
+    "cancelled": "已取消",
+    "running": "运行中",
+    "pending": "等待中",
+    "queued": "排队中",
+    "unknown": "其他"
+  },
+  "empty": "还没有任何活动 —— 跑一个脚本就能在这里看到用量。"
+}

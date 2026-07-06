@@ -22,6 +22,11 @@ export function formatDate(d: string | Date): string {
   });
 }
 
+/** Compact, locale-aware number for token/usage badges: 1234 → "1.2K". */
+export function compactNumber(n: number): string {
+  return new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(n || 0);
+}
+
 /**
  * Collapse a long/multi-line error (e.g. a Python traceback) into one short
  * line for toast display. The last non-empty line is normally the actual

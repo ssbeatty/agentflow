@@ -1,6 +1,6 @@
 import asyncio
 import mimetypes
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from loguru import logger
@@ -35,6 +35,67 @@ def get_queue_stats(db: Session = Depends(get_db)):
         "running": running,
         "queued": queued,
         "slots_free": max(0, MAX_CONCURRENT - stats["running_slots_used"]),
+    }
+
+
+@router.get("/usage-stats", dependencies=_admin)
+def get_usage_stats(days: int = 7, db: Session = Depends(get_db)):
+    """Aggregate LLM token usage over the last `days` days for the cost dashboard.
+
+    Returns overall totals, a zero-filled daily trend, and a per-script
+    breakdown (highest spenders first). Bucketing is done in Python so the same
+    query works on sqlite and postgres (no dialect-specific date_trunc), which
+    is cheap because executions are retention-capped (Script.max_executions)."""
+    days = max(1, min(days, 90))
+    since = datetime.utcnow() - timedelta(days=days)
+    rows = (
+        db.query(
+            Execution.script_id,
+            Execution.created_at,
+            Execution.status,
+            Execution.total_tokens,
+            Execution.prompt_tokens,
+            Execution.completion_tokens,
+            Execution.llm_calls,
+        )
+        .filter(Execution.created_at >= since)
+        .all()
+    )
+
+    today = datetime.utcnow().date()
+    daily = {(today - timedelta(days=i)): {"total_tokens": 0, "runs": 0} for i in range(days)}
+    per_script: dict[str, dict] = {}
+    totals = {"total_tokens": 0, "prompt_tokens": 0, "completion_tokens": 0, "llm_calls": 0, "runs": 0}
+    status_counts: dict[str, int] = {}
+
+    for script_id, created_at, status, total, prompt, completion, calls in rows:
+        total, prompt, completion, calls = (total or 0, prompt or 0, completion or 0, calls or 0)
+        totals["total_tokens"] += total
+        totals["prompt_tokens"] += prompt
+        totals["completion_tokens"] += completion
+        totals["llm_calls"] += calls
+        totals["runs"] += 1
+        status_counts[status or "unknown"] = status_counts.get(status or "unknown", 0) + 1
+        d = created_at.date() if created_at else today
+        if d in daily:
+            daily[d]["total_tokens"] += total
+            daily[d]["runs"] += 1
+        s = per_script.setdefault(script_id, {"script_id": script_id, "total_tokens": 0, "runs": 0})
+        s["total_tokens"] += total
+        s["runs"] += 1
+
+    # Resolve script names for the breakdown (skip scripts deleted since the run).
+    names = dict(db.query(Script.id, Script.name).filter(Script.id.in_(per_script.keys())).all()) if per_script else {}
+    by_script = sorted(per_script.values(), key=lambda x: x["total_tokens"], reverse=True)
+    for s in by_script:
+        s["name"] = names.get(s["script_id"], "(deleted)")
+
+    return {
+        "days": days,
+        **totals,
+        "status_counts": status_counts,
+        "daily": [{"date": d.isoformat(), **v} for d, v in sorted(daily.items())],
+        "by_script": by_script,
     }
 
 

@@ -27,6 +27,27 @@ environment, run them, and read logs.
 6. On failure, read the traceback, fix the file, run again. `get_execution_logs`
    returns the full log stream of a past run if you need more context.
 
+## Eval / regression (test a script's quality)
+
+A script can have an **eval dataset** — a set of test cases (an input + assertions)
+that grade its output into a pass/fail score, so you can tell whether a change
+helped or regressed. Tools:
+
+- `list_eval_cases(script_id)` — see the current dataset (returns each case's id).
+- `add_eval_case(script_id, name, input_json, assertions)` — add one case.
+- `update_eval_case(case_id, …)` / `delete_eval_case(case_id)` — edit or remove a
+  case by id (from `list_eval_cases`).
+  `input_json` is the input object; `assertions` is a list of checks, each
+  `{"type": ..., "value": ..., "threshold"?: int}`:
+  `contains` / `not_contains` (substring), `regex`, `equals` (exact), or `judge`
+  (an LLM scores the output 0–10 against `value` as a criterion, passing at
+  `>= threshold`, default 7).
+- `run_eval(script_id)` — run every case through the engine, grade it, and return
+  `passed`/`total` plus per-case detail (which assertion failed and why).
+
+Typical loop: `add_eval_case` a few cases → `run_eval` → if it regresses, fix the
+script and re-run. Users can also view/edit the dataset in the script's **Eval tab**.
+
 ## Script contract
 
 - Entry point: `def run(input: dict) -> Any` (name configurable per script via
