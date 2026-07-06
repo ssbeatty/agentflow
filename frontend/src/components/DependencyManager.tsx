@@ -12,6 +12,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
 import { scripts as scriptsApi } from "@/lib/api";
+import { summarizeError } from "@/lib/utils";
 
 interface Props {
   scriptId: string;
@@ -39,7 +40,7 @@ export default function DependencyManager({ scriptId, requirements, onRequiremen
       const r = await scriptsApi.packages(scriptId);
       setPackages(r.packages);
       setPkgError(r.error);
-      if (r.error) toast.error(t("dependencyManager.toast.pipListError", { error: r.error }));
+      if (r.error) toast.error(t("dependencyManager.toast.pipListError", { error: summarizeError(r.error) }));
     } catch (e) { setPackages([]); setPkgError(String(e)); }
   };
 
@@ -78,7 +79,7 @@ export default function DependencyManager({ scriptId, requirements, onRequiremen
           if (!line) continue;
           setLines(p => [...p, line]);
           if (logsRef.current) logsRef.current.scrollTop = logsRef.current.scrollHeight;
-          if (line.startsWith("ERROR:")) { setState("error"); toast.error(line); return; }
+          if (line.startsWith("ERROR:")) { setState("error"); toast.error(summarizeError(line)); return; }
           if (line === "DONE") {
             setState("done");
             if (endpoint === "venv") setVenvExists(true);

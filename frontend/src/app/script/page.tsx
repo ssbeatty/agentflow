@@ -30,6 +30,7 @@ import { useAssistantTarget, type ChangedFile } from "@/components/assistant/Ass
 import InputPresetEditor from "@/components/InputPresetEditor";
 import FileUploadPanel from "@/components/FileUploadPanel";
 import ArtifactsPanel from "@/components/ArtifactsPanel";
+import { summarizeError } from "@/lib/utils";
 
 type RunStatus = "idle" | "queued" | "running" | "completed" | "failed" | "cancelled";
 
@@ -232,7 +233,16 @@ function ScriptPage() {
         const terminal = ["completed", "failed", "cancelled"].includes(msg.status);
         if (terminal) {
           ws.close();
-          if (msg.status === "failed" && msg.error) toast.error(t("toast.executionFailed", { error: msg.error }));
+          if (msg.status === "failed" && msg.error) {
+            toast.error(t("toast.executionFailed", { error: summarizeError(msg.error) }), {
+              // Persist until the user acts on it — an 8s auto-dismiss meant
+              // the "view logs" action could vanish before it was clicked,
+              // leaving no way back to that failure's logs except digging
+              // through run history manually.
+              duration: 8000,
+              action: { label: t("toast.viewLogs"), onClick: () => setActiveTab("logs") },
+            });
+          }
           if (msg.status === "completed") toast.success(t("toast.executionCompleted"));
         }
       }
@@ -674,7 +684,17 @@ function ScriptPage() {
           {bottomHandle}
           {/* Bottom tabs: Logs, Output, Schedule, Runs */}
           <div className="shrink-0 border-t border-border" style={{ height: `${bottomHeight}px` }}>
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
+            {/*
+              activationMode="manual": with the default "automatic" mode, Radix's
+              roving-focus-group reclaims focus onto whichever trigger last had
+              real DOM focus whenever focus is lost elsewhere on the page (e.g.
+              a focused toast action button being removed on click) — and under
+              automatic activation, refocusing a trigger re-selects it, silently
+              reverting a just-applied setActiveTab() call. Manual activation
+              decouples keyboard focus from tab selection so that reclaim can't
+              undo a programmatic tab switch.
+            */}
+            <Tabs value={activeTab} onValueChange={setActiveTab} activationMode="manual" className="h-full flex flex-col">
               <TabsList className="rounded-none border-b border-border bg-transparent px-4 h-9 justify-start gap-1 shrink-0">
                 <TabsTrigger value="logs" className="text-xs gap-1.5">
                   <Terminal className="h-3 w-3" />{t("tabs.logs")}

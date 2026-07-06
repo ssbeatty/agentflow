@@ -21,3 +21,16 @@ export function formatDate(d: string | Date): string {
     minute: "2-digit",
   });
 }
+
+/**
+ * Collapse a long/multi-line error (e.g. a Python traceback) into one short
+ * line for toast display. The last non-empty line is normally the actual
+ * `ExceptionType: message` — Python's own traceback convention — so it's a
+ * better summary than the first line ("Traceback (most recent call last):").
+ * Full detail belongs in a log panel, not a toast.
+ */
+export function summarizeError(text: string, maxLen = 160): string {
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const line = lines[lines.length - 1] ?? text.trim();
+  return line.length > maxLen ? `${line.slice(0, maxLen - 1)}…` : line;
+}

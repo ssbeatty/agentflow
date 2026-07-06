@@ -21,7 +21,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import {
   Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { cn } from "@/lib/utils";
+import { cn, summarizeError } from "@/lib/utils";
 
 export type { ChangedFile };
 
@@ -277,7 +277,7 @@ export default function AssistantPanel({
     ws.onmessage = (e) => {
       let evt: { type: string; text?: string; done?: boolean; message?: string };
       try { evt = JSON.parse(e.data); } catch { return; }
-      if (evt.type === "error") { toast.error(evt.message || t("assistantPanel.toast.initializationFailed")); return; }
+      if (evt.type === "error") { toast.error(evt.message ? summarizeError(evt.message) : t("assistantPanel.toast.initializationFailed")); return; }
       if (evt.text) setVenvLines((prev) => [...prev.slice(-80), evt.text!]);
       if (evt.done) {
         ws.close();

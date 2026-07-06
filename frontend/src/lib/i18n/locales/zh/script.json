@@ -4,6 +4,7 @@
     "idCopied": "脚本 ID 已复制",
     "invalidJson": "无效的 JSON",
     "executionFailed": "失败:{{error}}",
+    "viewLogs": "查看日志",
     "executionCompleted": "执行已完成",
     "stopFailed": "停止失败:{{error}}",
     "saved": "已保存",

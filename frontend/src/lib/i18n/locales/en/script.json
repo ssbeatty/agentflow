@@ -4,6 +4,7 @@
     "idCopied": "Script ID copied",
     "invalidJson": "Invalid JSON",
     "executionFailed": "Failed: {{error}}",
+    "viewLogs": "View logs",
     "executionCompleted": "Execution completed",
     "stopFailed": "Stop failed: {{error}}",
     "saved": "Saved",
