@@ -10,6 +10,7 @@ import {
   assistant as assistantApi, executions as executionsApi, channels as channelsApi,
 } from "@/lib/api";
 import type { Channel, WsEvent } from "@/lib/types";
+import type { ChangedFile } from "@/components/assistant/AssistantProvider";
 import AgentTimeline, {
   reduceEvent, answerFromBlocks, type Block,
 } from "@/components/AgentTimeline";
@@ -20,7 +21,7 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
-export interface ChangedFile { filename: string; before: string; after: string; }
+export type { ChangedFile };
 
 interface Msg {
   id: string;
@@ -32,14 +33,23 @@ interface Msg {
 }
 
 interface Props {
-  /** Full context object handed to the assistant each turn (kind, target id, active file, selection…). */
+  /** "bound" = editing a specific script/skill (diff + revert); "global" = free-floating (create/edit anything, no diff). */
+  mode: "bound" | "global";
+  /** Bound-only: which kind + a display label + stable id (id gates cross-target diff). */
+  boundKind?: "script" | "skill";
+  boundLabel?: string;
+  boundId?: string;
+  /** Full context object handed to the assistant each turn. */
   buildContext: () => Record<string, unknown>;
-  onBeforeTurn: () => Promise<void>;
-  onAfterTurn: () => Promise<ChangedFile[]>;
-  onRevert: (filenames: string[]) => Promise<void>;
-  onOpenFile: (filename: string) => void;
+  /** Bound-only lifecycle hooks (absent in global mode → the diff/revert flow is skipped). */
+  onBeforeTurn?: () => Promise<void>;
+  onAfterTurn?: () => Promise<ChangedFile[]>;
+  onRevert?: (filenames: string[]) => Promise<void>;
+  onOpenFile?: (filename: string) => void;
+  /** Collapse the widget back to its bubble. */
   onClose: () => void;
-  targetLabel?: string;   // "script" | "skill"
+  /** Report streaming state up so the collapsed bubble can show activity. */
+  onBusyChange?: (busy: boolean) => void;
 }
 
 const HISTORY_LIMIT = 16;
@@ -88,7 +98,8 @@ function answerText(m: Msg): string {
 }
 
 export default function AssistantPanel({
-  buildContext, onBeforeTurn, onAfterTurn, onRevert, onOpenFile, onClose, targetLabel = "script",
+  mode, boundKind, boundLabel, boundId,
+  buildContext, onBeforeTurn, onAfterTurn, onRevert, onOpenFile, onClose, onBusyChange,
 }: Props) {
   const [info, setInfo] = useState<{ script_id: string; venv_ready: boolean } | null>(null);
   const [infoError, setInfoError] = useState<string | null>(null);
@@ -102,11 +113,14 @@ export default function AssistantPanel({
   const [model, setModel] = useState<string>("");
   const [reasoning, setReasoning] = useState<string>("off");
 
-  // post-turn diff review
+  // post-turn diff review (bound mode only). diffForId gates it to the target
+  // the turn actually ran against, so a diff never shows on a different page.
   const [diff, setDiff] = useState<ChangedFile[]>([]);
+  const [diffForId, setDiffForId] = useState<string | null>(null);
   const [diffOpen, setDiffOpen] = useState(false);
   const [diffFile, setDiffFile] = useState<string | null>(null);
   const [reverting, setReverting] = useState(false);
+  const turnBoundIdRef = useRef<string | null>(null);
 
   // first-run venv setup
   const [venvBusy, setVenvBusy] = useState(false);
@@ -133,6 +147,21 @@ export default function AssistantPanel({
   }, [messages, diff]);
 
   useEffect(() => () => { wsRef.current?.close(); }, []);
+
+  // Report streaming state to the shell on transitions (for the bubble's pulse).
+  const prevSendingRef = useRef(false);
+  useEffect(() => {
+    if (prevSendingRef.current !== sending) {
+      prevSendingRef.current = sending;
+      onBusyChange?.(sending);
+    }
+  }, [sending, onBusyChange]);
+
+  // Switching bound target (navigating between pages) drops any stale diff.
+  useEffect(() => {
+    setDiff([]);
+    setDiffForId(null);
+  }, [boundId]);
 
   // ── venv setup (reuses the install WS) ──────────────────────────────────────
   const initVenv = useCallback(() => {
@@ -177,9 +206,16 @@ export default function AssistantPanel({
     } else {
       setMessages((prev) => prev.map((m) => m.id === asstId ? { ...m, streaming: false } : m));
     }
+    // Bound mode: diff the turn's changes against the pre-turn baseline. The
+    // captured turnBoundIdRef keeps this correct even if the user navigated
+    // away mid-turn (the diff then simply won't render for the new page).
     try {
-      const changed = await onAfterTurn();
-      if (changed.length) { setDiff(changed); setDiffFile(changed[0].filename); }
+      const changed = (await onAfterTurn?.()) ?? [];
+      if (changed.length) {
+        setDiff(changed);
+        setDiffFile(changed[0].filename);
+        setDiffForId(turnBoundIdRef.current);
+      }
     } catch { /* editor refetch best-effort */ }
     setSending(false);
     setExecId(null);
@@ -232,10 +268,12 @@ export default function AssistantPanel({
     setMessages((prev) => [...prev, userMsg, { id: asstId, role: "assistant", content: "", blocks: [], streaming: true }]);
     setInput("");
     setDiff([]);
+    setDiffForId(null);
+    turnBoundIdRef.current = boundId ?? null;   // snapshot the target for this turn
     setSending(true);
 
     try {
-      await onBeforeTurn();
+      await onBeforeTurn?.();
       const exc = await executionsApi.create(info.script_id, {
         message: msg,
         history,
@@ -249,7 +287,7 @@ export default function AssistantPanel({
       setMessages((prev) => prev.map((m) => m.id === asstId ? { ...m, error: String(e), streaming: false } : m));
       setSending(false);
     }
-  }, [input, sending, info, messages, model, reasoning, onBeforeTurn, buildContext, openWs]);
+  }, [input, sending, info, messages, model, reasoning, boundId, onBeforeTurn, buildContext, openWs]);
 
   const stop = useCallback(async () => {
     if (!execId) return;
@@ -260,7 +298,7 @@ export default function AssistantPanel({
   const doRevert = useCallback(async (filenames: string[]) => {
     setReverting(true);
     try {
-      await onRevert(filenames);
+      await onRevert?.(filenames);
       setDiff((prev) => prev.filter((d) => !filenames.includes(d.filename)));
       toast.success(filenames.length > 1 ? "Reverted this turn" : `Reverted ${filenames[0]}`);
     } catch (e) {
@@ -272,20 +310,29 @@ export default function AssistantPanel({
 
   const selected = diff.find((d) => d.filename === diffFile) ?? diff[0];
   const cycleReasoning = () => setReasoning((r) => REASONING_LEVELS[(REASONING_LEVELS.indexOf(r as typeof REASONING_LEVELS[number]) + 1) % REASONING_LEVELS.length]);
+  // Only show the diff card for the target the turn ran against.
+  const showDiff = mode === "bound" && diff.length > 0 && diffForId === (boundId ?? null);
 
   return (
     <div className="h-full flex flex-col bg-[#1e1e1e] text-foreground">
-      {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
-        <Sparkles className="h-4 w-4 text-primary" />
-        <span className="text-sm font-medium">AI Assistant</span>
-        <div className="ml-auto flex items-center gap-1">
+      {/* Header — context-aware (bound target vs global) */}
+      <div className="flex items-center gap-2 pl-5 pr-3 py-2 border-b border-border shrink-0">
+        <Sparkles className="h-4 w-4 text-primary shrink-0" />
+        <div className="min-w-0 leading-tight">
+          <div className="text-sm font-medium">AI 助手</div>
+          <div className="text-[10px] text-muted-foreground truncate">
+            {mode === "bound"
+              ? <>编辑中 · <span className="text-foreground/80">{boundLabel || boundKind}</span> · {boundKind}</>
+              : "全局 · 未绑定项目"}
+          </div>
+        </div>
+        <div className="ml-auto flex items-center gap-1 shrink-0">
           {messages.length > 0 && (
-            <button title="Clear chat" onClick={() => { setMessages([]); setDiff([]); }} className="p-1 text-muted-foreground hover:text-foreground">
+            <button title="Clear chat" onClick={() => { setMessages([]); setDiff([]); setDiffForId(null); }} className="p-1 text-muted-foreground hover:text-foreground">
               <Eraser className="h-3.5 w-3.5" />
             </button>
           )}
-          <button title="Collapse" onClick={onClose} className="p-1 text-muted-foreground hover:text-foreground">
+          <button title="收起" onClick={onClose} className="p-1 text-muted-foreground hover:text-foreground">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -317,22 +364,35 @@ export default function AssistantPanel({
 
         {info?.venv_ready && messages.length === 0 && (
           <div className="text-xs text-muted-foreground/70 leading-relaxed space-y-2 pt-2">
-            <p>Let me write, edit and debug this <b className="text-foreground">{targetLabel}</b> with you. Try:</p>
-            <ul className="space-y-1 pl-1">
-              {targetLabel === "skill" ? (
-                <>
-                  <li>· “Make SKILL.md clear: when to use this skill and how”</li>
-                  <li>· “Add references/examples.md with a few usage examples”</li>
-                </>
-              ) : (
-                <>
-                  <li>· “Add a `city` input, look up its weather via web_search, and return it”</li>
-                  <li>· “This script is failing — find the bug and fix it”</li>
-                  <li>· “Render the result as a table with markdown()”</li>
-                </>
-              )}
-            </ul>
-            <p className="text-muted-foreground/50">Changes are applied first, then you review or revert them in the diff below.</p>
+            {mode === "global" ? (
+              <>
+                <p>当前<b className="text-foreground">未绑定项目</b>。我可以帮你新建或修改脚本 / Skill。试试:</p>
+                <ul className="space-y-1 pl-1">
+                  <li>· “新建一个每天抓取某网站并汇总的脚本”</li>
+                  <li>· “打开某个脚本 / Skill 页面,我会自动只改那一个”</li>
+                </ul>
+                <p className="text-muted-foreground/50">进入某个脚本 / Skill 的编辑页时,我会自动绑定它,只在它上面改。</p>
+              </>
+            ) : (
+              <>
+                <p>Let me write, edit and debug this <b className="text-foreground">{boundKind}</b> with you. Try:</p>
+                <ul className="space-y-1 pl-1">
+                  {boundKind === "skill" ? (
+                    <>
+                      <li>· “Make SKILL.md clear: when to use this skill and how”</li>
+                      <li>· “Add references/examples.md with a few usage examples”</li>
+                    </>
+                  ) : (
+                    <>
+                      <li>· “Add a `city` input, look up its weather via web_search, and return it”</li>
+                      <li>· “This script is failing — find the bug and fix it”</li>
+                      <li>· “Render the result as a table with markdown()”</li>
+                    </>
+                  )}
+                </ul>
+                <p className="text-muted-foreground/50">Changes are applied first, then you review or revert them in the diff below.</p>
+              </>
+            )}
           </div>
         )}
 
@@ -356,8 +416,8 @@ export default function AssistantPanel({
           );
         })}
 
-        {/* Post-turn diff review */}
-        {diff.length > 0 && (
+        {/* Post-turn diff review (bound mode, matching target) */}
+        {showDiff && (
           <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/[0.05] p-3 text-xs space-y-2">
             <div className="flex items-center gap-1.5 font-medium text-emerald-500">
               <FileDiff className="h-3.5 w-3.5 shrink-0" />{diff.length} file{diff.length === 1 ? "" : "s"} changed this turn
@@ -365,7 +425,7 @@ export default function AssistantPanel({
             <div className="space-y-1">
               {diff.map((d) => (
                 <div key={d.filename} className="flex items-center gap-1.5">
-                  <button onClick={() => onOpenFile(d.filename)} title="Open in editor"
+                  <button onClick={() => onOpenFile?.(d.filename)} title="Open in editor"
                     className="font-mono text-[11px] px-2 py-0.5 rounded bg-background/60 border border-border/60 hover:border-border text-foreground/90 truncate flex-1 text-left">
                     {d.filename}
                   </button>
@@ -379,7 +439,7 @@ export default function AssistantPanel({
               ))}
             </div>
             <div className="flex items-center gap-2 pt-0.5">
-              <Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground hover:text-foreground" onClick={() => setDiff([])}>
+              <Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground hover:text-foreground" onClick={() => { setDiff([]); setDiffForId(null); }}>
                 <Check className="h-3 w-3" />Accept all
               </Button>
               <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive hover:text-destructive"
@@ -437,7 +497,11 @@ export default function AssistantPanel({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-            placeholder={info?.venv_ready ? `Ask the assistant to write / edit / debug this ${targetLabel}…  (Enter to send)` : "Initialize the environment to begin…"}
+            placeholder={info?.venv_ready
+              ? (mode === "global"
+                  ? "让我帮你新建 / 修改脚本或 Skill…(Enter 发送)"
+                  : `让我帮你写 / 跑 / 调这个 ${boundKind}…(Enter 发送)`)
+              : "先初始化环境再开始…"}
             disabled={!info?.venv_ready || sending}
             rows={2}
             className="w-full resize-none rounded-lg bg-secondary/30 border border-border/60 px-3 py-2 pr-11 text-sm focus:outline-none focus:border-primary/50 disabled:opacity-50 placeholder:text-muted-foreground/50"

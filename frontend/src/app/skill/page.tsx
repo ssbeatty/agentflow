@@ -1,5 +1,5 @@
 "use client";
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Save, Trash2, Loader2, Sparkles } from "lucide-react";
@@ -15,7 +15,7 @@ import {
 import ScriptEditor, { type EditorSelection } from "@/components/ScriptEditor";
 import FileTree, { type TreeFile } from "@/components/FileTree";
 import { useResizable } from "@/components/Splitter";
-import AssistantPanel, { type ChangedFile } from "@/components/AssistantPanel";
+import { useAssistantTarget, type ChangedFile } from "@/components/assistant/AssistantProvider";
 
 const MAIN_FILE = "SKILL.md";
 
@@ -67,22 +67,22 @@ function SkillPage() {
     direction: "vertical", initial: 210, min: 140, max: 380,
     storageKey: "ag.skillTreeWidth", side: "start",
   });
-  const [aiWidth, aiHandle] = useResizable({
-    direction: "vertical", initial: 400, min: 320, max: 760,
-    storageKey: "ag.aiWidth", side: "end",
-  });
 
-  // In-editor AI assistant column (default open; persisted, shared key with /script).
-  const [aiOpen, setAiOpen] = useState(true);
-  useEffect(() => {
-    const v = localStorage.getItem("ag.aiOpen");
-    if (v !== null) setAiOpen(v === "1");
-  }, []);
-  const toggleAi = useCallback(() => {
-    setAiOpen(o => { const n = !o; localStorage.setItem("ag.aiOpen", n ? "1" : "0"); return n; });
-  }, []);
   const assistantBaselineRef = useRef<Map<string, string>>(new Map());
   const [selection, setSelection] = useState<EditorSelection | null>(null);
+
+  // Bind the global floating AI assistant to THIS skill while the page is open
+  // (handler fns below are hoisted). Unbinds on unmount / while loading.
+  useAssistantTarget(
+    loading || !id || !skill ? null : {
+      kind: "skill", id, label: name,
+      buildContext: buildAssistantContext,
+      onBeforeTurn: handleAssistantBeforeTurn,
+      onAfterTurn: handleAssistantAfterTurn,
+      onRevert: handleAssistantRevert,
+      onOpenFile: setActiveFile,
+    },
+  );
 
   useEffect(() => {
     if (!id) { router.push("/tools"); return; }
@@ -374,9 +374,6 @@ function SkillPage() {
           Enabled
         </label>
         <div className="flex-1" />
-        <Button variant={aiOpen ? "secondary" : "outline"} size="sm" onClick={toggleAi} title="AI 助手 — 帮你写/改这个 Skill">
-          <Sparkles className="h-4 w-4" />AI
-        </Button>
         <Button size="sm" onClick={handleSave} disabled={saving || !dirty}>
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           Save
@@ -436,23 +433,6 @@ function SkillPage() {
           </div>
         </div>
 
-        {/* Far right: in-editor AI assistant column */}
-        {aiOpen && (
-          <>
-            {aiHandle}
-            <div className="shrink-0 flex flex-col overflow-hidden border-l border-border" style={{ width: `${aiWidth}px` }}>
-              <AssistantPanel
-                buildContext={buildAssistantContext}
-                onBeforeTurn={handleAssistantBeforeTurn}
-                onAfterTurn={handleAssistantAfterTurn}
-                onRevert={handleAssistantRevert}
-                onOpenFile={setActiveFile}
-                onClose={toggleAi}
-                targetLabel="skill"
-              />
-            </div>
-          </>
-        )}
       </div>
 
       {/* Delete confirmation */}

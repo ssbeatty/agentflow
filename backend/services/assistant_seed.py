@@ -151,11 +151,13 @@ def get_assistant_script_id(db) -> str:
 # plain `setup_script_env` suffices — no extra requirements.
 #
 # Input contract: {message, history:[{role,content}], model, reasoning, context}
-#   context = {kind:"script"|"skill", script_id|skill_id, entry_function?,
-#              active_file, active_content, selection?}
+#   context = {kind:"script"|"skill"|"none", script_id|skill_id?, entry_function?,
+#              active_file?, active_content?, selection?}
+#   kind=="none" → global mode: the assistant was opened from a non-editor page,
+#     so no target is bound and creating a NEW script/skill is allowed. When a
+#     script_id/skill_id IS bound, the prompt forbids create_* (edit in place).
 # Output: {reply}. The answer streams via token(); tool calls + reasoning render
-# from the tracer/WS. String literals below use 「」 (not ") to avoid quoting
-# clashes inside this triple-quoted constant; lines are joined with chr(10).
+# from the tracer/WS. Lines are joined with chr(10).
 ASSISTANT_MAIN_PY = '''"""AI 助手 —— AgentFlow 内建的脚本 / Skill 开发 · 调试代理(系统脚本,请勿手改)。
 
 通过 loopback MCP 获得平台的 write→run→debug 工具(脚本:create_script /
@@ -189,30 +191,44 @@ def _system_prompt(ctx: dict) -> str:
         "Reply in the user's own language (default 简体中文). Explain concisely what you did, why, and the result; do not dump large blocks of code back to the user.",
         "Format final replies as clean Markdown: use bullets or nested bullets for grouped facts; do not put a single word, tool/model name, or inline code on its own line unless it is a real bullet or fenced code block; avoid manual hard line breaks inside one sentence.",
     ]
-    if kind == "skill":
+    if kind == "none":
+        # Global mode: opened from a non-editor page, nothing is bound. Creating
+        # a NEW script/skill is allowed here (this is the only mode where it is).
+        lines = common + [
+            "",
+            "No script or Skill is currently open — you are in GLOBAL mode.",
+            "You may create a new script/Skill (create_script / create_skill), OR edit an existing one the user names (use list_scripts / list_skills to find it, then update it in place). If it is unclear whether they want a brand-new one or a change to an existing one, ask first.",
+            "Script tools (MCP): get_platform_context, get_scripting_guide, list_scripts, get_script, create_script, update_script, read_script_file, write_script_file, delete_script_file, setup_script_env, run_script, list_executions, get_execution_logs.",
+            "Skill tools (MCP): list_skills, get_skill, read_skill_file, write_skill_file, create_skill, delete_skill_file.",
+            "Before writing a script call get_scripting_guide(); after editing a script, run_script once to verify and keep fixing until it passes.",
+        ]
+    elif kind == "skill":
         sid = ctx.get("skill_id") or ""
         lines = common + [
             "",
-            "Current task: edit a Skill (an Agent Skill = one SKILL.md instruction file + optional supporting files).",
+            "Current task: edit THE CURRENTLY-OPEN Skill (an Agent Skill = one SKILL.md instruction file + optional supporting files).",
             "Available tools (MCP): list_skills, get_skill, read_skill_file, write_skill_file, create_skill, delete_skill_file.",
-            "Rules: operate on the CURRENT skill by default; SKILL.md is the main instruction file (YAML frontmatter name/description + markdown body - make it clear WHEN to use the skill and HOW); supporting files can live in subfolders like references/. Skills are not executed, so just summarize your changes.",
+            "Rules:",
+            "1) Operate on the CURRENT skill (skill_id below). It may be brand-new / EMPTY — requests like 'create a skill', 'build a skill that does X', 'make this skill …' all mean: fill in THIS skill by writing its SKILL.md and supporting files with write_skill_file. SKILL.md is the main file (YAML frontmatter name/description + a markdown body that makes clear WHEN to use it and HOW); supporting files can live in subfolders like references/.",
+            "2) Do NOT call create_skill — that creates a SEPARATE new skill and is almost never what the user wants here. Only call create_skill if the user EXPLICITLY asks for an additional / separate new skill.",
+            "3) Skills are not executed, so just summarize your changes.",
         ]
         if sid:
-            lines += ["", "[Context] skill_id = " + str(sid) + "."]
+            lines += ["", "[Context] You are editing skill_id = " + str(sid) + " (the currently-open skill)."]
     else:
         sid = ctx.get("script_id") or ""
         entry = ctx.get("entry_function") or "run"
         lines = common + [
             "",
-            "Current task: write / run / debug an AgentFlow script.",
+            "Current task: write / run / debug THE CURRENTLY-OPEN AgentFlow script.",
             "Available tools (MCP): get_platform_context, get_scripting_guide, list_scripts, get_script, create_script, update_script, read_script_file, write_script_file, delete_script_file, setup_script_env, run_script, list_executions, get_execution_logs.",
             "Rules:",
             "1) Before writing a script the first time, call get_scripting_guide() to learn the conventions (entry def run(input: dict) -> Any; get_llm / get_agent / get_secret; streaming / reasoning). Use get_platform_context() to see available models / secrets / MCP / Skills when needed.",
-            "2) Operate on the CURRENT script by default unless the user clearly asks for a new one. You may edit any file; change dependencies via update_script(requirements=...) then setup_script_env - do NOT write dependencies as a requirements.txt file.",
+            "2) Operate on the CURRENT script (script_id below), even if it is empty/new — edit it in place with write_script_file / update_script. Do NOT call create_script; that creates a SEPARATE new script. Only create_script if the user EXPLICITLY asks for a new / separate script. Change dependencies via update_script(requirements=...) then setup_script_env — do NOT write dependencies as a requirements.txt file.",
             "3) After editing, always run_script once to verify, read the error / traceback, and keep fixing until it passes.",
         ]
         if sid:
-            lines += ["", "[Context] script_id = " + str(sid) + " (entry function " + str(entry) + ")."]
+            lines += ["", "[Context] You are editing script_id = " + str(sid) + " (entry function " + str(entry) + ")."]
     if active:
         lines += ["The currently open file is " + str(active) + "; its latest content:", "```", (content or "")[:8000], "```"]
     if selection:

@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import { Toaster } from "sonner";
 import AuthGate from "@/components/AuthGate";
+import { AssistantProvider } from "@/components/assistant/AssistantProvider";
+import FloatingAssistant from "@/components/FloatingAssistant";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
@@ -16,8 +18,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="zh" className="dark">
       <body className={`${inter.variable} ${mono.variable} font-sans antialiased min-h-screen`}>
-        <AuthGate>{children}</AuthGate>
-        <Toaster theme="dark" position="bottom-right" richColors />
+        <AuthGate>
+          <AssistantProvider>
+            {children}
+            <FloatingAssistant />
+          </AssistantProvider>
+        </AuthGate>
+        <Toaster theme="dark" position="top-right" richColors />
       </body>
     </html>
   );

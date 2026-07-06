@@ -25,7 +25,7 @@ import DependencyManager from "@/components/DependencyManager";
 import FileTree, { type TreeFile } from "@/components/FileTree";
 import { useResizable } from "@/components/Splitter";
 import RevisionPanel from "@/components/RevisionPanel";
-import AssistantPanel, { type ChangedFile } from "@/components/AssistantPanel";
+import { useAssistantTarget, type ChangedFile } from "@/components/assistant/AssistantProvider";
 import InputPresetEditor from "@/components/InputPresetEditor";
 import FileUploadPanel from "@/components/FileUploadPanel";
 import ArtifactsPanel from "@/components/ArtifactsPanel";
@@ -144,24 +144,24 @@ function ScriptPage() {
     direction: "vertical", initial: 360, min: 260, max: 720,
     storageKey: "ag.rightWidth", side: "end",
   });
-  const [aiWidth, aiHandle] = useResizable({
-    direction: "vertical", initial: 400, min: 320, max: 760,
-    storageKey: "ag.aiWidth", side: "end",
-  });
 
-  // In-editor AI assistant column (default open; persisted).
-  const [aiOpen, setAiOpen] = useState(true);
-  useEffect(() => {
-    const v = localStorage.getItem("ag.aiOpen");
-    if (v !== null) setAiOpen(v === "1");
-  }, []);
-  const toggleAi = useCallback(() => {
-    setAiOpen(o => { const n = !o; localStorage.setItem("ag.aiOpen", n ? "1" : "0"); return n; });
-  }, []);
   // Pre-turn snapshot of the saved file contents, for the post-turn diff/undo.
   const assistantBaselineRef = useRef<Map<string, string>>(new Map());
   // Current editor selection, fed to the assistant for "edit this selection".
   const [selection, setSelection] = useState<EditorSelection | null>(null);
+
+  // Bind the global floating AI assistant to THIS script while the page is open
+  // (handler fns below are hoisted). Unbinds on unmount / while loading.
+  useAssistantTarget(
+    loading || !id ? null : {
+      kind: "script", id, label: name,
+      buildContext: buildAssistantContext,
+      onBeforeTurn: handleAssistantBeforeTurn,
+      onAfterTurn: handleAssistantAfterTurn,
+      onRevert: handleAssistantRevert,
+      onOpenFile: setActiveFile,
+    },
+  );
 
   // Load script
   useEffect(() => {
@@ -595,9 +595,6 @@ function ScriptPage() {
         )}
 
         <div className="ml-auto flex items-center gap-2">
-          <Button variant={aiOpen ? "secondary" : "outline"} size="sm" onClick={toggleAi} title="AI 助手 — 写/跑/调这个脚本">
-            <Sparkles className="h-3 w-3" />AI
-          </Button>
           {runStatus !== "idle" && (
             <span className={`text-xs font-medium flex items-center gap-1.5 ${STATUS_COLORS[runStatus]}`}>
               {(runStatus === "queued" || runStatus === "running") && <Loader2 className="h-3 w-3 animate-spin" />}
@@ -933,23 +930,6 @@ function ScriptPage() {
           )}
         </div>
 
-        {/* Far right: in-editor AI assistant column */}
-        {aiOpen && (
-          <>
-            {aiHandle}
-            <div className="shrink-0 flex flex-col overflow-hidden border-l border-border" style={{ width: `${aiWidth}px` }}>
-              <AssistantPanel
-                buildContext={buildAssistantContext}
-                onBeforeTurn={handleAssistantBeforeTurn}
-                onAfterTurn={handleAssistantAfterTurn}
-                onRevert={handleAssistantRevert}
-                onOpenFile={setActiveFile}
-                onClose={toggleAi}
-                targetLabel="script"
-              />
-            </div>
-          </>
-        )}
       </div>
 
       {/* Delete dialog */}
