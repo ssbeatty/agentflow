@@ -1,0 +1,9 @@
+# Test-suite dependencies (NOT needed at runtime). Install alongside the
+# runtime deps to run the pytest suite:
+#
+#   cd backend && pip install -r requirements-dev.txt && pytest
+#
+# The tests import backend modules directly (app.*, services.*, agentflow) and
+# run against a throwaway temp sqlite DB / data dir set up in tests/conftest.py,
+# so they don't touch your real backend/data.
+pytest>=8.0.0

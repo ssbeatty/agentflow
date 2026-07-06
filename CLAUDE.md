@@ -17,14 +17,18 @@ AgentFlow — a self-hosted platform for writing/running LangGraph/LangChain Pyt
 | Frontend build (produces `out/` consumed by backend) | `cd frontend && npm run build` |
 | Type-check frontend | `cd frontend && npx tsc --noEmit` |
 | Python syntax sanity check | `python -c "import ast; ast.parse(open('<path>',encoding='utf-8').read())"` |
+| Backend tests (pytest) | `cd backend && pip install -r requirements-dev.txt && pytest` |
 | Docker (app + postgres) | `docker compose pull && docker compose up -d` (pulls `ghcr.io/ssbeatty/agentflow:latest`) |
 | Docker (sqlite only) | `DATABASE_URL=sqlite:////app/backend/data/agentflow.db docker compose up -d app --no-deps` |
 | Docker (build from source) | `docker build -t agentflow:local . && AGENTFLOW_IMAGE=agentflow:local docker compose up -d` |
 | Docker HTTPS (Traefik + Let's Encrypt) | set `DOMAIN`/`SSL_EMAIL` in `.env`, then `docker compose -f docker-compose.traefik.yml up -d` |
 
-There is **no test suite**. Verify changes by running the backend and exercising flows through the UI or `curl`.
+**Backend tests** live in `backend/tests/` (pytest). Most are fast unit tests over the stable, security-critical logic (auth crypto, filename path-safety, subprocess env scrubbing, schema validation, execution-retention) that run against a **throwaway temp sqlite DB + data dir** wired up in `tests/conftest.py` — no server, no real `backend/data`. `tests/test_sdk_contract.py` locks the public `agentflow` surface + key kwargs scripts rely on. The langchain/langgraph stack is imported *lazily* inside `agentflow.get_llm()`/`get_agent()`, so importing `agentflow` in a test is cheap. **`tests/test_execution_engine_run.py` is the home for "I ran a script and it broke" regressions**: it drives the real engine end-to-end (writes a `main.py`, calls `start_execution()`, spawns the runner subprocess, asserts on the persisted `Execution` row + logs). A test script has no per-script venv, so the engine falls back to the backend python (the test interpreter) — an import error / crash reproduces **naturally without building a venv** (fast, hermetic). The seed case is a **missing dependency** (imports an uninstalled package → `failed` + `ModuleNotFoundError` in `execution.error` + a persisted error log). **The suite grows by regression:** when a script hits a bug, add a test reproducing it — runtime/execution bugs go in `test_execution_engine_run.py` (copy its `_run(db, main_py, …)` helper), pure helpers get a plain unit test, DB-touching logic takes the `db` fixture. We deliberately **don't** statically test the `examples/*.py` files (that only catches "the example broke", not real runtime behavior). See `backend/tests/README.md` for the how-to. There is still **no frontend test suite** — verify UI flows by running the app.
 
-**CI**: `.github/workflows/docker.yml` builds the image with Buildx (`context: .`, default `Dockerfile`) and pushes to GHCR on push to `main` (→ `main` + `latest`) and on `v*` tags (→ semver tags + `latest`). `docker-compose.yml` pulls that image by default; override the tag/source with the `AGENTFLOW_IMAGE` env var. There is no CI lint/test step — keep `tsc`/`next build` green locally before pushing.
+**CI**:
+- `.github/workflows/test.yml` runs `pytest` (backend) on every push to `main`, every PR, and manual dispatch (installs `requirements.txt` + `requirements-dev.txt` on Python 3.12). Keep it green.
+- `.github/workflows/docker.yml` builds the image with Buildx (`context: .`, default `Dockerfile`) and pushes to GHCR on push to `main` (→ `main` + `latest`) and on `v*` tags (→ semver tags + `latest`). `docker-compose.yml` pulls that image by default; override the tag/source with the `AGENTFLOW_IMAGE` env var.
+- There is no CI lint/frontend-build step — keep `tsc`/`next build` green locally before pushing.
 
 ## Architecture you must know
 
