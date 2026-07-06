@@ -35,6 +35,7 @@ from services.venv_manager import (
     make_run_preexec, maybe_wrap_sandbox,
 )
 from services.notifications import schedule_failure_notification
+from services.callbacks import schedule_completion_callback
 
 _PREFIX = "__AGENTFLOW__"
 
@@ -456,12 +457,15 @@ async def _finalize_run(
         "error": exc_row.error,
     })
 
-    if exc_row.status == "failed":
-        if exc_row.retry_count < exc_row.max_retries:
-            await _schedule_retry(exc_row)
-        else:
-            # Final failure (no retries left) → fire failure notifications.
+    if exc_row.status == "failed" and exc_row.retry_count < exc_row.max_retries:
+        # Will retry — not terminal yet; don't notify or fire the completion webhook.
+        await _schedule_retry(exc_row)
+    else:
+        # Terminal state (completed / cancelled / failed-with-no-retries-left).
+        if exc_row.status == "failed":
             schedule_failure_notification(execution_id)
+        # Push the final result to the run's callback_url (if any).
+        schedule_completion_callback(execution_id)
 
     for p in cleanup_paths:
         try:
@@ -1104,8 +1108,9 @@ def _mark_failed(db, execution_id: str, error: str) -> None:
         })
     except Exception:
         pass
-    # Engine-level failures are terminal (no retry path) → notify.
+    # Engine-level failures are terminal (no retry path) → notify + webhook.
     schedule_failure_notification(execution_id)
+    schedule_completion_callback(execution_id)
 
 
 # ── Execution-record retention ───────────────────────────────────────────────

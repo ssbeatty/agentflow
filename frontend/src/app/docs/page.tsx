@@ -147,6 +147,48 @@ curl -s ${origin}/mcp/skill \\
         </Section>
 
         <Section
+          title={t("asyncWebhook.title")}
+          desc={t("asyncWebhook.desc")}
+        >
+          <Endpoint method="POST" path="/api/executions/run?wait=false" />
+          <Code
+            label="curl"
+            code={`curl -X POST '${origin}/api/executions/run?wait=false' \\
+  -H 'Content-Type: application/json' \\
+  -H 'X-API-Key: af_…' \\
+  -d '{
+    "script_id": "${scriptId}",
+    "input_data": ${exampleInput},
+    "callback_url": "https://your-service/hook"
+  }'`}
+          />
+          <Code
+            label={t("asyncWebhook.labelResponse")}
+            code={`{
+  "id": "uuid…",
+  "status": "queued",
+  "script_id": "${scriptId}",
+  "callback_url": "https://your-service/hook"
+}`}
+          />
+          <Code
+            label={t("asyncWebhook.labelCallback")}
+            code={`{
+  "id": "uuid…",
+  "script_id": "${scriptId}",
+  "status": "completed",          // or "failed" / "cancelled"
+  "trigger": "api",
+  "output_data": { ... },
+  "error": null,
+  "started_at": "...",
+  "finished_at": "...",
+  "retry_count": 0,
+  "total_tokens": 0
+}`}
+          />
+        </Section>
+
+        <Section
           title={t("uploadFile.title")}
           desc={t("uploadFile.desc")}
         >
@@ -252,10 +294,14 @@ curl ${origin}/api/executions/<EXECUTION_ID>
           title={t("listExecutions.title")}
           desc={t("listExecutions.desc")}
         >
-          <Endpoint method="GET" path="/api/executions?script_id=...&limit=50" />
+          <Endpoint method="GET" path="/api/executions?script_id=...&status=failed&trigger=cron&q=...&limit=50" />
           <Code
             label="curl"
-            code={`curl '${origin}/api/executions?script_id=${scriptId}&limit=20'`}
+            code={`# newest 20 for a script
+curl '${origin}/api/executions?script_id=${scriptId}&limit=20'
+
+# only failures whose id / error / logs contain "timeout"
+curl '${origin}/api/executions?script_id=${scriptId}&status=failed&q=timeout'`}
           />
         </Section>
 

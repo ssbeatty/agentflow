@@ -169,8 +169,16 @@ export const inputPresets = {
 // ── Executions ─────────────────────────────────────────────────────────────────
 
 export const executions = {
-  list: (scriptId?: string) =>
-    req<ExecutionSummary[]>(`/executions${scriptId ? `?script_id=${scriptId}` : ""}`),
+  list: (scriptId?: string, opts?: { status?: string; trigger?: string; q?: string; limit?: number }) => {
+    const p = new URLSearchParams();
+    if (scriptId) p.set("script_id", scriptId);
+    if (opts?.status) p.set("status", opts.status);
+    if (opts?.trigger) p.set("trigger", opts.trigger);
+    if (opts?.q) p.set("q", opts.q);
+    if (opts?.limit) p.set("limit", String(opts.limit));
+    const qs = p.toString();
+    return req<ExecutionSummary[]>(`/executions${qs ? `?${qs}` : ""}`);
+  },
 
   usageStats: (days = 7) => req<UsageStats>(`/executions/usage-stats?days=${days}`),
 

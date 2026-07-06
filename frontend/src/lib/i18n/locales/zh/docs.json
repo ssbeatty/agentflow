@@ -55,7 +55,7 @@
   },
   "listExecutions": {
     "title": "列出执行记录",
-    "desc": "仅限管理员。可选按 script_id 筛选。按最新时间排列。"
+    "desc": "仅管理员。按创建时间倒序。可按 script_id、status / trigger(逗号分隔)以及 q 过滤 —— q 是全文搜索,还会匹配跨运行的日志内容。"
   },
   "pythonExample": {
     "title": "Python 示例",
@@ -132,5 +132,11 @@
     "copied": "已复制",
     "copiedLabel": "已复制",
     "copyLabel": "复制"
+  },
+  "asyncWebhook": {
+    "title": "异步提交 + 完成回调",
+    "desc": "同一个 /run 接口的非阻塞用法:加 wait=false 立即拿到 run id(同样支持 X-API-Key)。给一个 callback_url,运行到终态时平台会把最终结果 POST 过去;也可以用同一个 API Key 轮询 GET /api/executions/{id}。",
+    "labelResponse": "立即返回",
+    "labelCallback": "回调内容 —— 完成时 POST 到 callback_url"
   }
 }

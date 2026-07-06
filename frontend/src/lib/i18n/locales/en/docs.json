@@ -55,7 +55,7 @@
   },
   "listExecutions": {
     "title": "List executions",
-    "desc": "Admin only. Optionally filtered by script_id. Newest first."
+    "desc": "Admin only. Newest first. Filter by script_id, status / trigger (comma-separated), and q — a free-text search that also matches inside log messages across runs."
   },
   "pythonExample": {
     "title": "Python example",
@@ -132,5 +132,11 @@
     "copied": "Copied",
     "copiedLabel": "copied",
     "copyLabel": "copy"
+  },
+  "asyncWebhook": {
+    "title": "Async submit + completion webhook",
+    "desc": "The same /run endpoint, non-blocking: add wait=false to get the run id back immediately (also callable with an X-API-Key). Give a callback_url and the final result is POSTed there once the run reaches a terminal state; or poll GET /api/executions/{id} with the same API key.",
+    "labelResponse": "immediate response",
+    "labelCallback": "webhook payload — POSTed to callback_url on completion"
   }
 }

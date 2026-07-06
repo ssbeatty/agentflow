@@ -6,8 +6,10 @@ from fastapi.responses import FileResponse
 from loguru import logger
 from sqlalchemy.orm import Session
 
+from sqlalchemy import or_
+
 from app.database import get_db, SessionLocal
-from app.models import Execution, Script
+from app.models import Execution, ExecutionLog, Script
 from app.schemas import ExecutionCreate, ExecutionDetail, ExecutionSummary
 from app.auth_deps import require_admin, require_api_key_or_admin
 from services.execution_engine import (
@@ -114,11 +116,47 @@ def get_usage_stats(days: int = 7, db: Session = Depends(get_db)):
 
 
 @router.get("", response_model=list[ExecutionSummary], dependencies=_admin)
-def list_executions(script_id: str | None = None, limit: int = 50, db: Session = Depends(get_db)):
-    q = db.query(Execution).order_by(Execution.created_at.desc())
+def list_executions(
+    script_id: str | None = None,
+    status: str | None = None,
+    trigger: str | None = None,
+    q: str | None = None,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+):
+    """List executions, newest first, with optional filters:
+
+    - `status`   : one or more comma-separated statuses (e.g. `failed,cancelled`).
+    - `trigger`  : one or more comma-separated triggers (manual/api/cron/rerun/eval).
+    - `q`        : free-text search — matches the run id, its error, OR any of its
+                   log messages (cross-run log search). Case-insensitive substring.
+    """
+    query = db.query(Execution).order_by(Execution.created_at.desc())
     if script_id:
-        q = q.filter_by(script_id=script_id)
-    return q.limit(limit).all()
+        query = query.filter(Execution.script_id == script_id)
+    if status:
+        statuses = [s.strip() for s in status.split(",") if s.strip()]
+        if statuses:
+            query = query.filter(Execution.status.in_(statuses))
+    if trigger:
+        triggers = [t.strip() for t in trigger.split(",") if t.strip()]
+        if triggers:
+            query = query.filter(Execution.trigger.in_(triggers))
+    if q and q.strip():
+        term = f"%{q.strip()}%"
+        # Cross-run log search: match runs whose id/error contains the term, OR
+        # that have any log line containing it (via a correlated id subquery so
+        # one row per matching run — no join fan-out / duplicates).
+        log_hits = db.query(ExecutionLog.execution_id).filter(ExecutionLog.message.ilike(term))
+        query = query.filter(
+            or_(
+                Execution.id.ilike(term),
+                Execution.error.ilike(term),
+                Execution.id.in_(log_hits),
+            )
+        )
+    limit = max(1, min(limit, 500))
+    return query.limit(limit).all()
 
 
 @router.post("", response_model=ExecutionSummary, status_code=201, dependencies=_admin)
@@ -135,6 +173,7 @@ async def create_execution(body: ExecutionCreate, db: Session = Depends(get_db))
         input_data=body.input_data or {},
         max_retries=body.max_retries,
         trigger="manual",
+        callback_url=body.callback_url,
     )
     db.add(exc)
     db.commit()
@@ -145,11 +184,16 @@ async def create_execution(body: ExecutionCreate, db: Session = Depends(get_db))
 
 
 @router.post("/run", status_code=200, dependencies=[Depends(require_api_key_or_admin)])
-async def run_sync(body: ExecutionCreate, timeout: float = 300.0):
+async def run_sync(body: ExecutionCreate, timeout: float = 300.0, wait: bool = True):
     """
-    Synchronous execution endpoint for external callers. Blocks until the
-    script finishes (or `timeout` seconds elapse). Returns the same shape as
-    GET /executions/{id}, so a single round-trip yields the final result.
+    Execution endpoint for external callers.
+
+    - `wait=true` (default): **synchronous** — blocks until the script finishes
+      (or `timeout` seconds elapse) and returns the final result in one
+      round-trip. Backwards-compatible with the original behaviour.
+    - `wait=false`: **async** — returns immediately with the queued run's id and
+      status; poll `GET /executions/{id}` for the result, and/or set
+      `callback_url` in the body to be POSTed the result when it finishes.
 
     Auth: an issued API key (`X-API-Key: af_…` or `Authorization: Bearer af_…`)
     or a logged-in admin session.
@@ -165,15 +209,28 @@ async def run_sync(body: ExecutionCreate, timeout: float = 300.0):
             input_data=body.input_data or {},
             max_retries=body.max_retries,
             trigger="api",
+            callback_url=body.callback_url,
         )
         db.add(exc)
         db.commit()
         db.refresh(exc)
         execution_id = exc.id
+        exc_status = exc.status
     finally:
         db.close()
 
     task = spawn_execution(execution_id)
+
+    if not wait:
+        # Async submit: don't await the run. It finishes in the background and
+        # (if callback_url was given) the engine POSTs the result there.
+        return {
+            "id": execution_id,
+            "status": exc_status,
+            "script_id": body.script_id,
+            "callback_url": body.callback_url,
+        }
+
     try:
         await asyncio.wait_for(task, timeout=timeout)
     except asyncio.TimeoutError:
@@ -220,8 +277,13 @@ def clear_executions(script_id: str, db: Session = Depends(get_db)):
     return {"deleted": deleted}
 
 
-@router.get("/{execution_id}", response_model=ExecutionDetail, dependencies=_admin)
+@router.get("/{execution_id}", response_model=ExecutionDetail,
+            dependencies=[Depends(require_api_key_or_admin)])
 def get_execution(execution_id: str, db: Session = Depends(get_db)):
+    # API-key accessible (not just admin) so an async caller of POST /run?wait=false
+    # can poll its run's result. This matches the exposure the API key already
+    # has via POST /run and the /mcp gateway (list_executions/get_execution_logs);
+    # the single-admin trust model has no per-run ownership to scope to.
     exc = db.query(Execution).filter_by(id=execution_id).first()
     if not exc:
         raise HTTPException(404, "Execution not found")

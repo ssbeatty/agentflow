@@ -128,6 +128,12 @@ class Execution(Base):
     # How this run was triggered — drives failure-notification filtering (eval
     # sub-runs are excluded so a graded test case can't spam the alert channels).
     trigger = Column(String(32), default="manual", server_default="manual")  # manual|api|cron|rerun|eval
+    # Optional webhook: when set, the engine POSTs the run's final result here
+    # once it reaches a terminal state (completed/failed/cancelled, after any
+    # retries). Lets an external caller submit async (POST /run?wait=false) and
+    # be pushed the result instead of polling. Best-effort (see services/
+    # callbacks.py) — a dead webhook never affects the run. See Alembic 0011.
+    callback_url = Column(Text, nullable=True)
     # Token usage aggregated across every LLM call in this run. Captured by the
     # tracer (agentflow/_tracer.py), emitted once as a `{"type":"usage"}` event
     # by the runner, and persisted at finalization. 0 = no usage recorded (a

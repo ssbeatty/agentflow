@@ -160,6 +160,10 @@
     "confirmDeleteTitle": "Confirm delete",
     "cancelTitle": "Cancel",
     "deleteRecordTitle": "Delete this record",
-    "tokensTitle": "{{calls}} LLM calls"
+    "tokensTitle": "{{calls}} LLM calls",
+    "searchPlaceholder": "Search runs / logs…",
+    "clearSearch": "Clear search",
+    "filterAll": "All",
+    "noMatches": "No runs match your filter."
   }
 }

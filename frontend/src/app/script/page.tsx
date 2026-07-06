@@ -7,6 +7,7 @@ import {
   ArrowLeft, Play, Square, Save, Terminal, Settings2,
   Clock, ChevronRight, Loader2, CalendarClock, Workflow,
   History, CheckCircle2, XCircle, MinusCircle, Copy, Trash2, Wrench, Check, Sparkles, Coins, FlaskConical, Flame,
+  Search, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { scripts, executions, mcpServers, skills as skillsApi, revisions as revisionsApi, inputPresets } from "@/lib/api";
@@ -1269,6 +1270,8 @@ function ScheduleTab({ scriptId }: { scriptId: string }) {
 
 // ── Runs Tab ────────────────────────────────────────────────────────────────
 
+const RUN_STATUS_FILTERS = ["all", "completed", "failed", "cancelled", "running"] as const;
+
 function RunsTab({
   scriptId, currentExecId, runStatus, onSelect,
 }: {
@@ -1290,11 +1293,24 @@ function RunsTab({
   const [loadingRuns, setLoadingRuns] = useState(false);
   const [confirmDelId, setConfirmDelId] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");  // "" = all
+  const hasFilter = !!search || !!statusFilter;
+
+  // Debounce the free-text search so we don't hit the API on every keystroke.
+  useEffect(() => {
+    const h = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(h);
+  }, [search]);
 
   const reload = useCallback(() => {
     setLoadingRuns(true);
-    executions.list(scriptId).then(setItems).catch(() => null).finally(() => setLoadingRuns(false));
-  }, [scriptId]);
+    executions.list(scriptId, {
+      status: statusFilter || undefined,
+      q: debouncedSearch || undefined,
+    }).then(setItems).catch(() => null).finally(() => setLoadingRuns(false));
+  }, [scriptId, statusFilter, debouncedSearch]);
 
   async function delOne(id: string) {
     setConfirmDelId(null);
@@ -1359,6 +1375,46 @@ function RunsTab({
   return (
     <ScrollArea className="h-full">
       <div className="p-3 space-y-1">
+        {(items.length > 0 || hasFilter) && (
+          <div className="pb-2 space-y-1.5">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground/60 pointer-events-none" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={t("runs.searchPlaceholder")}
+                className="w-full h-7 pl-7 pr-6 rounded-md bg-secondary/40 border border-border/60 text-[11px] focus:outline-none focus:border-primary/50 transition-colors"
+              />
+              {search && (
+                <button
+                  onClick={() => setSearch("")}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground/60 hover:text-foreground"
+                  title={t("runs.clearSearch")}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-1 flex-wrap">
+              {RUN_STATUS_FILTERS.map((sf) => {
+                const active = (statusFilter || "all") === sf;
+                return (
+                  <button
+                    key={sf}
+                    onClick={() => setStatusFilter(sf === "all" ? "" : sf)}
+                    className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
+                      active
+                        ? "bg-primary/15 border-primary/40 text-primary"
+                        : "bg-secondary/30 border-border/50 text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {sf === "all" ? t("runs.filterAll") : t(`status.${sf}`, { defaultValue: sf })}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
         {items.length > 0 && (
           <div className="flex items-center justify-between pb-1">
             <span className="text-[10px] text-muted-foreground/70 tabular-nums">{t("runs.recordCount", { count: items.length })}</span>
@@ -1380,7 +1436,9 @@ function RunsTab({
           </div>
         )}
         {loadingRuns && items.length === 0 && <div className="text-xs text-muted-foreground">{t("runs.loading")}</div>}
-        {!loadingRuns && items.length === 0 && <div className="text-xs text-muted-foreground">{t("runs.empty")}</div>}
+        {!loadingRuns && items.length === 0 && (
+          <div className="text-xs text-muted-foreground">{hasFilter ? t("runs.noMatches") : t("runs.empty")}</div>
+        )}
         {items.map(e => {
           const inFlight = ["running", "queued", "pending"].includes(e.status);
           return (

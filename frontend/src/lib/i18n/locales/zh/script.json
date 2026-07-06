@@ -159,6 +159,10 @@
     "confirmDeleteTitle": "确认删除",
     "cancelTitle": "取消",
     "deleteRecordTitle": "删除此记录",
-    "tokensTitle": "{{calls}} 次 LLM 调用"
+    "tokensTitle": "{{calls}} 次 LLM 调用",
+    "searchPlaceholder": "搜索运行 / 日志…",
+    "clearSearch": "清除搜索",
+    "filterAll": "全部",
+    "noMatches": "没有匹配的运行记录。"
   }
 }

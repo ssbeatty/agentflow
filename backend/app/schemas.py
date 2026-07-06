@@ -139,6 +139,22 @@ class ExecutionCreate(BaseModel):
     script_id: str
     input_data: dict = {}
     max_retries: int = 0
+    # Optional completion webhook. When set, the engine POSTs the run's final
+    # result here once terminal (see services/callbacks.py). Handy with
+    # POST /executions/run?wait=false for fire-and-forget external calls.
+    callback_url: Optional[str] = None
+
+    @field_validator("callback_url")
+    @classmethod
+    def _validate_callback_url(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            return None
+        if not (v.startswith("http://") or v.startswith("https://")):
+            raise ValueError("callback_url must be an http(s) URL")
+        return v
 
 
 class ExecutionLogOut(BaseModel):

@@ -146,6 +146,27 @@ def test_success_does_not_trigger_notification_hook(db, monkeypatch):
     assert called == [], "a successful run must not notify"
 
 
+def test_completion_callback_fires_on_terminal(db, monkeypatch):
+    # The completion webhook must fire on EVERY terminal state — a caller that
+    # submitted async (POST /run?wait=false) wants to be told when the run is
+    # done, whatever the outcome. Record the call instead of POSTing.
+    called = []
+    monkeypatch.setattr(execution_engine, "schedule_completion_callback",
+                        lambda eid: called.append(eid))
+    ok = _run(db, "def run(input):\n    return {'ok': True}\n")
+    assert ok.status == "completed"
+    assert called == [ok.id], "a completed run must fire the completion webhook hook"
+
+    called.clear()
+    bad = _run(db, "def run(input):\n    raise RuntimeError('boom')\n")
+    assert bad.status == "failed"
+    assert called == [bad.id], "a failed run must also fire the completion webhook hook"
+    # (The "don't fire while a retry is still pending" branch — status=="failed"
+    #  and retry_count < max_retries → _schedule_retry, else callback — is a plain
+    #  guard in _finalize_run; not exercised here to avoid orphaning a retry
+    #  subprocess past the test's asyncio.run.)
+
+
 def test_stopped_run_is_cancelled_not_failed(db):
     # Regression: stop_execution() kills the subprocess, which exits non-zero.
     # Without remembering the stop was deliberate, finalization marked it "failed"
