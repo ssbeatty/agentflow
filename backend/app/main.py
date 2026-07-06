@@ -133,7 +133,18 @@ async def _preheat_keep_warm() -> None:
             logger.warning("[worker {}] startup preheat failed: {}", sid[:8], e)
 
 
-app = FastAPI(title="AgentFlow", version="0.1.0", lifespan=lifespan)
+# Swagger/OpenAPI is moved under /api/* so the default "/docs" path stays free
+# for the frontend's own docs page (the single-image deploy serves the static
+# frontend from the same origin; FastAPI's built-in "/docs" would otherwise
+# shadow it and show Swagger instead).
+app = FastAPI(
+    title="AgentFlow",
+    version="0.1.0",
+    lifespan=lifespan,
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json",
+)
 
 _origins = settings.cors_origins_list
 _wildcard = "*" in _origins

@@ -15,6 +15,9 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { useConfirm } from "@/components/ConfirmDialogProvider";
 
 type FieldSpec = {
@@ -283,15 +286,19 @@ function ChannelDialog({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="nc-type" className="text-xs">{t("dialog.typeLabel")}</Label>
-            <select
-              id="nc-type" value={type} disabled={isEdit}
-              onChange={(e) => setType(e.target.value as NotificationChannelType)}
-              className="w-full h-9 rounded-md border border-input bg-transparent px-3 text-sm disabled:opacity-60"
+            <Select
+              value={type} disabled={isEdit}
+              onValueChange={(v) => setType(v as NotificationChannelType)}
             >
-              {TYPES.map((ty) => (
-                <option key={ty} value={ty}>{t(`types.${ty}`)}</option>
-              ))}
-            </select>
+              <SelectTrigger id="nc-type" className="h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TYPES.map((ty) => (
+                  <SelectItem key={ty} value={ty}>{t(`types.${ty}`)}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {fields.map((f) => (
