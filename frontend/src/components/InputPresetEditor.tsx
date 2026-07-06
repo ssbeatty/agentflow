@@ -7,6 +7,7 @@ import type { ScriptInputPreset } from "@/lib/types";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ConfirmDialogProvider";
 
 interface Props {
   scriptId: string;
@@ -24,6 +25,7 @@ export default function InputPresetEditor({ scriptId, value, onChange, error, on
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const menuRef = useRef<HTMLDivElement>(null);
+  const confirm = useConfirm();
 
   useEffect(() => {
     inputPresets.list(scriptId).then(setPresets).catch(() => null);
@@ -101,7 +103,7 @@ export default function InputPresetEditor({ scriptId, value, onChange, error, on
 
   async function deleteCurrent() {
     if (!selected) return;
-    if (!confirm(`Delete preset "${selected.name}"?`)) return;
+    if (!(await confirm(`Delete preset "${selected.name}"?`, { confirmLabel: "Delete", destructive: true }))) return;
     try {
       await inputPresets.delete(scriptId, selected.id);
       setPresets(prev => prev.filter(x => x.id !== selected.id));

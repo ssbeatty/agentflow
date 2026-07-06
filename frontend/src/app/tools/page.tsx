@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
+import { useConfirm } from "@/components/ConfirmDialogProvider";
 
 type Transport = MCPServerConfig["transport"];
 type AuthType = "none" | "oauth2";
@@ -60,6 +61,7 @@ function fmtJson(v: Record<string, string> | undefined): string {
 
 export default function ToolsPage() {
   const router = useRouter();
+  const confirm = useConfirm();
   const [servers, setServers] = useState<MCPServerConfig[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -170,7 +172,7 @@ export default function ToolsPage() {
   }
 
   async function removeSkill(id: string) {
-    if (!confirm("Delete this skill?")) return;
+    if (!(await confirm("Delete this skill?", { confirmLabel: "Delete", destructive: true }))) return;
     try {
       await skills.delete(id);
       setSkillList(prev => prev.filter(s => s.id !== id));
@@ -263,7 +265,7 @@ export default function ToolsPage() {
   }
 
   async function remove(id: string) {
-    if (!confirm("Delete this MCP server?")) return;
+    if (!(await confirm("Delete this MCP server?", { confirmLabel: "Delete", destructive: true }))) return;
     try {
       await mcpServers.delete(id);
       setServers(prev => prev.filter(s => s.id !== id));

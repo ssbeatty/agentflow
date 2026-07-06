@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
+import { useConfirm } from "@/components/ConfirmDialogProvider";
 
 const PROVIDERS = ["openai", "anthropic", "deepseek", "ollama", "custom"] as const;
 type ProviderKey = typeof PROVIDERS[number];
@@ -47,6 +48,7 @@ const emptyForm = (provider: ProviderKey = "openai"): FormState => ({
 });
 
 export default function SettingsPage() {
+  const confirm = useConfirm();
   const [list, setList] = useState<Channel[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -157,7 +159,7 @@ export default function SettingsPage() {
   }
 
   async function remove(id: string) {
-    if (!confirm("Delete this channel?")) return;
+    if (!(await confirm("Delete this channel?", { confirmLabel: "Delete", destructive: true }))) return;
     try {
       await channelsApi.delete(id);
       setList(prev => prev.filter(c => c.id !== id));

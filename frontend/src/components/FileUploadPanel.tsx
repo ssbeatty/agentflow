@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import { files } from "@/lib/api";
 import type { UploadedFile } from "@/lib/types";
+import { useConfirm } from "@/components/ConfirmDialogProvider";
 
 interface Props {
   scriptId: string;
@@ -24,6 +25,7 @@ export default function FileUploadPanel({ scriptId, onInsertRef }: Props) {
   const [busy, setBusy] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const confirm = useConfirm();
 
   async function refresh() {
     try {
@@ -53,7 +55,7 @@ export default function FileUploadPanel({ scriptId, onInsertRef }: Props) {
   }
 
   async function remove(item: UploadedFile) {
-    if (!confirm(`Delete "${item.original_name}"?`)) return;
+    if (!(await confirm(`Delete "${item.original_name}"?`, { confirmLabel: "Delete", destructive: true }))) return;
     try {
       await files.delete(item.id);
       setItems(prev => prev.filter(x => x.id !== item.id));

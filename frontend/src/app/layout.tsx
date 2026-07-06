@@ -4,6 +4,7 @@ import { Toaster } from "sonner";
 import AuthGate from "@/components/AuthGate";
 import { AssistantProvider } from "@/components/assistant/AssistantProvider";
 import FloatingAssistant from "@/components/FloatingAssistant";
+import { ConfirmDialogProvider } from "@/components/ConfirmDialogProvider";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
@@ -19,10 +20,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="zh" className="dark">
       <body className={`${inter.variable} ${mono.variable} font-sans antialiased min-h-screen`}>
         <AuthGate>
-          <AssistantProvider>
-            {children}
-            <FloatingAssistant />
-          </AssistantProvider>
+          <ConfirmDialogProvider>
+            <AssistantProvider>
+              {children}
+              <FloatingAssistant />
+            </AssistantProvider>
+          </ConfirmDialogProvider>
         </AuthGate>
         <Toaster theme="dark" position="top-right" richColors />
       </body>

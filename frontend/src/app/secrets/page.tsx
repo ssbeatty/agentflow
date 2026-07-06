@@ -14,8 +14,10 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
+import { useConfirm } from "@/components/ConfirmDialogProvider";
 
 export default function SecretsPage() {
+  const confirm = useConfirm();
   const [items, setItems] = useState<Secret[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Secret | null>(null);
@@ -30,7 +32,7 @@ export default function SecretsPage() {
   }
 
   async function remove(s: Secret) {
-    if (!confirm(`Delete secret ${s.key}? Scripts referencing it will no longer read a value.`)) return;
+    if (!(await confirm(`Delete secret ${s.key}? Scripts referencing it will no longer read a value.`, { confirmLabel: "Delete", destructive: true }))) return;
     try {
       await secretsApi.delete(s.id);
       setItems((prev) => prev.filter((x) => x.id !== s.id));
