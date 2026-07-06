@@ -45,7 +45,10 @@ from typing import Awaitable, Callable
 from loguru import logger
 
 from app.config import BACKEND_ROOT
-from services.venv_manager import get_script_dir, get_venv_python, venv_exists, _clean_env
+from services.venv_manager import (
+    get_script_dir, get_venv_python, venv_exists, _clean_env,
+    make_run_preexec, maybe_wrap_sandbox,
+)
 
 _PREFIX = "__AGENTFLOW__"
 
@@ -231,20 +234,46 @@ class _Worker:
         popen_kwargs = {}
         if sys.platform == "win32":
             popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        else:
+            # POSIX: same defensive rlimits as the one-shot path. The worker is
+            # long-lived, so make_run_preexec() sets NO RLIMIT_CPU (it would
+            # accumulate across jobs and eventually self-kill the worker).
+            _preexec = make_run_preexec()
+            if _preexec is not None:
+                popen_kwargs["preexec_fn"] = _preexec
 
-        self.proc = subprocess.Popen(
-            [str(self.python), str(runner_path)],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            cwd=str(self.script_dir),
-            env=env,
-            bufsize=1,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            **popen_kwargs,
+        base_cmd = [str(self.python), str(runner_path)]
+        # Filesystem-jail the worker to its own script dir (per-job run_dirs live
+        # under it, so chdir into them still works); can't read data/.secret_key,
+        # the DB, or other scripts. Never the assistant — worker_enabled() excludes it.
+        cmd = maybe_wrap_sandbox(
+            base_cmd, script_dir=self.script_dir, run_dir=self.script_dir,
+            backend_root=BACKEND_ROOT,
         )
+
+        def _spawn(argv):
+            return subprocess.Popen(
+                argv,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=str(self.script_dir),
+                env=env,
+                bufsize=1,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                **popen_kwargs,
+            )
+
+        try:
+            self.proc = _spawn(cmd)
+        except OSError:
+            if cmd is not base_cmd:
+                logger.warning("sandbox launch failed for worker; running unsandboxed")
+                self.proc = _spawn(base_cmd)
+            else:
+                raise
         loop = asyncio.get_running_loop()
 
         def _pump(stream, is_stderr: bool):

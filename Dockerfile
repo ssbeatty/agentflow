@@ -31,6 +31,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
         ca-certificates \
         libpq-dev \
+        bubblewrap \
     && rm -rf /var/lib/apt/lists/*
 
 # uv: fast venv & pip-replacement used by the platform's venv_manager

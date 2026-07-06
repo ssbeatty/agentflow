@@ -17,6 +17,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install bubblewrap
+        # So the execution filesystem-jail test actually runs here instead of
+        # skipping. If the runner blocks unprivileged namespaces the test's own
+        # probe skips it gracefully — it never fails CI.
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:

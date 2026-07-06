@@ -30,7 +30,10 @@ from app.database import SessionLocal
 from app.models import Execution, ExecutionLog, Script, UploadedFile
 from services.file_storage import UPLOADS_DIR, blob_path
 from services.script_files import script_file_path
-from services.venv_manager import get_script_dir, get_venv_python, venv_exists, _clean_env
+from services.venv_manager import (
+    get_script_dir, get_venv_python, venv_exists, _clean_env,
+    make_run_preexec, maybe_wrap_sandbox,
+)
 
 _PREFIX = "__AGENTFLOW__"
 
@@ -777,7 +780,8 @@ async def start_execution(execution_id: str) -> None:
         # (requirements.txt) — no per-script venv to build or keep updated.
         # Every other script uses its own venv (or backend python if it has none).
         from services.assistant_seed import ASSISTANT_SCRIPT_NAME
-        if script.name == ASSISTANT_SCRIPT_NAME:
+        is_assistant = script.name == ASSISTANT_SCRIPT_NAME
+        if is_assistant:
             py, py_label = Path(sys.executable), "assistant→backend-py"
         elif venv_exists(exc_row.script_id):
             py, py_label = get_venv_python(exc_row.script_id), "yes"
@@ -838,19 +842,46 @@ async def start_execution(execution_id: str) -> None:
         popen_kwargs = {}
         if sys.platform == "win32":
             popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        else:
+            # POSIX: defensive rlimits (memory cap + no core dumps) so a runaway
+            # user script can't OOM the host. No-op where unsupported.
+            _preexec = make_run_preexec()
+            if _preexec is not None:
+                popen_kwargs["preexec_fn"] = _preexec
 
-        proc = subprocess.Popen(
-            [str(py), str(runner)],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            cwd=str(run_dir),
-            env=sub_env,
-            bufsize=1,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            **popen_kwargs,
+        base_cmd = [str(py), str(runner)]
+        # Filesystem-jail the child to its own dir (can't read data/.secret_key,
+        # the DB, or other scripts) — but NOT the trusted assistant, which is
+        # platform code that legitimately reaches backend assets / the loopback.
+        cmd = base_cmd if is_assistant else maybe_wrap_sandbox(
+            base_cmd, script_dir=script_dir, run_dir=run_dir, backend_root=BACKEND_ROOT,
         )
+
+        def _spawn(argv):
+            return subprocess.Popen(
+                argv,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=str(run_dir),
+                env=sub_env,
+                bufsize=1,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                **popen_kwargs,
+            )
+
+        try:
+            proc = _spawn(cmd)
+        except OSError:
+            # bwrap binary vanished between probe and launch — degrade, never
+            # fail a run over the sandbox (rlimits from preexec_fn still apply).
+            if cmd is not base_cmd:
+                logger.warning("[{}] sandbox launch failed; running unsandboxed",
+                               execution_id[:8])
+                proc = _spawn(base_cmd)
+            else:
+                raise
         _procs[execution_id] = proc
         _t_spawn = time.perf_counter()
         _prof(execution_id, (
