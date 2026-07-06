@@ -13,14 +13,15 @@ if sys.platform == "win32":
 from app.logging_config import setup_logging
 setup_logging()  # as early as possible, before uvicorn/sqlalchemy touch stdlib logging
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from loguru import logger
 
-from app.config import settings
+from app.config import APP_VERSION, settings
 from app.database import engine, SessionLocal
-from app.auth_deps import require_admin
+from app.auth_deps import require_admin, require_metrics_access
+from services import metrics
 from app.routers import (
     scripts, executions, llm_configs, cron_jobs, ws, mcp_servers,
     conversations, files, channels, auth, api_keys, secrets, skills, marketplace,
@@ -139,7 +140,7 @@ async def _preheat_keep_warm() -> None:
 # shadow it and show Swagger instead).
 app = FastAPI(
     title="AgentFlow",
-    version="0.1.0",
+    version=APP_VERSION,
     lifespan=lifespan,
     docs_url="/api/docs",
     redoc_url="/api/redoc",
@@ -160,23 +161,36 @@ app.add_middleware(
 )
 
 
-# ── Request logging + unhandled-exception logging ────────────────────────────
-# Static-asset/catch-all noise (frontend export, /health) stays at DEBUG so a
-# normal INFO-level deployment doesn't get spammed on every page load.
-_QUIET_PREFIXES = ("/_next", "/health")
+# ── Request logging + unhandled-exception logging + Prometheus HTTP metrics ──
+# Static-asset/catch-all noise (frontend export, /health) plus the /metrics
+# scrape itself stay at DEBUG so a normal INFO-level deployment isn't spammed on
+# every page load / scrape.
+_QUIET_PREFIXES = ("/_next", "/health", "/metrics")
+
+
+def _route_template(request: Request) -> str:
+    """The matched route's path TEMPLATE (e.g. /api/scripts/{script_id}) — bounded
+    by the number of registered routes, so it's a safe (low-cardinality) metric
+    label. Every unmatched/odd request collapses to "other" so a URL scanner can't
+    explode the series count."""
+    tmpl = getattr(request.scope.get("route"), "path", None)
+    return tmpl if isinstance(tmpl, str) and tmpl else "other"
 
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     start = time.monotonic()
+    status_code = 500
     try:
         response = await call_next(request)
+        status_code = response.status_code
     except Exception:
         logger.exception("Unhandled error: {} {}", request.method, request.url.path)
-        return JSONResponse(status_code=500, content={"detail": "Internal server error"})
-    duration_ms = (time.monotonic() - start) * 1000
+        response = JSONResponse(status_code=500, content={"detail": "Internal server error"})
+    duration_s = time.monotonic() - start
+    metrics.record_http(request.method, _route_template(request), status_code, duration_s)
     level = "DEBUG" if request.url.path.startswith(_QUIET_PREFIXES) else "INFO"
-    logger.log(level, "{} {} -> {} ({:.1f}ms)", request.method, request.url.path, response.status_code, duration_ms)
+    logger.log(level, "{} {} -> {} ({:.1f}ms)", request.method, request.url.path, status_code, duration_s * 1000)
     return response
 
 # ── Public auth endpoints (login/setup/status) — no admin gate ────────────────
@@ -215,6 +229,15 @@ app.add_middleware(MCPGatewayMiddleware)
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/metrics", include_in_schema=False)
+def prometheus_metrics(_: str = Depends(require_metrics_access)):
+    """Prometheus scrape target. Auth: an issued API key / admin session by
+    default; open with AGENTFLOW_METRICS_PUBLIC=true or a dedicated
+    AGENTFLOW_METRICS_TOKEN (see app/auth_deps.require_metrics_access)."""
+    body, content_type = metrics.render()
+    return Response(content=body, media_type=content_type)
 
 
 @app.get("/{full_path:path}", include_in_schema=False)

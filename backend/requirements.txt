@@ -14,6 +14,12 @@ loguru>=0.7.0
 # because we now import it directly.
 jsonschema>=4.20.0
 
+# Prometheus metrics exposition for GET /metrics (services/metrics.py). Pure
+# python, no transitive deps. Backend-only — deliberately NOT a per-script venv
+# baseline (user scripts never emit metrics), so it is not in
+# venv_manager.BASELINE_PACKAGES.
+prometheus-client>=0.20.0
+
 # MCP "test connection" probe + OAuth flow run in the backend process, and the
 # outward /mcp gateway (services/mcp_gateway.py) — the gateway's FastMCP
 # stateless streamable-http kwargs need a recent SDK, hence the floor.

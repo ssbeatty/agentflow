@@ -45,6 +45,7 @@ from typing import Awaitable, Callable
 from loguru import logger
 
 from app.config import BACKEND_ROOT
+from services import metrics
 from services.venv_manager import (
     get_script_dir, get_venv_python, venv_exists, _clean_env,
     make_run_preexec, maybe_wrap_sandbox,
@@ -312,8 +313,10 @@ class _Worker:
                 payload = _try_json(line)
                 if payload and payload.get("type") == "worker_ready":
                     self.ready = True
+                    boot_s = time.monotonic() - t0
+                    metrics.record_worker_boot(self.preheat, boot_s)
                     logger.info("[worker {}] ready (boot {:.2f}s, preheat={})",
-                                self.script_id[:8], time.monotonic() - t0, self.preheat)
+                                self.script_id[:8], boot_s, self.preheat)
                     return
             elif is_stderr:
                 logger.debug("[worker {}] boot: {}", self.script_id[:8], line)
@@ -345,7 +348,9 @@ class _Worker:
                         if typ == "job_done":
                             self.jobs_run += 1
                             self.last_used = time.monotonic()
-                            return bool(payload.get("ok", True))
+                            ok = bool(payload.get("ok", True))
+                            metrics.record_worker_job(ok)
+                            return ok
                         if typ == "worker_ready":
                             continue  # stray, ignore
                 await handler(is_stderr, line)
@@ -399,8 +404,10 @@ class WorkerManager:
         if stale and w is not None:
             w.kill()
             self._workers.pop(script_id, None)
+            metrics.record_worker_retirement("stale")
             w = None
         if w is not None:
+            metrics.record_worker_acquire("reused")
             return w
 
         w = _Worker(script_id, python, script_dir, entry_fn, preheat)
@@ -409,7 +416,9 @@ class WorkerManager:
             await w.start(base_env or {})
         except Exception:
             self._workers.pop(script_id, None)
+            metrics.record_worker_acquire("failed")
             raise
+        metrics.record_worker_acquire("spawned")
         self._ensure_reaper()
         return w
 
@@ -422,12 +431,15 @@ class WorkerManager:
         if w is None:
             return False
         w.kill()
+        metrics.record_worker_retirement("invalidated")
         logger.info("[worker {}] invalidated", script_id[:8])
         return True
 
     def shutdown_all(self) -> None:
-        for w in list(self._workers.values()):
+        workers = list(self._workers.values())
+        for w in workers:
             w.kill()
+        metrics.record_worker_retirement("shutdown", len(workers))
         self._workers.clear()
         if self._reaper is not None and not self._reaper.done():
             self._reaper.cancel()
@@ -451,6 +463,7 @@ class WorkerManager:
                 if idle > WORKER_IDLE_TTL and not w.lock.locked():
                     self._workers.pop(sid, None)
                     w.kill()
+                    metrics.record_worker_retirement("reaped")
                     logger.info("[worker {}] reaped (idle {:.0f}s)", sid[:8], idle)
             if not self._workers:
                 return  # nothing left to watch; a future acquire restarts the reaper

@@ -9,6 +9,7 @@ from pathlib import Path
 from loguru import logger
 
 from app.config import DATA_DIR
+from services import metrics
 
 
 _DEBUGGER_ENV_PREFIXES = ("PYDEVD_", "DEBUGPY_", "PYCHARM_")
@@ -258,6 +259,7 @@ async def stream_create_venv(script_id: str, force: bool = False):
         except Exception as e:
             logger.warning("[script {}] failed to remove existing venv: {}", script_id, e)
             yield f"ERROR: failed to remove existing venv: {e}"
+            metrics.record_venv_build(ok=False)
             return
 
     uv = _uv()
@@ -273,6 +275,7 @@ async def stream_create_venv(script_id: str, force: bool = False):
             create_ok = False
             logger.warning("[script {}] venv creation failed: {}", script_id, line)
             yield line
+            metrics.record_venv_build(ok=False)
             return
         if line == "DONE":
             yield "venv created"
@@ -299,6 +302,7 @@ async def stream_create_venv(script_id: str, force: bool = False):
         if line.startswith("ERROR:"):
             install_ok = False
         yield line
+    metrics.record_venv_build(ok=install_ok)
     logger.info("[script {}] venv create {}", script_id, "ready" if install_ok else "baseline install failed")
 
 
@@ -447,6 +451,7 @@ async def stream_install(script_id: str, requirements: str):
     if not python.exists():
         logger.warning("[script {}] requirements install requested but venv missing", script_id)
         yield "ERROR: venv not found; create it first"
+        metrics.record_venv_install(ok=False)
         return
 
     uv = _uv()
@@ -466,4 +471,5 @@ async def stream_install(script_id: str, requirements: str):
         if line.startswith("ERROR:"):
             install_ok = False
         yield line
+    metrics.record_venv_install(ok=install_ok)
     logger.info("[script {}] requirements install {}", script_id, "succeeded" if install_ok else "failed")

@@ -87,6 +87,29 @@ def test_successful_run_completes_and_returns_output(db):
     assert execution.output_data == {"echo": 42}
 
 
+def test_metrics_counters_move_on_real_runs(db):
+    """The Prometheus terminal-counter hook fires through the REAL engine (not
+    just the unit-level observe_execution): a completed and a failed run each bump
+    agentflow_executions_total for their status, and both bump _started_total."""
+    from prometheus_client import REGISTRY
+
+    def val(name, labels=None):
+        return REGISTRY.get_sample_value(name, labels or {}) or 0.0
+
+    started0 = val("agentflow_executions_started_total", {"trigger": "manual"})
+    completed0 = val("agentflow_executions_total", {"status": "completed", "trigger": "manual"})
+    failed0 = val("agentflow_executions_total", {"status": "failed", "trigger": "manual"})
+
+    ok = _run(db, "def run(input):\n    return {'ok': 1}\n")
+    assert ok.status == "completed"
+    bad = _run(db, "import nope_missing_xyz\n\ndef run(input):\n    return {}\n")
+    assert bad.status == "failed"
+
+    assert val("agentflow_executions_started_total", {"trigger": "manual"}) == started0 + 2
+    assert val("agentflow_executions_total", {"status": "completed", "trigger": "manual"}) == completed0 + 1
+    assert val("agentflow_executions_total", {"status": "failed", "trigger": "manual"}) == failed0 + 1
+
+
 def test_input_schema_mismatch_fails_before_running(db):
     # A script with an input_schema must reject a mismatched input with a clean
     # `failed` run (visible error), never reaching user code. Guards the

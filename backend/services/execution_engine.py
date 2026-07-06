@@ -36,6 +36,7 @@ from services.venv_manager import (
 )
 from services.notifications import schedule_failure_notification
 from services.callbacks import schedule_completion_callback
+from services import metrics
 
 _PREFIX = "__AGENTFLOW__"
 
@@ -443,6 +444,11 @@ async def _finalize_run(
             })
     db.commit()
 
+    # Terminal metrics (throughput + duration + token spend). One-shot AND worker
+    # reach here; the timeout/mark_failed/mark_cancelled paths record their own
+    # (they bypass _finalize_run), so each run is counted exactly once.
+    metrics.observe_execution(exc_row)
+
     _prof(execution_id, (
         f"done status={exc_row.status} "
         f"rc={returncode if returncode is not None else 'warm'} | {prof_line}"
@@ -511,6 +517,7 @@ async def _run_via_worker(
     reused = worker.jobs_run > 0
     _procs[execution_id] = worker.proc  # so stop_execution can kill the worker
     _t_ready = time.perf_counter()
+    metrics.observe_profile(queue_wait=t_slot - t_enter)  # cold_import/prep/script are one-shot-only
     _prof(execution_id, (
         f"worker acquired (reused={reused}, "
         f"queue_wait={t_slot - t_enter:.2f}s, acquire={_t_ready - _t_acq:.2f}s)"
@@ -537,6 +544,7 @@ async def _run_via_worker(
     except asyncio.TimeoutError:
         worker_pool.manager.invalidate(script.id)  # kills the stuck worker
         _procs.pop(execution_id, None)
+        metrics.inc_timeout("worker")
         timeout_msg = f"Execution timed out after {EXECUTION_TIMEOUT:.0f}s"
         logger.warning("[{}] {}", execution_id[:8], timeout_msg)
         exc_row = db.query(Execution).filter_by(id=execution_id).first()
@@ -545,6 +553,7 @@ async def _run_via_worker(
             exc_row.error = timeout_msg
             exc_row.finished_at = datetime.utcnow()
             db.commit()
+            metrics.observe_execution(exc_row)  # terminal here — bypasses _finalize_run
         _persist_log(db, execution_id, {"level": "error", "message": timeout_msg, "step": "_engine"})
         await ws_manager.send(execution_id, {
             "type": "log", "level": "error", "message": timeout_msg,
@@ -800,6 +809,7 @@ async def start_execution(execution_id: str) -> None:
         exc_row.status = "running"
         exc_row.started_at = datetime.utcnow()
         db.commit()
+        metrics.observe_execution_started(exc_row.trigger)  # one point every run (one-shot + worker) passes
 
         await ws_manager.send(execution_id, {"type": "status", "status": "running"})
 
@@ -940,6 +950,7 @@ async def start_execution(execution_id: str) -> None:
             except asyncio.TimeoutError:
                 proc.kill()
             _procs.pop(execution_id, None)
+            metrics.inc_timeout("oneshot")
 
             timeout_msg = f"Execution timed out after {EXECUTION_TIMEOUT:.0f}s"
             logger.warning("[{}] {}", execution_id[:8], timeout_msg)
@@ -953,6 +964,7 @@ async def start_execution(execution_id: str) -> None:
             exc_row.error = timeout_msg
             exc_row.finished_at = datetime.utcnow()
             db.commit()
+            metrics.observe_execution(exc_row)  # terminal here — bypasses _finalize_run
             _persist_log(db, execution_id, {"level": "error", "message": timeout_msg, "step": "_engine"})
             await ws_manager.send(execution_id, {
                 "type": "log", "level": "error", "message": timeout_msg,
@@ -976,6 +988,10 @@ async def start_execution(execution_id: str) -> None:
         prof_detail = (
             f"queue_wait={_t_slot - _t_enter:.2f}s prep={_t_spawn - _t_slot:.2f}s "
             f"cold_import={_cold:.2f}s script={_script:.2f}s total={_t_end - _t_slot:.2f}s"
+        )
+        metrics.observe_profile(
+            queue_wait=_t_slot - _t_enter, prep=_t_spawn - _t_slot,
+            cold_import=_cold, script=_script,
         )
         await _finalize_run(
             db, execution_id, script, script_dir, state,
@@ -1020,6 +1036,7 @@ async def _schedule_retry(failed_row: Execution) -> None:
         retry_num = retry_exc.retry_count
     finally:
         db.close()
+    metrics.inc_retry()
 
     msg = f"Auto-retry {retry_num}/{failed_row.max_retries} → new execution {retry_id}"
     db2 = SessionLocal()
@@ -1057,10 +1074,12 @@ def _schedule_ws_cleanup(execution_id: str) -> None:
 async def stop_execution(execution_id: str) -> bool:
     proc = _procs.get(execution_id)
     if not proc:
+        metrics.inc_stop(found=False)
         return False
     # Remember this was a deliberate stop so finalization records "cancelled",
     # not "failed" (a killed process just exits non-zero — see _cancelled_ids).
     _cancelled_ids.add(execution_id)
+    metrics.inc_stop(found=True)
     logger.info("[{}] stop requested (pid={})", execution_id[:8], proc.pid)
     proc.terminate()
     try:
@@ -1091,6 +1110,7 @@ def _mark_cancelled(db, execution_id: str) -> None:
         row.status = "cancelled"
         row.finished_at = datetime.utcnow()
         db.commit()
+        metrics.observe_execution(row)  # terminal — bypasses _finalize_run
 
 
 def _mark_failed(db, execution_id: str, error: str) -> None:
@@ -1100,6 +1120,7 @@ def _mark_failed(db, execution_id: str, error: str) -> None:
         row.error = error
         row.finished_at = datetime.utcnow()
         db.commit()
+        metrics.observe_execution(row)  # terminal — bypasses _finalize_run
     # Persist the engine-level failure as a log so it surfaces in the Logs panel
     # (on reload) instead of being buried only in execution.error.
     try:
@@ -1149,5 +1170,6 @@ def prune_executions(db, script_id: str, keep: int | None) -> int:
         removed += 1
     if removed:
         db.commit()
+        metrics.inc_pruned(removed)
         logger.info("[script {}] pruned {} old execution record(s) (keep={})", script_id, removed, keep)
     return removed

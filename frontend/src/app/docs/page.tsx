@@ -306,6 +306,41 @@ curl '${origin}/api/executions?script_id=${scriptId}&status=failed&q=timeout'`}
         </Section>
 
         <Section
+          title={t("monitoring.title")}
+          desc={t("monitoring.desc")}
+        >
+          <Endpoint method="GET" path="/metrics  (Prometheus text exposition)" />
+          <Code
+            label="curl"
+            code={`# secure-by-default: the same X-API-Key as /run, or a dedicated scrape token
+curl -H 'X-API-Key: af_…' ${origin}/metrics
+
+# dedicated scrape credential (set AGENTFLOW_METRICS_TOKEN in the backend env):
+curl -H 'Authorization: Bearer <AGENTFLOW_METRICS_TOKEN>' ${origin}/metrics
+# …or open it entirely on a trusted network:  AGENTFLOW_METRICS_PUBLIC=true`}
+          />
+          <Code
+            label={t("monitoring.labelPrometheusYml")}
+            code={`scrape_configs:
+  - job_name: agentflow
+    metrics_path: /metrics
+    authorization:
+      credentials: <AGENTFLOW_METRICS_TOKEN>   # or an af_… API key
+    static_configs:
+      - targets: ['${origin.replace(/^https?:\/\//, "")}']`}
+          />
+          <p className="text-xs text-muted-foreground">
+            {t("monitoring.exposedLabel")}{" "}
+            <code className="text-foreground">agentflow_executions_total</code>,{" "}
+            <code className="text-foreground">agentflow_execution_duration_seconds</code>,{" "}
+            <code className="text-foreground">agentflow_llm_tokens_total</code>,{" "}
+            <code className="text-foreground">agentflow_execution_cold_import_seconds</code>,{" "}
+            <code className="text-foreground">agentflow_http_requests_total</code>,{" "}
+            <code className="text-foreground">agentflow_warm_workers</code> … {t("monitoring.trailing")}
+          </p>
+        </Section>
+
+        <Section
           title={t("pythonExample.title")}
           desc={t("pythonExample.desc")}
         >

@@ -57,6 +57,13 @@
     "title": "列出执行记录",
     "desc": "仅管理员。按创建时间倒序。可按 script_id、status / trigger(逗号分隔)以及 q 过滤 —— q 是全文搜索,还会匹配跨运行的日志内容。"
   },
+  "monitoring": {
+    "title": "监控指标(Prometheus)",
+    "desc": "一个 Prometheus 抓取端点,涵盖 HTTP 流量、执行吞吐/延迟/「排队→冷启动导入→脚本」性能分段、LLM Token 消耗、温工作者池、通知投递,以及实时的数据库/资源计量。默认需要鉴权:接受与运行接口相同的 API Key、专用抓取令牌(AGENTFLOW_METRICS_TOKEN),或用 AGENTFLOW_METRICS_PUBLIC=true 完全开放。",
+    "labelPrometheusYml": "prometheus.yml 抓取配置",
+    "exposedLabel": "示例指标:",
+    "trailing": "(均以 agentflow_ 前缀)。"
+  },
   "pythonExample": {
     "title": "Python 示例",
     "desc": "任何支持 HTTP 的语言都能调用。这是一个调用 /executions/run、并在客户端维护历史记录的最简聊天循环。"

@@ -29,6 +29,7 @@ from loguru import logger
 
 from app.database import SessionLocal
 from app.models import Execution
+from services import metrics
 
 # Bounded de-dup so a run's webhook fires at most once even if two terminal
 # paths (finalize + mark_failed) both schedule it.
@@ -103,6 +104,7 @@ def _deliver_sync(execution_id: str) -> None:
         try:
             r = httpx.post(url, json=payload, timeout=_TIMEOUT)
             r.raise_for_status()
+            metrics.record_callback(ok=True)
             logger.info("[callback] {} delivered to {} (status={})",
                         execution_id[:8], url, exc.status)
             return
@@ -110,5 +112,6 @@ def _deliver_sync(execution_id: str) -> None:
             last_err = e
             if attempt < _MAX_ATTEMPTS:
                 time.sleep(min(2 ** attempt, 5))  # 2s, 4s (capped) — off the event loop
+    metrics.record_callback(ok=False)
     logger.warning("[callback] {} gave up after {} attempts to {}: {}",
                    execution_id[:8], _MAX_ATTEMPTS, url, last_err)

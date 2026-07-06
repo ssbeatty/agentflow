@@ -26,6 +26,7 @@ from loguru import logger
 from app.config import settings
 from app.database import SessionLocal
 from app.models import Execution, NotificationChannel, Script
+from services import metrics
 
 # Triggers whose failures never notify (see module docstring).
 _SKIP_TRIGGERS = {"eval"}
@@ -205,8 +206,10 @@ def _notify_sync(execution_id: str) -> None:
         for ch in channels:
             try:
                 send_to_channel(ch.type, ch.config or {}, title, body)
+                metrics.record_notification(ch.type, ok=True)
                 logger.info("[notify] alert sent via {} ({})", ch.type, ch.name)
             except Exception as e:  # noqa: BLE001 — one bad channel can't block others
+                metrics.record_notification(ch.type, ok=False)
                 logger.warning("[notify] channel {} ({}) failed: {}", ch.name, ch.type, e)
     finally:
         db.close()

@@ -10,6 +10,8 @@ Admin sessions ride a cookie (auto-attached to fetch, <img>, downloads and the
 WebSocket handshake on the same origin) with a Bearer-token fallback for
 programmatic clients. API keys come via `X-API-Key` or `Authorization: Bearer af_…`.
 """
+import hmac
+import os
 from datetime import datetime
 
 from fastapi import Depends, HTTPException, Request, status
@@ -96,3 +98,41 @@ def require_api_key_or_admin(request: Request, db: Session = Depends(get_db)) ->
 def current_subject(request: Request, db: Session) -> str | None:
     """Non-raising variant for status checks."""
     return _admin_from_session(request, db)
+
+
+# ── Metrics endpoint gate ─────────────────────────────────────────────────────
+# The Prometheus /metrics scrape target. Secure-by-default (same credentials as
+# the run endpoint), with two operator escape hatches for the common case where a
+# Prometheus server scrapes it over a trusted network:
+#   * AGENTFLOW_METRICS_PUBLIC=true  → open, no auth (trusted network / behind a
+#     scrape-only ingress).
+#   * AGENTFLOW_METRICS_TOKEN=<tok>  → a dedicated scrape credential, accepted as a
+#     Bearer token, an X-Metrics-Token header, or a ?token= query param — so you
+#     can point Prometheus at it without minting an admin API key.
+# With neither set, it needs an issued API key (X-API-Key / Bearer af_…) or an
+# admin session, exactly like POST /api/executions/run.
+def _truthy(v: str) -> bool:
+    return v.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _metrics_token_from_request(request: Request) -> str | None:
+    v = request.headers.get("x-metrics-token")
+    if v:
+        return v.strip()
+    auth = request.headers.get("authorization", "")
+    if auth.lower().startswith("bearer "):
+        return auth[7:].strip()
+    q = request.query_params.get("token")
+    return q.strip() if q else None
+
+
+def require_metrics_access(request: Request, db: Session = Depends(get_db)) -> str:
+    if _truthy(os.getenv("AGENTFLOW_METRICS_PUBLIC", "")):
+        return "metrics:public"
+    token = os.getenv("AGENTFLOW_METRICS_TOKEN", "").strip()
+    if token:
+        provided = _metrics_token_from_request(request)
+        if provided and hmac.compare_digest(provided, token):
+            return "metrics:token"
+    # Fall back to the standard API-key / admin gate (raises 401 if neither).
+    return require_api_key_or_admin(request, db)

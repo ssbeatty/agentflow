@@ -57,6 +57,13 @@
     "title": "List executions",
     "desc": "Admin only. Newest first. Filter by script_id, status / trigger (comma-separated), and q — a free-text search that also matches inside log messages across runs."
   },
+  "monitoring": {
+    "title": "Metrics (Prometheus)",
+    "desc": "A Prometheus scrape target covering HTTP traffic, execution throughput / latency / the queue-wait→cold-import→script profiler split, LLM token spend, the warm-worker pool, delivery, and live DB/resource gauges. Secure-by-default: it takes the same API key as the run endpoint, a dedicated scrape token (AGENTFLOW_METRICS_TOKEN), or is fully open with AGENTFLOW_METRICS_PUBLIC=true.",
+    "labelPrometheusYml": "prometheus.yml scrape config",
+    "exposedLabel": "Sample series:",
+    "trailing": "(all prefixed agentflow_)."
+  },
   "pythonExample": {
     "title": "Python example",
     "desc": "Anything that speaks HTTP works. Here's a minimal chat loop hitting /executions/run with client-side history."

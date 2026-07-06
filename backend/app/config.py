@@ -5,6 +5,10 @@ from pathlib import Path
 BACKEND_ROOT = Path(__file__).parent.parent.resolve()
 DEFAULT_DATA_DIR = BACKEND_ROOT / "data"
 
+# Single source of truth for the app version (FastAPI(title/version) in app.main
+# and the agentflow_build_info Prometheus metric both read this).
+APP_VERSION = "0.1.0"
+
 
 class Settings(BaseSettings):
     app_env: str = "development"
