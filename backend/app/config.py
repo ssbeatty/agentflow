@@ -50,7 +50,12 @@ class Settings(BaseSettings):
     # are a separate, unrelated pipeline (see services/execution_engine.py).
     log_level: str = "INFO"
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    # extra="ignore": operational flags like AGENTFLOW_WARM_WORKERS /
+    # AGENTFLOW_WORKER_IDLE_TTL / AGENTFLOW_PROFILE / AGENTFLOW_MAX_CONCURRENT are
+    # read directly via os.getenv in their own modules, NOT declared here. Without
+    # this, putting any of them in .env makes pydantic-settings reject the whole
+    # config with `extra_forbidden` at startup.
+    model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
     @property
     def cors_origins_list(self) -> list[str]:
