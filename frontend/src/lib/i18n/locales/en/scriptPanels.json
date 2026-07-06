@@ -161,5 +161,18 @@
       "deleteMessage": "Delete \"{{name}}\"?",
       "deleteLabel": "Delete"
     }
+  },
+  "schemaForm": {
+    "modeForm": "Form",
+    "modeJson": "JSON",
+    "required": "required",
+    "optional": "optional",
+    "invalidJson": "Invalid JSON in this field",
+    "selectPlaceholder": "— select —",
+    "arrayHint": "one per line",
+    "schemaBadge": "typed input",
+    "schemaBadgeTitle": "This script declares an INPUT_SCHEMA; input is validated before running.",
+    "booleanTrue": "true",
+    "booleanFalse": "false"
   }
 }

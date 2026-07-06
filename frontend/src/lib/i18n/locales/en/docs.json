@@ -29,7 +29,8 @@
   "runSync": {
     "title": "Run synchronously",
     "desc": "Blocks until the script finishes and returns the final output_data. Best for external service-to-service calls — this is the one endpoint you can call with an X-API-Key (default timeout 300s).",
-    "labelResponse": "response"
+    "labelResponse": "response",
+    "labelInputSchema": "Input schema (from the script's INPUT_SCHEMA)"
   },
   "uploadFile": {
     "title": "Upload a file",

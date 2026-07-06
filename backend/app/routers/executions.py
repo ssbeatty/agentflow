@@ -23,6 +23,20 @@ router = APIRouter()
 _admin = [Depends(require_admin)]
 
 
+def _validate_input_or_422(script: Script, input_data) -> None:
+    """If the script has a cached input schema, validate input_data against it
+    and raise 422 on mismatch. A script with no schema accepts anything (legacy).
+    """
+    schema = getattr(script, "input_schema", None)
+    if not schema:
+        return
+    from services.script_schema import validate_input
+    try:
+        validate_input(schema, input_data)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+
 @router.get("/queue-stats", dependencies=_admin)
 def get_queue_stats(db: Session = Depends(get_db)):
     """Return current concurrency and queue depth."""
@@ -114,6 +128,7 @@ async def create_execution(body: ExecutionCreate, db: Session = Depends(get_db))
         raise HTTPException(404, "Script not found")
     if body.max_retries < 0 or body.max_retries > 10:
         raise HTTPException(422, "max_retries must be between 0 and 10")
+    _validate_input_or_422(script, body.input_data or {})
 
     exc = Execution(
         script_id=body.script_id,
@@ -140,8 +155,10 @@ async def run_sync(body: ExecutionCreate, timeout: float = 300.0):
     """
     db = SessionLocal()
     try:
-        if not db.query(Script).filter_by(id=body.script_id).first():
+        script = db.query(Script).filter_by(id=body.script_id).first()
+        if not script:
             raise HTTPException(404, "Script not found")
+        _validate_input_or_422(script, body.input_data or {})
         exc = Execution(
             script_id=body.script_id,
             input_data=body.input_data or {},

@@ -60,6 +60,17 @@
     },
     "skills": {
       "label": "技能"
+    },
+    "warm": {
+      "label": "常驻 worker",
+      "reuse": "运行间复用 worker",
+      "reuseHint": "为每个脚本保活一个解释器,重复运行跳过冷导入。需要严格全新进程隔离时关闭。",
+      "keepWarm": "启动时预热(保持常热)",
+      "keepWarmHint": "提前加载重依赖栈,连第一次运行也很快。",
+      "preheat": "立即预热",
+      "preheating": "预热中…",
+      "preheated": "worker 已预热",
+      "disabled": "该服务器未开启常驻 worker(需设置 AGENTFLOW_WARM_WORKERS)。"
     }
   },
   "dialog": {

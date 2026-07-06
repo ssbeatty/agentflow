@@ -7,6 +7,23 @@ export interface ScriptFile {
   updated_at: string;
 }
 
+// A JSON Schema object describing a script's run() input (source: the script's
+// own INPUT_SCHEMA). Loosely typed — we only read a small subset in the UI.
+export interface JsonSchema {
+  type?: string;
+  title?: string;
+  description?: string;
+  properties?: Record<string, JsonSchema>;
+  required?: string[];
+  items?: JsonSchema;
+  enum?: unknown[];
+  default?: unknown;
+  format?: string;
+  minimum?: number;
+  maximum?: number;
+  [key: string]: unknown;
+}
+
 export interface Script {
   id: string;
   name: string;
@@ -16,6 +33,9 @@ export interface Script {
   mcp_server_ids: string[];
   skill_ids: string[];
   max_executions: number;
+  input_schema?: JsonSchema | null;
+  warm: boolean;
+  keep_warm: boolean;
   created_at: string;
   updated_at: string;
   files: ScriptFile[];
@@ -29,6 +49,9 @@ export interface ScriptSummary {
   mcp_server_ids: string[];
   skill_ids: string[];
   max_executions: number;
+  input_schema?: JsonSchema | null;
+  warm: boolean;
+  keep_warm: boolean;
   created_at: string;
   updated_at: string;
 }

@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import {
   ArrowLeft, Play, Square, Save, Terminal, Settings2,
   Clock, ChevronRight, Loader2, CalendarClock, Workflow,
-  History, CheckCircle2, XCircle, MinusCircle, Copy, Trash2, Wrench, Check, Sparkles, Coins, FlaskConical,
+  History, CheckCircle2, XCircle, MinusCircle, Copy, Trash2, Wrench, Check, Sparkles, Coins, FlaskConical, Flame,
 } from "lucide-react";
 import { toast } from "sonner";
 import { scripts, executions, mcpServers, skills as skillsApi, revisions as revisionsApi, inputPresets } from "@/lib/api";
@@ -27,7 +27,7 @@ import FileTree, { type TreeFile } from "@/components/FileTree";
 import { useResizable } from "@/components/Splitter";
 import RevisionPanel from "@/components/RevisionPanel";
 import { useAssistantTarget, type ChangedFile } from "@/components/assistant/AssistantProvider";
-import InputPresetEditor from "@/components/InputPresetEditor";
+import SchemaInput from "@/components/SchemaInput";
 import FileUploadPanel from "@/components/FileUploadPanel";
 import ArtifactsPanel from "@/components/ArtifactsPanel";
 import EvalPanel from "@/components/EvalPanel";
@@ -82,6 +82,9 @@ function ScriptPage() {
   const [name, setName] = useState("");
   const [entryFn, setEntryFn] = useState("run");
   const [maxExec, setMaxExec] = useState(50);
+  const [warm, setWarm] = useState(true);
+  const [keepWarm, setKeepWarm] = useState(false);
+  const [preheating, setPreheating] = useState(false);
   const [selectedMcpIds, setSelectedMcpIds] = useState<string[]>([]);
   const [availableMcpServers, setAvailableMcpServers] = useState<MCPServerConfig[]>([]);
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
@@ -175,6 +178,8 @@ function ScriptPage() {
         setName(s.name);
         setEntryFn(s.entry_function);
         setMaxExec(s.max_executions ?? 50);
+        setWarm(s.warm ?? true);
+        setKeepWarm(s.keep_warm ?? false);
         setSelectedMcpIds(s.mcp_server_ids || []);
         setAvailableMcpServers(servers.filter(srv => srv.enabled));
         setSelectedSkillIds(s.skill_ids || []);
@@ -290,7 +295,7 @@ function ScriptPage() {
     try {
       const reqContent = fileContents.get("requirements.txt") ?? "";
       const ops: Promise<unknown>[] = [
-        scripts.update(id, { name, entry_function: entryFn, requirements: reqContent, mcp_server_ids: selectedMcpIds, skill_ids: selectedSkillIds, max_executions: maxExec }),
+        scripts.update(id, { name, entry_function: entryFn, requirements: reqContent, mcp_server_ids: selectedMcpIds, skill_ids: selectedSkillIds, max_executions: maxExec, warm, keep_warm: keepWarm }),
       ];
       for (const filename of dirtyFiles) {
         if (filename === "requirements.txt" || filename === "__meta__") continue;
@@ -300,7 +305,7 @@ function ScriptPage() {
       }
       await Promise.all(ops);
       setDirtyFiles(new Set());
-      setScript(prev => prev ? { ...prev, name, entry_function: entryFn, requirements: reqContent, mcp_server_ids: selectedMcpIds, skill_ids: selectedSkillIds, max_executions: maxExec } : prev);
+      setScript(prev => prev ? { ...prev, name, entry_function: entryFn, requirements: reqContent, mcp_server_ids: selectedMcpIds, skill_ids: selectedSkillIds, max_executions: maxExec, warm, keep_warm: keepWarm } : prev);
       setLoadedRevision(null);
       // Create revision snapshot after successful save
       revisionsApi.create(id).then(() => setRevisionRefresh(n => n + 1)).catch(() => null);
@@ -362,6 +367,8 @@ function ScriptPage() {
     setName(s.name);
     setEntryFn(s.entry_function);
     setMaxExec(s.max_executions ?? 50);
+    setWarm(s.warm ?? true);
+    setKeepWarm(s.keep_warm ?? false);
     setSelectedMcpIds(s.mcp_server_ids || []);
     setSelectedSkillIds(s.skill_ids || []);
   }
@@ -841,6 +848,46 @@ function ScriptPage() {
                   </p>
                 </div>
 
+                {/* Warm worker (serverless-style reuse) */}
+                <div className="space-y-2">
+                  <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/70 flex items-center gap-1.5">
+                    <Flame className="h-3 w-3" />{t("config.warm.label")}
+                  </p>
+                  <label className="flex items-start gap-2 cursor-pointer select-none">
+                    <input type="checkbox" checked={warm}
+                      onChange={e => { setWarm(e.target.checked); if (!e.target.checked) setKeepWarm(false); markDirty("__meta__"); }}
+                      className="h-3.5 w-3.5 mt-0.5 rounded border-border accent-primary" />
+                    <span className="text-xs">
+                      {t("config.warm.reuse")}
+                      <span className="block text-[10px] text-muted-foreground/70 leading-snug">{t("config.warm.reuseHint")}</span>
+                    </span>
+                  </label>
+                  <label className={`flex items-start gap-2 select-none ${warm ? "cursor-pointer" : "opacity-40 cursor-not-allowed"}`}>
+                    <input type="checkbox" checked={keepWarm} disabled={!warm}
+                      onChange={e => { setKeepWarm(e.target.checked); markDirty("__meta__"); }}
+                      className="h-3.5 w-3.5 mt-0.5 rounded border-border accent-primary" />
+                    <span className="text-xs">
+                      {t("config.warm.keepWarm")}
+                      <span className="block text-[10px] text-muted-foreground/70 leading-snug">{t("config.warm.keepWarmHint")}</span>
+                    </span>
+                  </label>
+                  {warm && (
+                    <Button variant="outline" size="sm" className="h-7 text-xs w-full" disabled={preheating}
+                      onClick={async () => {
+                        setPreheating(true);
+                        try {
+                          const r = await scripts.preheat(id);
+                          if (!r.enabled) toast.info(t("config.warm.disabled"));
+                          else toast.success(t("config.warm.preheated"));
+                        } catch (e: unknown) { toast.error(String(e)); }
+                        finally { setPreheating(false); }
+                      }}>
+                      {preheating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Flame className="h-3 w-3" />}
+                      {preheating ? t("config.warm.preheating") : t("config.warm.preheat")}
+                    </Button>
+                  )}
+                </div>
+
                 {/* MCP Servers */}
                 {availableMcpServers.length > 0 && (
                   <div className="space-y-2">
@@ -911,9 +958,11 @@ function ScriptPage() {
                   </div>
                 )}
 
-                {/* Input JSON with presets */}
-                <InputPresetEditor
+                {/* Input — typed form when the script declares INPUT_SCHEMA,
+                    else the classic JSON preset editor */}
+                <SchemaInput
                   scriptId={id}
+                  schema={script?.input_schema}
                   value={inputJson}
                   onChange={setInputJson}
                   error={inputError}

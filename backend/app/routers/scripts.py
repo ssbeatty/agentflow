@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import DATA_DIR
-from app.database import get_db
+from app.database import get_db, SessionLocal
 from app.models import Script, ScriptFile, ScriptRevision, ScriptInputPreset, Execution
 from app.schemas import (
     ScriptCreate, ScriptUpdate, ScriptDetail, ScriptSummary, ScriptFileUpsert, ScriptFileOut,
@@ -83,6 +83,10 @@ def update_script(script_id: str, body: ScriptUpdate, db: Session = Depends(get_
             prune_executions(db, script.id, script.max_executions)
         except Exception:
             pass
+    # Turning warm off / changing its shape retires any live worker so the next
+    # run reflects the new setting.
+    if "warm" in changes or "keep_warm" in changes:
+        _invalidate_worker(script_id)
     return script
 
 
@@ -112,6 +116,10 @@ async def delete_script(script_id: str, db: Session = Depends(get_db)):
         except Exception:
             logger.warning("[script {}] failed to stop in-flight run {} on delete", script_id, exc.id)
 
+    # Retire any warm worker too — its (venv) python holds file handles under
+    # data/scripts/<id>/ that would block the rmtree below on Windows.
+    _invalidate_worker(script_id)
+
     db.delete(script)  # cascade removes files/executions/logs/cron/revisions/presets rows
     db.commit()
 
@@ -125,7 +133,7 @@ async def delete_script(script_id: str, db: Session = Depends(get_db)):
 # ── File management ────────────────────────────────────────────────────────────
 
 @router.put("/{script_id}/files", response_model=ScriptFileOut, status_code=200)
-def upsert_file(script_id: str, body: ScriptFileUpsert, db: Session = Depends(get_db)):
+def upsert_file(script_id: str, body: ScriptFileUpsert, background: BackgroundTasks, db: Session = Depends(get_db)):
     _get_or_404(script_id, db)
     try:
         filename = normalize_script_filename(body.filename)
@@ -143,11 +151,16 @@ def upsert_file(script_id: str, body: ScriptFileUpsert, db: Session = Depends(ge
         db.add(f)
     db.commit()
     db.refresh(f)
+    # Refresh the cached input schema off the request path: static (AST) extract
+    # is instant, but a computed/Pydantic INPUT_SCHEMA needs a subprocess import.
+    background.add_task(_refresh_schema_bg, script_id)
+    # A code edit invalidates any warm worker holding the stale main.py.
+    _invalidate_worker(script_id)
     return f
 
 
 @router.delete("/{script_id}/files/{filename:path}", status_code=204)
-def delete_file(script_id: str, filename: str, db: Session = Depends(get_db)):
+def delete_file(script_id: str, filename: str, background: BackgroundTasks, db: Session = Depends(get_db)):
     try:
         filename = normalize_script_filename(filename)
     except ValueError as e:
@@ -160,6 +173,8 @@ def delete_file(script_id: str, filename: str, db: Session = Depends(get_db)):
         raise HTTPException(400, "Cannot delete main file")
     db.delete(f)
     db.commit()
+    background.add_task(_refresh_schema_bg, script_id)
+    _invalidate_worker(script_id)
 
 
 # ── Venv & install (streamed) ──────────────────────────────────────────────────
@@ -235,6 +250,38 @@ def lint(script_id: str, body: _LintRequest, db: Session = Depends(get_db)):
             pass
 
     return {"issues": issues}
+
+
+@router.post("/{script_id}/preheat", status_code=200)
+async def preheat_worker(script_id: str, db: Session = Depends(get_db)):
+    """Eagerly spawn (and preheat) the script's warm worker so the next run is
+    already hot. No-op unless warm workers are enabled globally and the script
+    has warm=True. Returns {enabled, ready, reused}."""
+    script = _get_or_404(script_id, db)
+    from services import worker_pool
+    if not worker_pool.worker_enabled(script):
+        return {"enabled": False, "ready": False, "reused": False}
+    try:
+        worker = await worker_pool.manager.acquire(
+            script.id, script.entry_function, preheat=True,
+        )
+    except Exception as e:
+        raise HTTPException(500, f"Failed to preheat worker: {e}")
+    return {"enabled": True, "ready": worker.ready, "reused": worker.jobs_run > 0}
+
+
+@router.post("/{script_id}/schema/sync", response_model=ScriptDetail)
+def sync_schema(script_id: str, db: Session = Depends(get_db)):
+    """Re-derive the script's input schema from its code and persist it.
+
+    Runs synchronously (the caller explicitly asked): static AST extract first,
+    subprocess introspection fallback for a computed / Pydantic ``INPUT_SCHEMA``.
+    Returns the updated script (with the new ``input_schema``)."""
+    script = _get_or_404(script_id, db)
+    from services.script_schema import refresh_script_schema
+    refresh_script_schema(db, script)
+    db.refresh(script)
+    return script
 
 
 @router.post("/{script_id}/install")
@@ -315,6 +362,12 @@ def fork_revision(script_id: str, rev_id: str, body: ForkRevisionRequest, db: Se
 
     db.commit()
     db.refresh(new_script)
+    try:
+        from services.script_schema import refresh_script_schema
+        refresh_script_schema(db, new_script)
+        db.refresh(new_script)
+    except Exception:
+        pass
     return new_script
 
 
@@ -378,6 +431,32 @@ def delete_preset(script_id: str, preset_id: str, db: Session = Depends(get_db))
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
+
+def _refresh_schema_bg(script_id: str) -> None:
+    """Background: recompute + persist a script's input schema in a fresh session.
+    Best-effort — a broken/slow introspection never affects the file-save request."""
+    db = SessionLocal()
+    try:
+        script = db.query(Script).filter_by(id=script_id).first()
+        if script is None:
+            return
+        from services.script_schema import refresh_script_schema
+        refresh_script_schema(db, script)
+    except Exception:
+        logger.exception("[script {}] background schema refresh failed", script_id)
+    finally:
+        db.close()
+
+
+def _invalidate_worker(script_id: str) -> None:
+    """Kill any warm worker holding this script's now-stale code. No-op if the
+    warm-worker pool is disabled / not present."""
+    try:
+        from services.worker_pool import invalidate_worker
+        invalidate_worker(script_id)
+    except Exception:
+        pass
+
 
 def _get_or_404(script_id: str, db: Session) -> Script:
     s = db.query(Script).filter_by(id=script_id).first()

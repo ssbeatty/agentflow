@@ -232,12 +232,13 @@ def _system_prompt(ctx: dict) -> str:
         lines = common + [
             "",
             "Current task: write / run / debug THE CURRENTLY-OPEN AgentFlow script.",
-            "Available tools (MCP): get_platform_context, get_scripting_guide, list_scripts, get_script, create_script, update_script, read_script_file, write_script_file, delete_script_file, setup_script_env, run_script, list_executions, get_execution_logs, list_eval_cases, add_eval_case, update_eval_case, delete_eval_case, run_eval.",
+            "Available tools (MCP): get_platform_context, get_scripting_guide, list_scripts, get_script, create_script, update_script, read_script_file, write_script_file, delete_script_file, sync_script_schema, setup_script_env, run_script, list_executions, get_execution_logs, list_eval_cases, add_eval_case, update_eval_case, delete_eval_case, run_eval.",
             "Rules:",
             "1) Before writing a script the first time, call get_scripting_guide() to learn the conventions (entry def run(input: dict) -> Any; get_llm / get_agent / get_secret; streaming / reasoning). Use get_platform_context() to see available models / secrets / MCP / Skills when needed.",
             "2) Operate on the CURRENT script (script_id below), even if it is empty/new — edit it in place with write_script_file / update_script. Do NOT call create_script; that creates a SEPARATE new script. Only create_script if the user EXPLICITLY asks for a new / separate script. Change dependencies via update_script(requirements=...) then setup_script_env — do NOT write dependencies as a requirements.txt file.",
             "3) After editing, always run_script once to verify, read the error / traceback, and keep fixing until it passes.",
             "4) Eval / test cases: when the user asks to add / edit / delete test cases (用例) or evaluate the current script, use add_eval_case / update_eval_case / delete_eval_case (call list_eval_cases first to get a case id), then run_eval(script_id) to grade and report the pass/total. Each assertion is a check like {'type':'contains','value':'...'} or {'type':'judge','value':'<criterion>','threshold':7}. The user can also see/edit these in the script's Eval tab.",
+            "5) Input schema (输入 schema / 参数校验): when the user wants to give the script a typed input contract, define a module-level INPUT_SCHEMA (a JSON Schema dict, or Model.model_json_schema()) in main.py — write_script_file re-derives it automatically (or call sync_script_schema). It drives pre-run validation, the /docs example, and the run-page form. Don't add INPUT_SCHEMA to chat scripts (their input is {message, history}).",
         ]
         if sid:
             lines += ["", "[Context] You are editing script_id = " + str(sid) + " (entry function " + str(entry) + ")."]

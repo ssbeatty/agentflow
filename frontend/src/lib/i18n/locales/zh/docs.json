@@ -29,7 +29,8 @@
   "runSync": {
     "title": "同步运行",
     "desc": "阻塞直到脚本执行完成,并返回最终的 output_data。最适合外部服务间调用 — 这是唯一可以用 X-API-Key 调用的接口(默认超时 300 秒)。",
-    "labelResponse": "响应"
+    "labelResponse": "响应",
+    "labelInputSchema": "输入 schema(来自脚本的 INPUT_SCHEMA)"
   },
   "uploadFile": {
     "title": "上传文件",

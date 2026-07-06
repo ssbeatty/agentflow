@@ -189,6 +189,7 @@ def get_script(script_id: str) -> dict:
             "requirements": s.requirements or "",
             "mcp_server_ids": s.mcp_server_ids or [],
             "skill_ids": s.skill_ids or [],
+            "input_schema": s.input_schema,
             "venv_ready": venv_exists(s.id),
             "files": [
                 {"filename": f.filename, "is_main": f.is_main, "bytes": len(f.content or "")}
@@ -311,7 +312,24 @@ def write_script_file(script_id: str, filename: str, content: str) -> dict:
             issues = _lint_source(
                 content, filename, s.entry_function if f.is_main else None,
             )
-        return {"ok": True, "filename": filename, "is_main": f.is_main, "lint_issues": issues}
+        # Re-derive the input schema off the just-written code so the agent
+        # immediately sees the resolved contract (and downstream validation /
+        # docs / forms update). Best-effort; a code edit also invalidates any
+        # warm worker holding the stale main.py.
+        input_schema = None
+        try:
+            from services.script_schema import refresh_script_schema
+            db.refresh(s)
+            input_schema = refresh_script_schema(db, s)
+        except Exception:
+            pass
+        try:
+            from services.worker_pool import invalidate_worker
+            invalidate_worker(script_id)
+        except Exception:
+            pass
+        return {"ok": True, "filename": filename, "is_main": f.is_main,
+                "lint_issues": issues, "input_schema": input_schema}
     finally:
         db.close()
 
@@ -333,6 +351,33 @@ def delete_script_file(script_id: str, filename: str) -> dict:
         db.delete(f)
         db.commit()
         return {"ok": True}
+    finally:
+        db.close()
+
+
+@gateway.tool()
+def sync_script_schema(script_id: str) -> dict:
+    """Re-derive the script's input contract from its code and return it.
+
+    A script declares its input contract by defining a module-level
+    ``INPUT_SCHEMA`` (a JSON-Schema dict), e.g.::
+
+        INPUT_SCHEMA = {"type": "object",
+                        "properties": {"city": {"type": "string"}},
+                        "required": ["city"]}
+
+    (or ``INPUT_SCHEMA = MyPydanticModel.model_json_schema()``). When present it
+    drives pre-run input validation, typed /docs examples, and auto-rendered
+    input forms. write_script_file already refreshes it; call this to force a
+    re-sync. Returns ``{input_schema: <schema|null>}``."""
+    db = SessionLocal()
+    try:
+        s = _script_or_error(db, script_id)
+        if not s:
+            return {"error": f"script {script_id} not found"}
+        from services.script_schema import refresh_script_schema
+        schema = refresh_script_schema(db, s)
+        return {"ok": True, "input_schema": schema}
     finally:
         db.close()
 

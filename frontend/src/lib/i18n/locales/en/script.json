@@ -61,6 +61,17 @@
     },
     "skills": {
       "label": "Skills"
+    },
+    "warm": {
+      "label": "Warm worker",
+      "reuse": "Reuse worker between runs",
+      "reuseHint": "Keeps a per-script interpreter alive so repeat runs skip the cold import. Turn off for strict fresh-process isolation.",
+      "keepWarm": "Preheat on startup (keep warm)",
+      "keepWarmHint": "Eagerly loads the heavy stack so even the first run is fast.",
+      "preheat": "Preheat now",
+      "preheating": "Preheating…",
+      "preheated": "Worker preheated",
+      "disabled": "Warm workers are off on this server (set AGENTFLOW_WARM_WORKERS)."
     }
   },
   "dialog": {

@@ -87,6 +87,45 @@ def test_successful_run_completes_and_returns_output(db):
     assert execution.output_data == {"echo": 42}
 
 
+def test_input_schema_mismatch_fails_before_running(db):
+    # A script with an input_schema must reject a mismatched input with a clean
+    # `failed` run (visible error), never reaching user code. Guards the
+    # universal validation in start_execution (covers eval/cron/rerun too).
+    script = Script(name="typed-script", entry_function="run")
+    script.input_schema = {
+        "type": "object",
+        "properties": {"city": {"type": "string"}},
+        "required": ["city"],
+    }
+    db.add(script)
+    db.flush()
+    db.add(ScriptFile(
+        script_id=script.id, filename="main.py", is_main=True,
+        content="def run(input):\n    return {'ok': True}\n",  # would succeed if reached
+    ))
+    execution = Execution(script_id=script.id, status="pending", input_data={"wrong": 1})
+    db.add(execution)
+    db.commit()
+    eid = execution.id
+
+    asyncio.run(execution_engine.start_execution(eid))
+
+    db.expire_all()
+    row = db.query(Execution).filter_by(id=eid).first()
+    assert row.status == "failed"
+    assert "validation failed" in (row.error or "").lower()
+    assert "city" in (row.error or "")
+
+    # And a matching input still runs to completion (schema doesn't block valid input).
+    good = Execution(script_id=script.id, status="pending", input_data={"city": "NYC"})
+    db.add(good)
+    db.commit()
+    gid = good.id
+    asyncio.run(execution_engine.start_execution(gid))
+    db.expire_all()
+    assert db.query(Execution).filter_by(id=gid).first().status == "completed"
+
+
 def test_stopped_run_is_cancelled_not_failed(db):
     # Regression: stop_execution() kills the subprocess, which exits non-zero.
     # Without remembering the stop was deliberate, finalization marked it "failed"

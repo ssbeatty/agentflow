@@ -29,7 +29,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </AssistantProvider>
             </ConfirmDialogProvider>
           </AuthGate>
-          <Toaster theme="dark" position="top-right" richColors />
+          {/* bottom-right so toasts never cover the header action buttons
+              (Run / Save) which live at the top-right of the script page */}
+          <Toaster theme="dark" position="bottom-right" richColors />
         </I18nProvider>
       </body>
     </html>

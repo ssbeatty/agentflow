@@ -161,5 +161,18 @@
       "deleteMessage": "删除 \"{{name}}\"?",
       "deleteLabel": "删除"
     }
+  },
+  "schemaForm": {
+    "modeForm": "表单",
+    "modeJson": "JSON",
+    "required": "必填",
+    "optional": "可选",
+    "invalidJson": "该字段 JSON 无效",
+    "selectPlaceholder": "— 请选择 —",
+    "arrayHint": "每行一个",
+    "schemaBadge": "类型化输入",
+    "schemaBadgeTitle": "该脚本声明了 INPUT_SCHEMA,运行前会校验输入。",
+    "booleanTrue": "是",
+    "booleanFalse": "否"
   }
 }

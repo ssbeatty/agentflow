@@ -42,6 +42,11 @@ class ScriptUpdate(BaseModel):
     mcp_server_ids: Optional[list[str]] = None
     skill_ids: Optional[list[str]] = None
     max_executions: Optional[int] = Field(default=None, ge=0, le=10000)
+    # The input schema is normally derived from the script (see script_schema.py),
+    # but allow an explicit override / clear via PATCH too. Pass null to clear.
+    input_schema: Optional[dict] = None
+    warm: Optional[bool] = None
+    keep_warm: Optional[bool] = None
 
 
 class ScriptSummary(BaseModel):
@@ -52,6 +57,11 @@ class ScriptSummary(BaseModel):
     mcp_server_ids: list[str] = []
     skill_ids: list[str] = []
     max_executions: int = 50
+    # Cached JSON Schema for run() input (null = untyped). Source of truth is the
+    # script's own `INPUT_SCHEMA` / Pydantic model; refreshed on save / sync.
+    input_schema: Optional[dict] = None
+    warm: bool = True
+    keep_warm: bool = False
     created_at: datetime
     updated_at: datetime
 

@@ -1,7 +1,7 @@
 from pathlib import Path, PurePosixPath
 
 
-_INTERNAL_FILE_PREFIXES = ("_runner_", "_input_")
+_INTERNAL_FILE_PREFIXES = ("_runner_", "_input_", "_worker_runner")
 
 
 def normalize_script_filename(filename: str) -> str:

@@ -241,6 +241,18 @@ def run(input: dict) -> dict:
 `from agentflow import get_agent, get_secret, http_post, log
 
 
+# Typed input contract: validated before each run, renders a form on the run
+# page, and drives the /docs example. Remove it to accept any dict.
+INPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "topic": {"type": "string", "default": "AI agents", "description": "Subject to research"},
+        "count": {"type": "integer", "default": 5, "minimum": 1, "maximum": 20},
+    },
+    "required": [],
+}
+
+
 def run(input: dict) -> dict:
     """Daily news digest -> webhook push. Run once to preview, or schedule it.
 

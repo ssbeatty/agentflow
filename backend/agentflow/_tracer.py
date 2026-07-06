@@ -101,6 +101,15 @@ def get_usage_totals() -> dict[str, int]:
     """Snapshot of the run's accumulated token usage (read by the runner)."""
     with _usage_lock:
         return dict(_usage_totals)
+
+
+def reset_usage() -> None:
+    """Zero the accumulated token tally. Used by a warm worker between jobs so
+    each run reports only its own usage (a fresh one-shot process doesn't need
+    this — it starts at zero)."""
+    with _usage_lock:
+        for k in _usage_totals:
+            _usage_totals[k] = 0
 _MAX_PAYLOAD = 262_144  # chars per node/tool input/output blob before truncation.
 # This is a *safety ceiling*, not a display limit — it only exists so a pathological
 # state (a giant document / embedding sitting in the graph state) can't push tens of

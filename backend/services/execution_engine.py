@@ -288,6 +288,275 @@ except Exception as exc:
     return runner, input_file
 
 
+# ── Shared event handling (one-shot subprocess AND warm worker) ─────────────────
+
+class _DrainState:
+    """Mutable accumulator for one run's structured events, shared by the
+    one-shot drain loop and the warm-worker job loop so both persist/stream the
+    exact same way."""
+    __slots__ = ("result_data", "error_data", "usage_data", "result_at")
+
+    def __init__(self) -> None:
+        self.result_data: Any = None
+        self.error_data: dict | None = None
+        self.usage_data: dict | None = None
+        self.result_at: float | None = None
+
+
+async def _handle_event_line(execution_id: str, db, is_stderr: bool, line: str, state: _DrainState) -> None:
+    """Process one output line from a run: parse an `__AGENTFLOW__` event and
+    persist/stream it, or capture a raw/stderr line. Unknown structured event
+    types (e.g. `boot`) are ignored. Control sentinels (`worker_ready`,
+    `job_done`) are handled by the worker loop *before* calling this."""
+    if line.startswith(_PREFIX):
+        try:
+            payload = json.loads(line[len(_PREFIX):])
+        except json.JSONDecodeError:
+            return
+        t = payload.get("type")
+        if t == "log":
+            _persist_log(db, execution_id, payload)
+            await ws_manager.send(execution_id, {
+                "type": "log",
+                "level": payload.get("level", "info"),
+                "message": payload.get("message", ""),
+                "data": payload.get("data"),
+                "step": payload.get("step"),
+                "timestamp": datetime.utcnow().isoformat(),
+            })
+        elif t == "token":
+            await ws_manager.send(execution_id, {
+                "type": "token",
+                "content": payload.get("content", ""),
+            })
+        elif t == "trace":
+            _persist_log(db, execution_id, {
+                "level": "_trace",
+                "message": payload.get("name", ""),
+                "data": payload,
+                "step": payload.get("kind"),
+            })
+            await ws_manager.send(execution_id, {
+                **payload,
+                "timestamp": datetime.utcnow().isoformat(),
+            })
+        elif t == "artifact":
+            _persist_log(db, execution_id, {
+                "level": "_artifact",
+                "message": payload.get("kind", ""),
+                "data": payload,
+                "step": payload.get("kind"),
+            })
+            await ws_manager.send(execution_id, {
+                **payload,
+                "timestamp": datetime.utcnow().isoformat(),
+            })
+        elif t == "graph":
+            _persist_log(db, execution_id, {
+                "level": "_graph",
+                "message": "graph",
+                "data": payload,
+            })
+            await ws_manager.send(execution_id, payload)
+        elif t == "result":
+            state.result_data = payload.get("data")
+            state.result_at = time.perf_counter()
+        elif t == "usage":
+            state.usage_data = payload
+        elif t == "error":
+            state.error_data = payload
+            err_msg = payload.get("traceback") or payload.get("message") or "Execution failed"
+            _persist_log(db, execution_id, {
+                "level": "error", "message": err_msg, "step": "error",
+            })
+            await ws_manager.send(execution_id, {
+                "type": "log", "level": "error", "message": err_msg,
+                "step": "error", "timestamp": datetime.utcnow().isoformat(),
+            })
+    else:
+        level = "error" if is_stderr else "raw"
+        _persist_log(db, execution_id, {"level": level, "message": line})
+        await ws_manager.send(execution_id, {
+            "type": "log",
+            "level": level,
+            "message": line,
+            "timestamp": datetime.utcnow().isoformat(),
+        })
+
+
+async def _finalize_run(
+    db, execution_id: str, script, script_dir: Path, state: _DrainState, *,
+    ok: bool, cancelled: bool, returncode: int | None, prof_line: str,
+    cleanup_paths: list[Path],
+) -> None:
+    """Shared run finalization for BOTH the one-shot subprocess and the warm
+    worker: persist usage + final status (completed / cancelled / failed, with a
+    synthesized error when the process/job died silently), emit the terminal WS
+    status, schedule auto-retry, and prune. `returncode` is the process exit code
+    for the one-shot path, or None for the warm worker (no per-job exit code)."""
+    exc_row = db.query(Execution).filter_by(id=execution_id).first()
+    if exc_row is None:
+        return
+    exc_row.finished_at = datetime.utcnow()
+    if state.usage_data:
+        exc_row.prompt_tokens = int(state.usage_data.get("prompt_tokens") or 0)
+        exc_row.completion_tokens = int(state.usage_data.get("completion_tokens") or 0)
+        exc_row.total_tokens = int(state.usage_data.get("total_tokens") or 0)
+        exc_row.llm_calls = int(state.usage_data.get("llm_calls") or 0)
+    if ok:
+        exc_row.status = "completed"
+        exc_row.output_data = state.result_data
+    elif cancelled:
+        # User asked to stop (stop_execution). A terminated process / killed
+        # worker exits abnormally, but this is a normal cancellation — no synth
+        # error, no WARNING log, no auto-retry.
+        exc_row.status = "cancelled"
+    else:
+        exc_row.status = "failed"
+        if state.error_data:
+            exc_row.error = state.error_data.get("traceback") or state.error_data.get("message")
+        else:
+            # Died without emitting a structured error. Synthesize one so the
+            # failure is never blank (nothing in Logs / Output / Flow otherwise).
+            if returncode is None:
+                synth = (
+                    "The warm worker exited without reporting an error (a crash, "
+                    "out-of-memory, or a kill mid-job). Check the raw output above "
+                    "for details."
+                )
+            else:
+                synth = (
+                    f"Process exited with code {returncode} without reporting an "
+                    f"error (possibly sys.exit(), a killed/out-of-memory process, or a "
+                    f"native crash). Check the raw output above for details."
+                )
+            exc_row.error = synth
+            _persist_log(db, execution_id, {"level": "error", "message": synth, "step": "_engine"})
+            await ws_manager.send(execution_id, {
+                "type": "log", "level": "error", "message": synth,
+                "step": "_engine", "timestamp": datetime.utcnow().isoformat(),
+            })
+    db.commit()
+
+    _prof(execution_id, (
+        f"done status={exc_row.status} "
+        f"rc={returncode if returncode is not None else 'warm'} | {prof_line}"
+    ))
+    if exc_row.status == "failed":
+        logger.warning("[{}] execution failed: {}", execution_id[:8], exc_row.error)
+
+    await ws_manager.send(execution_id, {
+        "type": "status",
+        "status": exc_row.status,
+        "output": state.result_data,
+        "error": exc_row.error,
+    })
+
+    if exc_row.status == "failed" and exc_row.retry_count < exc_row.max_retries:
+        await _schedule_retry(exc_row)
+
+    for p in cleanup_paths:
+        try:
+            p.unlink(missing_ok=True)
+        except Exception:
+            pass
+    try:
+        _prune_old_runs(script_dir, keep=20)
+    except Exception:
+        pass
+    try:
+        prune_executions(db, script.id, script.max_executions)
+    except Exception:
+        pass
+
+
+async def _run_via_worker(
+    db, execution_id: str, script, script_dir: Path, run_dir: Path,
+    input_file: Path, job_env: dict, *, t_enter: float, t_slot: float,
+) -> None:
+    """Route this run through the script's warm worker (serverless-style): reuse
+    a live per-script interpreter if one exists (skips the langchain cold-import
+    on run #2+), else boot one. Per-job config (LLM creds / secrets / MCP /
+    skills / run_dir) crosses via `job_env` over the worker's stdin — nothing is
+    baked to disk. On timeout / crash the worker is retired so the next run is
+    clean."""
+    from services import worker_pool
+
+    state = _DrainState()
+    keep_warm = bool(getattr(script, "keep_warm", False))
+    _t_acq = time.perf_counter()
+    try:
+        worker = await worker_pool.manager.acquire(
+            script.id, script.entry_function, preheat=keep_warm,
+        )
+    except Exception as e:
+        msg = f"Warm worker failed to start: {e}"
+        logger.warning("[{}] {}", execution_id[:8], msg)
+        _mark_failed(db, execution_id, msg)
+        await ws_manager.send(execution_id, {"type": "status", "status": "failed", "error": msg})
+        return
+
+    reused = worker.jobs_run > 0
+    _procs[execution_id] = worker.proc  # so stop_execution can kill the worker
+    _t_ready = time.perf_counter()
+    _prof(execution_id, (
+        f"worker acquired (reused={reused}, "
+        f"queue_wait={t_slot - t_enter:.2f}s, acquire={_t_ready - _t_acq:.2f}s)"
+    ))
+
+    job = {
+        "job_id": execution_id,
+        "run_dir": str(run_dir),
+        "entry_fn": script.entry_function,
+        "env": job_env,
+    }
+    first_output_at: float | None = None
+
+    async def _handler(is_stderr: bool, line: str) -> None:
+        nonlocal first_output_at
+        if first_output_at is None:
+            first_output_at = time.perf_counter()
+        await _handle_event_line(execution_id, db, is_stderr, line, state)
+
+    ok = False
+    died = False
+    try:
+        ok = await asyncio.wait_for(worker.run_job(job, _handler), timeout=EXECUTION_TIMEOUT)
+    except asyncio.TimeoutError:
+        worker_pool.manager.invalidate(script.id)  # kills the stuck worker
+        _procs.pop(execution_id, None)
+        timeout_msg = f"Execution timed out after {EXECUTION_TIMEOUT:.0f}s"
+        logger.warning("[{}] {}", execution_id[:8], timeout_msg)
+        exc_row = db.query(Execution).filter_by(id=execution_id).first()
+        if exc_row:
+            exc_row.status = "failed"
+            exc_row.error = timeout_msg
+            exc_row.finished_at = datetime.utcnow()
+            db.commit()
+        _persist_log(db, execution_id, {"level": "error", "message": timeout_msg, "step": "_engine"})
+        await ws_manager.send(execution_id, {
+            "type": "log", "level": "error", "message": timeout_msg,
+            "step": "_engine", "timestamp": datetime.utcnow().isoformat(),
+        })
+        await ws_manager.send(execution_id, {"type": "status", "status": "failed", "error": timeout_msg})
+        return
+    except worker_pool.WorkerDied:
+        died = True
+        worker_pool.manager.invalidate(script.id)
+    finally:
+        _procs.pop(execution_id, None)
+
+    cancelled = execution_id in _cancelled_ids
+    ok_final = ok and state.error_data is None and not died and not cancelled
+    _first = f"{first_output_at - _t_ready:.2f}s" if first_output_at is not None else "n/a"
+    prof = f"warm reused={reused} acquire={_t_ready - _t_acq:.2f}s first_output={_first}"
+    await _finalize_run(
+        db, execution_id, script, script_dir, state,
+        ok=ok_final, cancelled=cancelled, returncode=None,
+        prof_line=prof, cleanup_paths=[input_file],
+    )
+
+
 # ── Main runner ────────────────────────────────────────────────────────────────
 
 async def start_execution(execution_id: str) -> None:
@@ -324,6 +593,23 @@ async def start_execution(execution_id: str) -> None:
         script = db.query(Script).filter_by(id=exc_row.script_id).first()
         if not script:
             return
+
+        # ── validate input against the script's cached schema (if any) ────────
+        # Universal guard: the API endpoints 422 early, but eval / cron / rerun
+        # reach the engine directly — validating here records a clean `failed`
+        # run (visible in Logs) instead of a confusing in-script crash. A script
+        # with no input_schema accepts anything (legacy behaviour).
+        if getattr(script, "input_schema", None):
+            try:
+                from services.script_schema import validate_input
+                validate_input(script.input_schema, exc_row.input_data or {})
+            except ValueError as ve:
+                msg = f"Input validation failed: {ve}"
+                _mark_failed(db, execution_id, msg)
+                await ws_manager.send(execution_id, {
+                    "type": "status", "status": "failed", "error": msg,
+                })
+                return
 
         # ── write script files to disk ────────────────────────────────────────
         script_dir = get_script_dir(exc_row.script_id)
@@ -480,10 +766,10 @@ async def start_execution(execution_id: str) -> None:
         llm_envs["AGENTFLOW_SCRIPT_DIR"] = str(script_dir)
         llm_envs["AGENTFLOW_UPLOADS_DIR"] = str(UPLOADS_DIR)
 
-        # ── write runner + input ──────────────────────────────────────────────
-        runner, input_file = _write_runner(
-            script_dir, run_dir, script.entry_function, execution_id, llm_envs,
-        )
+        # ── write the run's input ─────────────────────────────────────────────
+        # Both the one-shot runner and the warm worker read _input.json from the
+        # run dir (the one-shot runner is written later, only on that path).
+        input_file = run_dir / "_input.json"
         input_file.write_text(json.dumps(resolved_input), encoding="utf-8")
 
         # The built-in AI assistant is PLATFORM code (not a user script), so it
@@ -519,6 +805,24 @@ async def start_execution(execution_id: str) -> None:
             "step": "_engine", "timestamp": datetime.utcnow().isoformat(),
         })
 
+        # ── warm-worker path (serverless-style reuse) ─────────────────────────
+        # Gated by AGENTFLOW_WARM_WORKERS + script.warm (default off → skipped,
+        # classic one-shot below). Per-job config crosses via job_env over the
+        # worker's stdin (never baked to disk), so on this path llm creds/secrets
+        # are handed to the reused interpreter fresh per run.
+        from services.worker_pool import worker_enabled
+        if worker_enabled(script):
+            job_env = {**llm_envs, **secret_envs, "AGENTFLOW_EXECUTION_ID": execution_id}
+            await _run_via_worker(
+                db, execution_id, script, script_dir, run_dir, input_file, job_env,
+                t_enter=_t_enter, t_slot=_t_slot,
+            )
+            return
+
+        # ── one-shot fresh subprocess (classic isolation) ─────────────────────
+        runner, _ = _write_runner(
+            script_dir, run_dir, script.entry_function, execution_id, llm_envs,
+        )
         sub_env = _clean_env()
         sub_env["PYTHONUNBUFFERED"] = "1"
         sub_env["PYTHONIOENCODING"] = "utf-8"
@@ -568,15 +872,12 @@ async def start_execution(execution_id: str) -> None:
         threading.Thread(target=_pump, args=(proc.stdout, False), daemon=True).start()
         threading.Thread(target=_pump, args=(proc.stderr, True), daemon=True).start()
 
-        result_data: Any = None
-        error_data: dict | None = None
-        usage_data: dict | None = None
+        state = _DrainState()
         eof_count = 0
         first_output_at: float | None = None
-        result_at: float | None = None
 
         async def _drain():
-            nonlocal result_data, error_data, usage_data, eof_count, first_output_at, result_at
+            nonlocal eof_count, first_output_at
             while eof_count < 2:
                 is_stderr, line = await queue.get()
                 if line is None:
@@ -588,88 +889,7 @@ async def start_execution(execution_id: str) -> None:
                         f"first output +{first_output_at - _t_spawn:.2f}s "
                         f"(python cold-start + imports)"
                     ))
-                if line.startswith(_PREFIX):
-                    try:
-                        payload = json.loads(line[len(_PREFIX):])
-                    except json.JSONDecodeError:
-                        continue
-                    t = payload.get("type")
-                    if t == "log":
-                        _persist_log(db, execution_id, payload)
-                        await ws_manager.send(execution_id, {
-                            "type": "log",
-                            "level": payload.get("level", "info"),
-                            "message": payload.get("message", ""),
-                            "data": payload.get("data"),
-                            "step": payload.get("step"),
-                            "timestamp": datetime.utcnow().isoformat(),
-                        })
-                    elif t == "token":
-                        await ws_manager.send(execution_id, {
-                            "type": "token",
-                            "content": payload.get("content", ""),
-                        })
-                    elif t == "trace":
-                        # persist so historical runs can re-render the flow
-                        _persist_log(db, execution_id, {
-                            "level": "_trace",
-                            "message": payload.get("name", ""),
-                            "data": payload,
-                            "step": payload.get("kind"),
-                        })
-                        await ws_manager.send(execution_id, {
-                            **payload,
-                            "timestamp": datetime.utcnow().isoformat(),
-                        })
-                    elif t == "artifact":
-                        # persisted so historical runs can re-render in Artifacts tab
-                        _persist_log(db, execution_id, {
-                            "level": "_artifact",
-                            "message": payload.get("kind", ""),
-                            "data": payload,
-                            "step": payload.get("kind"),
-                        })
-                        await ws_manager.send(execution_id, {
-                            **payload,
-                            "timestamp": datetime.utcnow().isoformat(),
-                        })
-                    elif t == "graph":
-                        _persist_log(db, execution_id, {
-                            "level": "_graph",
-                            "message": "graph",
-                            "data": payload,
-                        })
-                        await ws_manager.send(execution_id, payload)
-                    elif t == "result":
-                        result_data = payload.get("data")
-                        result_at = time.perf_counter()
-                    elif t == "usage":
-                        # Aggregated LLM token usage for the whole run; persisted
-                        # onto the Execution row at finalization (below).
-                        usage_data = payload
-                    elif t == "error":
-                        error_data = payload
-                        # Persist the crash as a log too, so it shows in the Logs
-                        # panel (live + on reload) — not only in execution.error /
-                        # a transient toast. The full traceback goes in the message
-                        # (whitespace-preserved), the short message in step.
-                        err_msg = payload.get("traceback") or payload.get("message") or "Execution failed"
-                        _persist_log(db, execution_id, {
-                            "level": "error", "message": err_msg, "step": "error",
-                        })
-                        await ws_manager.send(execution_id, {
-                            "type": "log", "level": "error", "message": err_msg,
-                            "step": "error", "timestamp": datetime.utcnow().isoformat(),
-                        })
-                else:
-                    level = "error" if is_stderr else "raw"
-                    _persist_log(db, execution_id, {"level": level, "message": line})
-                    await ws_manager.send(execution_id, {
-                        "type": "log",
-                        "level": level,
-                        "message": line,
-                        "timestamp": datetime.utcnow().isoformat(),
-                    })
+                await _handle_event_line(execution_id, db, is_stderr, line, state)
 
         try:
             await asyncio.wait_for(_drain(), timeout=EXECUTION_TIMEOUT)
@@ -706,87 +926,25 @@ async def start_execution(execution_id: str) -> None:
 
         await asyncio.to_thread(proc.wait)
 
-        exc_row = db.query(Execution).filter_by(id=execution_id).first()
-        exc_row.finished_at = datetime.utcnow()
-        if usage_data:
-            exc_row.prompt_tokens = int(usage_data.get("prompt_tokens") or 0)
-            exc_row.completion_tokens = int(usage_data.get("completion_tokens") or 0)
-            exc_row.total_tokens = int(usage_data.get("total_tokens") or 0)
-            exc_row.llm_calls = int(usage_data.get("llm_calls") or 0)
-        if proc.returncode == 0:
-            exc_row.status = "completed"
-            exc_row.output_data = result_data
-        elif execution_id in _cancelled_ids:
-            # User asked to stop this run (stop_execution). A terminated process
-            # exits non-zero, but this is a normal cancellation, not a crash —
-            # no synth error, no WARNING log, no auto-retry.
-            exc_row.status = "cancelled"
-        else:
-            exc_row.status = "failed"
-            if error_data:
-                exc_row.error = error_data.get("traceback") or error_data.get("message")
-            else:
-                # Process died without emitting a structured error (e.g. sys.exit(),
-                # SIGKILL/OOM, or a native crash). Without this the run would be
-                # marked failed with a completely empty error — nothing in Logs,
-                # Output or Flow. Synthesize a message from the exit code so the
-                # failure is at least visible and traceable.
-                synth = (
-                    f"Process exited with code {proc.returncode} without reporting an "
-                    f"error (possibly sys.exit(), a killed/out-of-memory process, or a "
-                    f"native crash). Check the raw output above for details."
-                )
-                exc_row.error = synth
-                _persist_log(db, execution_id, {
-                    "level": "error", "message": synth, "step": "_engine",
-                })
-                await ws_manager.send(execution_id, {
-                    "type": "log", "level": "error", "message": synth,
-                    "step": "_engine", "timestamp": datetime.utcnow().isoformat(),
-                })
-        db.commit()
-
         _t_end = time.perf_counter()
         if first_output_at is not None:
             _cold = first_output_at - _t_spawn
-            _script = (result_at or _t_end) - first_output_at
+            _script = (state.result_at or _t_end) - first_output_at
         else:
             _cold = _t_end - _t_spawn      # process produced no output at all
             _script = 0.0
-        _prof(execution_id, (
-            f"done status={exc_row.status} rc={proc.returncode} | "
+        prof_detail = (
             f"queue_wait={_t_slot - _t_enter:.2f}s prep={_t_spawn - _t_slot:.2f}s "
             f"cold_import={_cold:.2f}s script={_script:.2f}s total={_t_end - _t_slot:.2f}s"
-        ))
-        if exc_row.status == "failed":
-            logger.warning("[{}] execution failed: {}", execution_id[:8], exc_row.error)
-
-        await ws_manager.send(execution_id, {
-            "type": "status",
-            "status": exc_row.status,
-            "output": result_data,
-            "error": exc_row.error,
-        })
-
-        # ── auto-retry on failure ─────────────────────────────────────────────
-        if exc_row.status == "failed" and exc_row.retry_count < exc_row.max_retries:
-            await _schedule_retry(exc_row)
-
-        # leave run_dir intact for post-mortem inspection; prune old runs
-        try:
-            runner.unlink(missing_ok=True)
-            input_file.unlink(missing_ok=True)
-        except Exception:
-            pass
-        try:
-            _prune_old_runs(script_dir, keep=20)
-        except Exception:
-            pass
-        # prune old execution *rows* (DB) per the script's retention setting
-        try:
-            prune_executions(db, script.id, script.max_executions)
-        except Exception:
-            pass
+        )
+        await _finalize_run(
+            db, execution_id, script, script_dir, state,
+            ok=(proc.returncode == 0),
+            cancelled=(execution_id in _cancelled_ids),
+            returncode=proc.returncode,
+            prof_line=prof_detail,
+            cleanup_paths=[runner, input_file],
+        )
 
     except asyncio.CancelledError:
         logger.info("[{}] execution cancelled", execution_id[:8])

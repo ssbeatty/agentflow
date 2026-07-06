@@ -59,6 +59,50 @@ script and re-run. Users can also view/edit the dataset in the script's **Eval t
 - Scripts import the platform SDK with `from agentflow import ...` — it is injected
   via `sys.path`, never add `agentflow` to requirements.
 
+### Declaring an input contract (`INPUT_SCHEMA`)
+
+Give `run()`'s input a typed contract by defining a **module-level `INPUT_SCHEMA`**
+— a JSON Schema `dict`. When present the platform (a) **validates input before
+running** (a mismatch fails fast with a 422 / a `failed` run, never reaching your
+code), (b) generates a **typed call example** on the /docs page, and (c) renders an
+**auto form** on the run page. A script with no `INPUT_SCHEMA` accepts any dict
+(legacy behaviour). The schema is derived from the code automatically on save
+(and via the `sync_script_schema` MCP tool).
+
+```python
+INPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "city": {"type": "string", "description": "City to look up"},
+        "days": {"type": "integer", "default": 3, "minimum": 1},
+        "units": {"type": "string", "enum": ["metric", "imperial"], "default": "metric"},
+    },
+    "required": ["city"],
+}
+
+def run(input: dict) -> dict:
+    ...
+```
+
+Or reuse a Pydantic model (the platform imports the module to resolve it):
+
+```python
+from pydantic import BaseModel
+
+class Input(BaseModel):
+    city: str
+    days: int = 3
+
+INPUT_SCHEMA = Input.model_json_schema()
+
+def run(input: dict) -> dict:
+    data = Input(**input)     # validate + get typed access
+    ...
+```
+
+For **chat scripts** the input shape is fixed (`{message, history}`) — don't add an
+`INPUT_SCHEMA` there.
+
 ## SDK quick reference (`from agentflow import ...`)
 
 LLMs (configured as channels by the platform admin; see `get_platform_context`):

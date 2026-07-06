@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { scripts as scriptsApi } from "@/lib/api";
 import type { ScriptSummary } from "@/lib/types";
+import { exampleForSchema } from "@/lib/schemaForm";
 import { Button } from "@/components/ui/button";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -24,6 +25,13 @@ export default function DocsPage() {
       if (list.length > 0) setScriptId(list[0].id);
     }).catch(() => null);
   }, []);
+
+  // Typed call example: when the selected script declares an INPUT_SCHEMA, build
+  // a representative input_data from it; else the generic {"message": "hello"}.
+  const selected = items.find((s) => s.id === scriptId);
+  const exampleInput = selected?.input_schema
+    ? JSON.stringify(exampleForSchema(selected.input_schema))
+    : '{"message": "hello"}';
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -116,9 +124,15 @@ curl -s ${origin}/mcp/skill \\
   -H 'X-API-Key: af_…' \\
   -d '{
     "script_id": "${scriptId}",
-    "input_data": {"message": "hello"}
+    "input_data": ${exampleInput}
   }'`}
           />
+          {selected?.input_schema && (
+            <Code
+              label={t("runSync.labelInputSchema")}
+              code={JSON.stringify(selected.input_schema, null, 2)}
+            />
+          )}
           <Code
             label={t("runSync.labelResponse")}
             code={`{

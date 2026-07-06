@@ -20,6 +20,24 @@ class Script(Base):
     requirements = Column(Text, default="")
     mcp_server_ids = Column(JSON, default=list)
     skill_ids = Column(JSON, default=list)
+    # Optional JSON Schema describing this script's run() input. The *source of
+    # truth* is the script itself (a module-level `INPUT_SCHEMA` dict, or a
+    # Pydantic model's `.model_json_schema()`); this column is a CACHE, refreshed
+    # by services/script_schema.py on save / manual sync / MCP introspect. When
+    # present it drives (a) pre-run input validation, (b) typed /docs examples,
+    # (c) auto-rendered input forms in the run/chat pages. Null = untyped dict
+    # (the legacy behaviour — anything goes). See Alembic 0008.
+    input_schema = Column(JSON, nullable=True)
+    # Warm-worker (serverless-style) execution. Only consulted when the global
+    # AGENTFLOW_WARM_WORKERS flag is on (default off — the platform otherwise
+    # spawns a fresh subprocess per run, the classic isolation). `warm` (default
+    # True) lets a script reuse a long-lived per-script worker between runs
+    # (skips the langchain cold-import on run #2+); set False for scripts that
+    # need strict fresh-process isolation. `keep_warm` (default False) eagerly
+    # preheats the worker (imports the heavy stack) so even run #1 is warm — the
+    # "provisioned concurrency" opt-in. See Alembic 0009 + services/worker_pool.py.
+    warm = Column(Boolean, default=True, server_default="1", nullable=False)
+    keep_warm = Column(Boolean, default=False, server_default="0", nullable=False)
     # Max execution records to keep for this script; older ones are auto-pruned
     # (oldest terminal runs first) after each run. 0 = keep unlimited.
     # server_default mirrors the Python default so Alembic autogenerate sees no

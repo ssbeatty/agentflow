@@ -75,10 +75,18 @@ export const scripts = {
   create: (data: { name: string; description?: string; entry_function?: string }) =>
     req<Script>("/scripts", { method: "POST", body: JSON.stringify(data) }),
 
-  update: (id: string, data: Partial<Pick<Script, "name" | "description" | "entry_function" | "requirements" | "mcp_server_ids" | "skill_ids" | "max_executions">>) =>
+  update: (id: string, data: Partial<Pick<Script, "name" | "description" | "entry_function" | "requirements" | "mcp_server_ids" | "skill_ids" | "max_executions" | "input_schema" | "warm" | "keep_warm">>) =>
     req<Script>(`/scripts/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
 
   delete: (id: string) => req<void>(`/scripts/${id}`, { method: "DELETE" }),
+
+  /** Re-derive the input schema from the script's code (INPUT_SCHEMA). */
+  syncSchema: (id: string) =>
+    req<Script>(`/scripts/${id}/schema/sync`, { method: "POST" }),
+
+  /** Eagerly spawn + preheat the warm worker (no-op unless warm workers on). */
+  preheat: (id: string) =>
+    req<{ enabled: boolean; ready: boolean; reused: boolean }>(`/scripts/${id}/preheat`, { method: "POST" }),
 
   upsertFile: (id: string, file: { filename: string; content: string; is_main?: boolean }) =>
     req<ScriptFile>(`/scripts/${id}/files`, { method: "PUT", body: JSON.stringify(file) }),

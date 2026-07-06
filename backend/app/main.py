@@ -80,6 +80,17 @@ async def lifespan(app: FastAPI):
         db.close()
     scheduler_service.start()
     logger.info("Scheduler started")
+
+    # Warm-worker pool (opt-in via AGENTFLOW_WARM_WORKERS). Eagerly preheat
+    # scripts flagged keep_warm so their first run is hot ("provisioned
+    # concurrency"). Fire-and-forget so a slow import never blocks startup.
+    try:
+        from services import worker_pool
+        if worker_pool.WARM_WORKERS_ENABLED:
+            asyncio.create_task(_preheat_keep_warm())
+    except Exception:
+        logger.exception("Warm-worker preheat scheduling skipped")
+
     try:
         # The MCP gateway's StreamableHTTP session manager needs a running task
         # group for the lifetime of the app (stateless mode still requires it).
@@ -88,7 +99,38 @@ async def lifespan(app: FastAPI):
             yield
     finally:
         scheduler_service.shutdown()
+        try:
+            from services import worker_pool
+            worker_pool.manager.shutdown_all()
+        except Exception:
+            pass
         logger.info("AgentFlow backend shut down")
+
+
+async def _preheat_keep_warm() -> None:
+    """Preheat every warm keep_warm script's worker on startup (best-effort)."""
+    from app.database import SessionLocal
+    from app.models import Script
+    from services import worker_pool
+
+    db = SessionLocal()
+    try:
+        scripts = db.query(Script).filter(
+            Script.keep_warm == True, Script.warm == True,  # noqa: E712
+        ).all()
+        targets = [(s.id, s.entry_function, s.name) for s in scripts]
+    except Exception:
+        logger.exception("keep_warm preheat query failed")
+        return
+    finally:
+        db.close()
+
+    for sid, entry, name in targets:
+        try:
+            await worker_pool.manager.acquire(sid, entry, preheat=True)
+            logger.info("[worker {}] preheated on startup ({})", sid[:8], name)
+        except Exception as e:
+            logger.warning("[worker {}] startup preheat failed: {}", sid[:8], e)
 
 
 app = FastAPI(title="AgentFlow", version="0.1.0", lifespan=lifespan)
