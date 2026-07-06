@@ -34,6 +34,7 @@ from services.venv_manager import (
     get_script_dir, get_venv_python, venv_exists, _clean_env,
     make_run_preexec, maybe_wrap_sandbox,
 )
+from services.notifications import schedule_failure_notification
 
 _PREFIX = "__AGENTFLOW__"
 
@@ -455,8 +456,12 @@ async def _finalize_run(
         "error": exc_row.error,
     })
 
-    if exc_row.status == "failed" and exc_row.retry_count < exc_row.max_retries:
-        await _schedule_retry(exc_row)
+    if exc_row.status == "failed":
+        if exc_row.retry_count < exc_row.max_retries:
+            await _schedule_retry(exc_row)
+        else:
+            # Final failure (no retries left) → fire failure notifications.
+            schedule_failure_notification(execution_id)
 
     for p in cleanup_paths:
         try:
@@ -1099,6 +1104,8 @@ def _mark_failed(db, execution_id: str, error: str) -> None:
         })
     except Exception:
         pass
+    # Engine-level failures are terminal (no retry path) → notify.
+    schedule_failure_notification(execution_id)
 
 
 # ── Execution-record retention ───────────────────────────────────────────────

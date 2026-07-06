@@ -196,7 +196,7 @@ async def _run_case(case: dict, judge_llm) -> dict:
     # Create + run a real Execution for this case.
     db = SessionLocal()
     try:
-        exc = Execution(script_id=case["script_id"], input_data=input_data)
+        exc = Execution(script_id=case["script_id"], input_data=input_data, trigger="eval")
         db.add(exc)
         db.commit()
         db.refresh(exc)

@@ -1,0 +1,68 @@
+{
+  "header": {
+    "home": "首页",
+    "title": "失败通知",
+    "new": "新建渠道"
+  },
+  "intro": "运行失败时收到提醒。每个启用的渠道会在最终失败时（重试耗尽后）收到推送；eval 评估运行不会触发，避免测试用例刷屏。",
+  "empty": {
+    "text": "还没有通知渠道。",
+    "cta": "添加渠道"
+  },
+  "types": {
+    "pushplus": "PushPlus",
+    "bark": "Bark",
+    "email": "邮件"
+  },
+  "list": {
+    "enabled": "已启用",
+    "disabled": "已停用",
+    "secretSet": "已设密钥",
+    "noSecret": "未设密钥",
+    "test": "发送测试",
+    "edit": "编辑",
+    "delete": "删除",
+    "created": "添加于 {{date}}"
+  },
+  "dialog": {
+    "createTitle": "新建渠道",
+    "editTitle": "编辑渠道",
+    "nameLabel": "名称",
+    "namePlaceholder": "例如：我的手机",
+    "typeLabel": "类型",
+    "enabledLabel": "启用",
+    "secretKeep": "密钥字段留空表示保持原值不变。"
+  },
+  "fields": {
+    "token": "Token",
+    "topic": "分组 Topic（可选）",
+    "server_url": "服务器地址",
+    "device_key": "设备 Key",
+    "sound": "提示音（可选）",
+    "smtp_host": "SMTP 主机",
+    "smtp_port": "SMTP 端口",
+    "username": "用户名",
+    "password": "密码",
+    "from_addr": "发件地址（可选）",
+    "to_addrs": "收件人（逗号分隔）",
+    "use_tls": "使用 STARTTLS（465 端口隐式 SSL 请取消勾选）"
+  },
+  "actions": {
+    "cancel": "取消",
+    "save": "保存"
+  },
+  "toast": {
+    "created": "渠道已添加",
+    "updated": "渠道已保存",
+    "deleted": "渠道已删除",
+    "saveFailed": "保存失败",
+    "deleteFailed": "删除失败",
+    "testOk": "测试已发送 —— 请查看你的设备",
+    "testFailed": "测试失败：{{error}}",
+    "toggleFailed": "更新失败"
+  },
+  "confirm": {
+    "deleteMessage": "删除渠道「{{name}}」？",
+    "deleteLabel": "删除"
+  }
+}

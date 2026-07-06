@@ -15,6 +15,8 @@ import securityEn from "./locales/en/security.json";
 import securityZh from "./locales/zh/security.json";
 import secretsEn from "./locales/en/secrets.json";
 import secretsZh from "./locales/zh/secrets.json";
+import notificationsEn from "./locales/en/notifications.json";
+import notificationsZh from "./locales/zh/notifications.json";
 import settingsEn from "./locales/en/settings.json";
 import settingsZh from "./locales/zh/settings.json";
 import toolsEn from "./locales/en/tools.json";
@@ -48,6 +50,7 @@ const resources = {
     setup: setupEn,
     security: securityEn,
     secrets: secretsEn,
+    notifications: notificationsEn,
     settings: settingsEn,
     tools: toolsEn,
     skill: skillEn,
@@ -66,6 +69,7 @@ const resources = {
     setup: setupZh,
     security: securityZh,
     secrets: secretsZh,
+    notifications: notificationsZh,
     settings: settingsZh,
     tools: toolsZh,
     skill: skillZh,

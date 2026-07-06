@@ -134,6 +134,7 @@ async def create_execution(body: ExecutionCreate, db: Session = Depends(get_db))
         script_id=body.script_id,
         input_data=body.input_data or {},
         max_retries=body.max_retries,
+        trigger="manual",
     )
     db.add(exc)
     db.commit()
@@ -163,6 +164,7 @@ async def run_sync(body: ExecutionCreate, timeout: float = 300.0):
             script_id=body.script_id,
             input_data=body.input_data or {},
             max_retries=body.max_retries,
+            trigger="api",
         )
         db.add(exc)
         db.commit()
@@ -267,6 +269,7 @@ async def rerun(execution_id: str, db: Session = Depends(get_db)):
         script_id=orig.script_id,
         input_data=orig.input_data,
         max_retries=orig.max_retries,
+        trigger="rerun",
     )
     db.add(new_exc)
     db.commit()

@@ -1,11 +1,14 @@
 {
-  "app": { "name": "AgentFlow" },
+  "app": {
+    "name": "AgentFlow"
+  },
   "nav": {
     "dashboard": "仪表盘",
     "chat": "对话",
     "docs": "文档",
     "tools": "工具",
     "secrets": "密钥",
+    "notifications": "通知",
     "security": "安全 / API 密钥",
     "settings": "设置"
   },

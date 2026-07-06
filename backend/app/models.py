@@ -125,6 +125,9 @@ class Execution(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     retry_count = Column(Integer, default=0)
     max_retries = Column(Integer, default=0)
+    # How this run was triggered — drives failure-notification filtering (eval
+    # sub-runs are excluded so a graded test case can't spam the alert channels).
+    trigger = Column(String(32), default="manual", server_default="manual")  # manual|api|cron|rerun|eval
     # Token usage aggregated across every LLM call in this run. Captured by the
     # tracer (agentflow/_tracer.py), emitted once as a `{"type":"usage"}` event
     # by the runner, and persisted at finalization. 0 = no usage recorded (a
@@ -266,6 +269,25 @@ class Secret(Base):
     key = Column(String(255), nullable=False, unique=True)   # e.g. BARK_KEY
     value = Column(Text, nullable=False, default="")          # plaintext at rest (like channels.api_key)
     description = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class NotificationChannel(Base):
+    """A destination that gets pinged when a run fails (PushPlus / Bark / email).
+
+    `type` selects the provider; `config` (JSON) holds provider-specific settings
+    INCLUDING secrets (pushplus token / bark device_key / smtp password). Those
+    secret sub-keys are **never serialized to the frontend** — `NotificationChannelOut`
+    strips them and exposes only a `has_secret` flag + the non-secret fields, same
+    contract as channels.api_key / secrets / OAuth tokens. Global (single-admin)."""
+    __tablename__ = "notification_channels"
+
+    id = Column(String, primary_key=True, default=_id)
+    name = Column(String(255), nullable=False)
+    type = Column(String(32), nullable=False)          # pushplus | bark | email
+    enabled = Column(Boolean, default=True)
+    config = Column(JSON, default=dict)                 # provider-specific (contains secrets)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

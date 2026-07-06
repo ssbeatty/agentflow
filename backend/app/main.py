@@ -24,7 +24,7 @@ from app.auth_deps import require_admin
 from app.routers import (
     scripts, executions, llm_configs, cron_jobs, ws, mcp_servers,
     conversations, files, channels, auth, api_keys, secrets, skills, marketplace,
-    search_config, assistant, evals,
+    search_config, assistant, evals, notifications,
 )
 from services.scheduler import scheduler_service
 from services.mcp_gateway import MCPGatewayMiddleware, gateway as mcp_gateway
@@ -192,6 +192,7 @@ app.include_router(marketplace.router,     prefix="/api/marketplace",     tags=[
 app.include_router(search_config.router,   prefix="/api/search-config",   tags=["search-config"],   dependencies=_admin)
 app.include_router(assistant.router,        prefix="/api/assistant",        tags=["assistant"],        dependencies=_admin)
 app.include_router(evals.router,            prefix="/api/evals",            tags=["evals"],            dependencies=_admin)
+app.include_router(notifications.router,    prefix="/api/notification-channels", tags=["notifications"], dependencies=_admin)
 
 # ── MCP gateway (external coding agents: Claude Code, Cursor, …) ─────────────
 # Streamable HTTP MCP server for developing scripts remotely, intercepted at

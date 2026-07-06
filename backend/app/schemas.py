@@ -489,6 +489,60 @@ class SearchConfigTest(BaseModel):
     tavily_api_key: Optional[str] = None
 
 
+# ── Notification channels (run-failure alerts) ────────────────────────────────
+
+_NOTIFY_TYPES = {"pushplus", "bark", "email"}
+# Sub-keys of `config` that hold secrets — stripped from every response and
+# preserved-if-omitted on update (so editing a channel never wipes its secret).
+_NOTIFY_SECRET_KEYS = {"token", "device_key", "password"}
+
+
+class NotificationChannelCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    type: str
+    enabled: bool = True
+    config: dict = Field(default_factory=dict)
+
+    @field_validator("type")
+    @classmethod
+    def _valid_type(cls, v):
+        if v not in _NOTIFY_TYPES:
+            raise ValueError(f"type must be one of {sorted(_NOTIFY_TYPES)}")
+        return v
+
+
+class NotificationChannelUpdate(BaseModel):
+    name: Optional[str] = None
+    enabled: Optional[bool] = None
+    config: Optional[dict] = None
+
+
+class NotificationChannelOut(BaseModel):
+    id: str
+    name: str
+    type: str
+    enabled: bool
+    created_at: datetime
+
+    # Read from the ORM for derivation only — secret sub-keys never serialized.
+    config: dict = Field(default_factory=dict, exclude=True, repr=False)
+
+    model_config = {"from_attributes": True}
+
+    @computed_field
+    @property
+    def config_safe(self) -> dict:
+        """The config minus any secret sub-keys, so the UI can show/edit the
+        non-secret fields (bark server_url, smtp host/port/to, …) safely."""
+        return {k: v for k, v in (self.config or {}).items()
+                if k not in _NOTIFY_SECRET_KEYS}
+
+    @computed_field
+    @property
+    def has_secret(self) -> bool:
+        return any((self.config or {}).get(k) for k in _NOTIFY_SECRET_KEYS)
+
+
 # ── CronJob ───────────────────────────────────────────────────────────────────
 
 class CronJobCreate(BaseModel):

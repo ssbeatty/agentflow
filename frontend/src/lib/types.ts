@@ -236,6 +236,22 @@ export interface SearchConfig {
   updated_at: string | null;
 }
 
+// ── Notification channels (run-failure alerts) ────────────────────────────────
+
+export type NotificationChannelType = "pushplus" | "bark" | "email";
+
+export interface NotificationChannel {
+  id: string;
+  name: string;
+  type: NotificationChannelType;
+  enabled: boolean;
+  created_at: string;
+  /** config with secret sub-keys stripped (safe to display/edit) */
+  config_safe: Record<string, unknown>;
+  /** read-only: whether a provider secret (token / device_key / password) is set */
+  has_secret: boolean;
+}
+
 // ── Skill (Agent Skills: SKILL.md + supporting files) ─────────────────────────
 
 export interface SkillFile {

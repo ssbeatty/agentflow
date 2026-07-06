@@ -13,6 +13,7 @@ import type {
   AuthStatus, AuthResult, ApiKey, ApiKeyCreated,
   Secret,
   SearchConfig,
+  NotificationChannel,
   Skill, SkillSummary, SkillFile,
   MarketplaceSkill, RegistrySkill,
 } from "./types";
@@ -499,6 +500,23 @@ export const searchConfig = {
     req<{ ok: boolean; error?: string; results?: number }>(
       "/search-config/test", { method: "POST", body: JSON.stringify(data) },
     ),
+};
+
+// ── Notification channels (run-failure alerts) ────────────────────────────────
+
+export const notificationChannels = {
+  list: () => req<NotificationChannel[]>("/notification-channels"),
+
+  create: (data: { name: string; type: string; enabled?: boolean; config: Record<string, unknown> }) =>
+    req<NotificationChannel>("/notification-channels", { method: "POST", body: JSON.stringify(data) }),
+
+  update: (id: string, data: { name?: string; enabled?: boolean; config?: Record<string, unknown> }) =>
+    req<NotificationChannel>(`/notification-channels/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+
+  delete: (id: string) => req<void>(`/notification-channels/${id}`, { method: "DELETE" }),
+
+  test: (id: string) =>
+    req<{ ok: boolean; error?: string }>(`/notification-channels/${id}/test`, { method: "POST" }),
 };
 
 // ── AI Assistant (in-editor script-writing agent) ──────────────────────────────

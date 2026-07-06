@@ -126,6 +126,26 @@ def test_input_schema_mismatch_fails_before_running(db):
     assert db.query(Execution).filter_by(id=gid).first().status == "completed"
 
 
+def test_failure_triggers_notification_hook(db, monkeypatch):
+    # A final failure must fire the failure-notification hook wired into
+    # _finalize_run / _mark_failed. Record the call rather than actually sending.
+    called = []
+    monkeypatch.setattr(execution_engine, "schedule_failure_notification",
+                        lambda eid: called.append(eid))
+    execution = _run(db, "def run(input):\n    raise RuntimeError('boom')\n")
+    assert execution.status == "failed"
+    assert called == [execution.id], "a failed run must trigger the notification hook"
+
+
+def test_success_does_not_trigger_notification_hook(db, monkeypatch):
+    called = []
+    monkeypatch.setattr(execution_engine, "schedule_failure_notification",
+                        lambda eid: called.append(eid))
+    execution = _run(db, "def run(input):\n    return {'ok': True}\n")
+    assert execution.status == "completed"
+    assert called == [], "a successful run must not notify"
+
+
 def test_stopped_run_is_cancelled_not_failed(db):
     # Regression: stop_execution() kills the subprocess, which exits non-zero.
     # Without remembering the stop was deliberate, finalization marked it "failed"

@@ -1,0 +1,68 @@
+{
+  "header": {
+    "home": "Home",
+    "title": "Notifications",
+    "new": "New channel"
+  },
+  "intro": "Get alerted when a run fails. Every enabled channel is pinged on a final failure (after retries are exhausted); eval runs are excluded so graded test cases can't spam you.",
+  "empty": {
+    "text": "No notification channels yet.",
+    "cta": "Add a channel"
+  },
+  "types": {
+    "pushplus": "PushPlus",
+    "bark": "Bark",
+    "email": "Email"
+  },
+  "list": {
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "secretSet": "secret set",
+    "noSecret": "no secret",
+    "test": "Send test",
+    "edit": "Edit",
+    "delete": "Delete",
+    "created": "Added {{date}}"
+  },
+  "dialog": {
+    "createTitle": "New channel",
+    "editTitle": "Edit channel",
+    "nameLabel": "Name",
+    "namePlaceholder": "e.g. My phone",
+    "typeLabel": "Type",
+    "enabledLabel": "Enabled",
+    "secretKeep": "Leave a secret field blank to keep its current value."
+  },
+  "fields": {
+    "token": "Token",
+    "topic": "Topic (optional)",
+    "server_url": "Server URL",
+    "device_key": "Device Key",
+    "sound": "Sound (optional)",
+    "smtp_host": "SMTP host",
+    "smtp_port": "SMTP port",
+    "username": "Username",
+    "password": "Password",
+    "from_addr": "From address (optional)",
+    "to_addrs": "Recipients (comma-separated)",
+    "use_tls": "Use STARTTLS (uncheck for implicit SSL on port 465)"
+  },
+  "actions": {
+    "cancel": "Cancel",
+    "save": "Save"
+  },
+  "toast": {
+    "created": "Channel added",
+    "updated": "Channel saved",
+    "deleted": "Channel deleted",
+    "saveFailed": "Save failed",
+    "deleteFailed": "Delete failed",
+    "testOk": "Test sent — check your device",
+    "testFailed": "Test failed: {{error}}",
+    "toggleFailed": "Update failed"
+  },
+  "confirm": {
+    "deleteMessage": "Delete channel \"{{name}}\"?",
+    "deleteLabel": "Delete"
+  }
+}

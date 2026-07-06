@@ -68,7 +68,7 @@ class SchedulerService:
 
         db = SessionLocal()
         try:
-            exc = Execution(script_id=script_id, input_data=input_data)
+            exc = Execution(script_id=script_id, input_data=input_data, trigger="cron")
             db.add(exc)
             job = db.query(CronJob).filter_by(id=cron_job_id).first()
             if job:
