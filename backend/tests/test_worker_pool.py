@@ -153,6 +153,54 @@ def test_per_job_env_is_isolated():
     asyncio.run(go())
 
 
+def test_token_stream_not_corrupted_by_raw_double_emit():
+    """Regression: a warm worker must mark itself in-platform BEFORE importing
+    agentflow. agentflow.token() decides whether to ALSO write the raw content to
+    stdout (its non-platform fallback) from a module-level _IN_PLATFORM frozen at
+    import time. The worker imports agentflow at boot, before any job env carries
+    the execution id — so without the fix _IN_PLATFORM is False and token() emits
+    BOTH the `__AGENTFLOW__` protocol line AND a bare, newline-less
+    sys.stdout.write(content). The bare write glues onto the NEXT protocol line, so
+    every token after the first arrives as a corrupt raw line (`aa__AGENTFLOW__…`)
+    instead of a clean token event — exactly the chat-page corruption we saw once
+    warm workers were enabled."""
+    async def go():
+        sid = "wp-token"
+        main = (
+            "import agentflow\n"
+            "def run(input):\n"
+            "    for t in ['aa', 'bb', 'cc']:\n"
+            "        agentflow.token(t)\n"
+            "    return {'reply': 'aabbcc'}\n"
+        )
+        sdir = _setup_script(sid, main)
+        w = await worker_pool.manager.acquire(sid, "run", preheat=False)
+
+        rd = sdir / "runs" / "t1"
+        rd.mkdir(parents=True, exist_ok=True)
+        (rd / "_input.json").write_text("{}", encoding="utf-8")
+        lines: list[tuple[bool, str]] = []
+
+        async def handler(is_stderr, line):
+            lines.append((is_stderr, line))
+
+        job = {"job_id": "t", "run_dir": str(rd), "entry_fn": "run",
+               "env": {"AGENTFLOW_EXECUTION_ID": "t"}}
+        ok = await w.run_job(job, handler)
+        assert ok is True
+
+        tokens = [
+            json.loads(l[len(_PREFIX):]).get("content")
+            for _, l in lines
+            if l.startswith(_PREFIX) and json.loads(l[len(_PREFIX):]).get("type") == "token"
+        ]
+        assert tokens == ["aa", "bb", "cc"], tokens
+        # No non-protocol line may embed a protocol marker (the double-emit signature).
+        corrupt = [l for _, l in lines if not l.startswith(_PREFIX) and _PREFIX in l]
+        assert not corrupt, f"token() double-emitted raw content into the stream: {corrupt}"
+    asyncio.run(go())
+
+
 def test_engine_routes_through_worker_and_reuses(db, monkeypatch):
     """End-to-end: two runs of a warm script go through the pool, both complete,
     and the second reuses the first's worker (the whole point).

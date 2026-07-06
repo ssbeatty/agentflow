@@ -74,6 +74,16 @@ from pathlib import Path
 sys.path.insert(0, r"{backend_root}")
 sys.path.insert(0, r"{script_dir}")
 
+# agentflow.token()/log() decide whether to ALSO write raw text to stdout/stderr
+# based on a module-level `_IN_PLATFORM = bool(os.environ.get("AGENTFLOW_EXECUTION_ID"))`
+# evaluated ONCE at import time. The worker imports agentflow at boot — before any
+# job's env (which carries the real execution id) has arrived — so we must mark
+# "in platform" now. Otherwise token() double-emits: the `__AGENTFLOW__` protocol
+# line AND a bare, newline-less `sys.stdout.write(content)` that glues onto the
+# next protocol line and corrupts the stream. Each job overrides this with its
+# real id via the job env (so _exec_id()/artifacts still work per run).
+os.environ.setdefault("AGENTFLOW_EXECUTION_ID", "worker")
+
 _P = "{_PREFIX}"
 def _emit(d):
     print(_P + json.dumps(d, ensure_ascii=False), flush=True)
