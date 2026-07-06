@@ -274,7 +274,7 @@ async def run(input: dict) -> dict:
     except Exception as exc:  # fall back to a single non-streaming turn
         log("assistant astream failed, falling back to invoke: " + str(exc))
         result = agent.invoke({"messages": messages})
-        full = result["messages"][-1].content
+        full = _text_of(result["messages"][-1])
 
     return {"reply": full}
 '''

@@ -101,7 +101,7 @@ export default function FloatingAssistant() {
             setDragging(true);
             e.preventDefault();
           }}
-          title="拖拽调整大小"
+          title="Drag to resize"
           className="absolute top-0 left-0 z-10 h-5 w-5 cursor-nwse-resize"
         >
           <span className="absolute top-1 left-1 h-2 w-2 border-l-2 border-t-2 border-muted-foreground/40 rounded-tl-sm" />
@@ -125,7 +125,7 @@ export default function FloatingAssistant() {
       {!open && (
         <button
           onClick={openCard}
-          title="AI 助手"
+          title="AI Assistant"
           className="fixed bottom-5 right-5 z-50 h-12 w-12 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:scale-105 transition-transform"
         >
           <Sparkles className="h-5 w-5" />

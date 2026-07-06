@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Sparkles, Send, Square, Loader2, X, RotateCcw, FileDiff, Check,
-  AlertTriangle, PackagePlus, Eraser, Brain,
+  AlertTriangle, PackagePlus, Eraser, Brain, Plus, History, Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { DiffEditor } from "@monaco-editor/react";
@@ -53,9 +53,29 @@ interface Props {
 }
 
 const HISTORY_LIMIT = 16;
+const HISTORY_STORAGE_LIMIT = 60;
+const MAX_SESSIONS = 20;
 const REASONING_LEVELS = ["off", "low", "medium", "high"] as const;
 const REASONING_LABEL: Record<string, string> = { off: "off", low: "low", medium: "med", high: "high" };
 const DEFAULT_MODEL_VALUE = "__agentflow_default_model__";
+
+/** One archived chat thread for the current target (see the History dialog). */
+interface Session { id: string; title: string; updatedAt: number; messages: Msg[]; }
+
+function sessionTitle(msgs: Msg[]): string {
+  const text = (msgs.find((m) => m.role === "user")?.content || "").trim().replace(/\s+/g, " ");
+  if (!text) return "New chat";
+  return text.length > 48 ? `${text.slice(0, 48)}…` : text;
+}
+
+function relativeTime(ts: number): string {
+  const min = Math.round((Date.now() - ts) / 60000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  return `${Math.round(hr / 24)}d ago`;
+}
 
 interface ModelGroup {
   provider: string;
@@ -122,13 +142,27 @@ export default function AssistantPanel({
   const [reverting, setReverting] = useState(false);
   const turnBoundIdRef = useRef<string | null>(null);
 
+  // Archived past chats for the current target, browsable via the History dialog.
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+
   // first-run venv setup
   const [venvBusy, setVenvBusy] = useState(false);
   const [venvLines, setVenvLines] = useState<string[]>([]);
 
   const wsRef = useRef<WebSocket | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const tokenSeenRef = useRef(false);
+  // Mirrors the streaming assistant message's blocks, so finalize() can check
+  // whether a visible answer actually arrived without waiting on React state.
+  const liveBlocksRef = useRef<Block[]>([]);
+  // Whether the message list should auto-scroll to bottom on new content. Turns
+  // false the moment the user scrolls away from the bottom, and true again once
+  // they scroll back down — so reading scrollback never gets yanked away.
+  const stickToBottomRef = useRef(true);
+
+  // Per-target chat history key: separate threads per bound script/skill, one
+  // shared thread while unbound (global mode).
+  const historyKey = mode === "bound" && boundId ? `${boundKind}:${boundId}` : "global";
 
   useEffect(() => {
     assistantApi.info().then(setInfo).catch((e) => setInfoError(String(e)));
@@ -143,8 +177,16 @@ export default function AssistantPanel({
   }, []);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    if (stickToBottomRef.current) {
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    }
   }, [messages, diff]);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+  }, []);
 
   useEffect(() => () => { wsRef.current?.close(); }, []);
 
@@ -157,11 +199,71 @@ export default function AssistantPanel({
     }
   }, [sending, onBusyChange]);
 
-  // Switching bound target (navigating between pages) drops any stale diff.
+  // Switching bound target (navigating between pages) drops any stale diff and
+  // loads that target's persisted chat + archived sessions (see the save effects below).
   useEffect(() => {
     setDiff([]);
     setDiffForId(null);
-  }, [boundId]);
+    stickToBottomRef.current = true;
+    let restored: Msg[] = [];
+    try {
+      const raw = localStorage.getItem(`ag.assistantHistory.${historyKey}`);
+      const parsed = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(parsed)) restored = parsed.map((m: Msg) => ({ ...m, streaming: false }));
+    } catch { /* corrupt/unavailable storage — start fresh */ }
+    setMessages(restored);
+    let restoredSessions: Session[] = [];
+    try {
+      const raw = localStorage.getItem(`ag.assistantSessions.${historyKey}`);
+      const parsed = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(parsed)) restoredSessions = parsed;
+    } catch { /* corrupt/unavailable storage — start fresh */ }
+    setSessions(restoredSessions);
+  }, [historyKey]);
+
+  // Persist the current target's chat history / archived sessions on every change.
+  useEffect(() => {
+    try {
+      localStorage.setItem(`ag.assistantHistory.${historyKey}`, JSON.stringify(messages.slice(-HISTORY_STORAGE_LIMIT)));
+    } catch { /* storage full/unavailable — best effort */ }
+  }, [messages, historyKey]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`ag.assistantSessions.${historyKey}`, JSON.stringify(sessions.slice(0, MAX_SESSIONS)));
+    } catch { /* storage full/unavailable — best effort */ }
+  }, [sessions, historyKey]);
+
+  // Start a fresh thread for this target, archiving the current one (if any).
+  const newChat = useCallback(() => {
+    if (sending || messages.length === 0) return;
+    const snapshot = messages.slice(-HISTORY_STORAGE_LIMIT);
+    setSessions((prev) => [{ id: uid(), title: sessionTitle(snapshot), updatedAt: Date.now(), messages: snapshot }, ...prev].slice(0, MAX_SESSIONS));
+    setMessages([]);
+    setDiff([]);
+    setDiffForId(null);
+  }, [sending, messages]);
+
+  // Swap in an archived session as the current thread, archiving the outgoing one first.
+  const openSession = useCallback((session: Session) => {
+    if (sending) return;
+    setSessions((prev) => {
+      let next = prev.filter((s) => s.id !== session.id);
+      if (messages.length > 0) {
+        const snapshot = messages.slice(-HISTORY_STORAGE_LIMIT);
+        next = [{ id: uid(), title: sessionTitle(snapshot), updatedAt: Date.now(), messages: snapshot }, ...next];
+      }
+      return next.slice(0, MAX_SESSIONS);
+    });
+    setMessages(session.messages.map((m) => ({ ...m, streaming: false })));
+    setDiff([]);
+    setDiffForId(null);
+    setHistoryOpen(false);
+  }, [sending, messages]);
+
+  const deleteSession = useCallback((id: string) => {
+    setSessions((prev) => prev.filter((s) => s.id !== id));
+  }, []);
 
   // ── venv setup (reuses the install WS) ──────────────────────────────────────
   const initVenv = useCallback(() => {
@@ -187,8 +289,14 @@ export default function AssistantPanel({
   }, [info, venvBusy]);
 
   // ── turn lifecycle ──────────────────────────────────────────────────────────
+  // A turn can stream reasoning (<think>…</think>) and still end with no visible
+  // answer — e.g. a reasoning model that runs out of output length while still
+  // "thinking". Trusting "some token arrived" isn't enough; check whether the
+  // streamed blocks actually contain a non-empty answer before skipping the
+  // authoritative-reply fetch, so the user is never left staring at silence.
   const finalize = useCallback(async (asstId: string, executionId: string) => {
-    if (!tokenSeenRef.current) {
+    const hasAnswer = answerFromBlocks(liveBlocksRef.current).trim().length > 0;
+    if (!hasAnswer) {
       try {
         const exc = await executionsApi.get(executionId);
         const reply = ((): string => {
@@ -197,9 +305,20 @@ export default function AssistantPanel({
           if (typeof od === "string") return od;
           return "";
         })();
-        setMessages((prev) => prev.map((m) => m.id === asstId
-          ? { ...m, content: reply, blocks: reply ? [{ type: "text", content: reply }] : m.blocks, error: exc.error ?? m.error, streaming: false }
-          : m));
+        setMessages((prev) => prev.map((m) => {
+          if (m.id !== asstId) return m;
+          if (reply.trim()) {
+            // Keep any reasoning we already rendered; append the authoritative answer.
+            return { ...m, blocks: [...m.blocks, { type: "text", content: reply }], error: exc.error ?? m.error, streaming: false };
+          }
+          return {
+            ...m,
+            error: exc.error ?? m.error ?? (m.blocks.length
+              ? "The model finished thinking but returned no answer — it may have run out of output length. Try again, or lower the Thinking level."
+              : undefined),
+            streaming: false,
+          };
+        }));
       } catch {
         setMessages((prev) => prev.map((m) => m.id === asstId ? { ...m, streaming: false } : m));
       }
@@ -222,17 +341,20 @@ export default function AssistantPanel({
   }, [onAfterTurn]);
 
   const openWs = useCallback((executionId: string, asstId: string) => {
-    tokenSeenRef.current = false;
+    liveBlocksRef.current = [];
     const proto = window.location.protocol === "https:" ? "wss" : "ws";
     const ws = new WebSocket(`${proto}://${window.location.host}/ws/executions/${executionId}`);
     wsRef.current = ws;
     ws.onmessage = (e) => {
       let evt: WsEvent;
       try { evt = JSON.parse(e.data); } catch { return; }
-      if (evt.type === "token") tokenSeenRef.current = true;
       if (evt.type === "token" || evt.type === "trace") {
-        setMessages((prev) => prev.map((m) => m.id === asstId
-          ? { ...m, blocks: reduceEvent(m.blocks, evt), streaming: true } : m));
+        setMessages((prev) => prev.map((m) => {
+          if (m.id !== asstId) return m;
+          const blocks = reduceEvent(m.blocks, evt);
+          liveBlocksRef.current = blocks;
+          return { ...m, blocks, streaming: true };
+        }));
       } else if (evt.type === "status") {
         const done = ["completed", "failed", "cancelled"].includes(evt.status);
         if (done) {
@@ -265,6 +387,7 @@ export default function AssistantPanel({
 
     const userMsg: Msg = { id: uid(), role: "user", content: msg, blocks: [] };
     const asstId = uid();
+    stickToBottomRef.current = true;   // sending a message always jumps the view to it
     setMessages((prev) => [...prev, userMsg, { id: asstId, role: "assistant", content: "", blocks: [], streaming: true }]);
     setInput("");
     setDiff([]);
@@ -319,27 +442,37 @@ export default function AssistantPanel({
       <div className="flex items-center gap-2 pl-5 pr-3 py-2 border-b border-border shrink-0">
         <Sparkles className="h-4 w-4 text-primary shrink-0" />
         <div className="min-w-0 leading-tight">
-          <div className="text-sm font-medium">AI 助手</div>
+          <div className="text-sm font-medium">AI Assistant</div>
           <div className="text-[10px] text-muted-foreground truncate">
             {mode === "bound"
-              ? <>编辑中 · <span className="text-foreground/80">{boundLabel || boundKind}</span> · {boundKind}</>
-              : "全局 · 未绑定项目"}
+              ? <>Editing · <span className="text-foreground/80">{boundLabel || boundKind}</span> · {boundKind}</>
+              : "Global · No project bound"}
           </div>
         </div>
         <div className="ml-auto flex items-center gap-1 shrink-0">
+          {sessions.length > 0 && (
+            <button title="Chat history" onClick={() => setHistoryOpen(true)} className="p-1 text-muted-foreground hover:text-foreground">
+              <History className="h-3.5 w-3.5" />
+            </button>
+          )}
+          {messages.length > 0 && (
+            <button title="New chat" onClick={newChat} className="p-1 text-muted-foreground hover:text-foreground">
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+          )}
           {messages.length > 0 && (
             <button title="Clear chat" onClick={() => { setMessages([]); setDiff([]); setDiffForId(null); }} className="p-1 text-muted-foreground hover:text-foreground">
               <Eraser className="h-3.5 w-3.5" />
             </button>
           )}
-          <button title="收起" onClick={onClose} className="p-1 text-muted-foreground hover:text-foreground">
+          <button title="Collapse" onClick={onClose} className="p-1 text-muted-foreground hover:text-foreground">
             <X className="h-4 w-4" />
           </button>
         </div>
       </div>
 
       {/* Body */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-4 min-h-0">
+      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-3 py-3 space-y-4 min-h-0">
         {infoError && (
           <div className="text-xs text-destructive flex items-start gap-1.5">
             <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />Failed to load assistant: {infoError}
@@ -366,12 +499,12 @@ export default function AssistantPanel({
           <div className="text-xs text-muted-foreground/70 leading-relaxed space-y-2 pt-2">
             {mode === "global" ? (
               <>
-                <p>当前<b className="text-foreground">未绑定项目</b>。我可以帮你新建或修改脚本 / Skill。试试:</p>
+                <p>Currently <b className="text-foreground">not bound to a project</b>. I can help you create or edit a script / skill. Try:</p>
                 <ul className="space-y-1 pl-1">
-                  <li>· “新建一个每天抓取某网站并汇总的脚本”</li>
-                  <li>· “打开某个脚本 / Skill 页面,我会自动只改那一个”</li>
+                  <li>· "Create a script that scrapes a website daily and summarizes it"</li>
+                  <li>· "Open a script / skill page and I'll automatically scope my edits to just that one"</li>
                 </ul>
-                <p className="text-muted-foreground/50">进入某个脚本 / Skill 的编辑页时,我会自动绑定它,只在它上面改。</p>
+                <p className="text-muted-foreground/50">When you open a script / skill's edit page, I'll automatically bind to it and only change that one.</p>
               </>
             ) : (
               <>
@@ -499,9 +632,9 @@ export default function AssistantPanel({
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
             placeholder={info?.venv_ready
               ? (mode === "global"
-                  ? "让我帮你新建 / 修改脚本或 Skill…(Enter 发送)"
-                  : `让我帮你写 / 跑 / 调这个 ${boundKind}…(Enter 发送)`)
-              : "先初始化环境再开始…"}
+                  ? "Let me help you create / edit a script or skill… (Enter to send)"
+                  : `Let me help you write / run / debug this ${boundKind}… (Enter to send)`)
+              : "Initialize the environment first…"}
             disabled={!info?.venv_ready || sending}
             rows={2}
             className="w-full resize-none rounded-lg bg-secondary/30 border border-border/60 px-3 py-2 pr-11 text-sm focus:outline-none focus:border-primary/50 disabled:opacity-50 placeholder:text-muted-foreground/50"
@@ -549,6 +682,32 @@ export default function AssistantPanel({
                 {reverting ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}Revert this file
               </Button>
               <Button size="sm" onClick={() => setDiffOpen(false)}><Check className="h-3 w-3" />Close</Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Chat history: past threads for this target, reopen or delete */}
+      <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
+        <DialogContent className="max-w-sm w-[90vw]">
+          <DialogHeader>
+            <DialogTitle className="text-sm flex items-center gap-2"><History className="h-4 w-4" />Chat history</DialogTitle>
+          </DialogHeader>
+          {sessions.length === 0 ? (
+            <p className="text-xs text-muted-foreground py-4 text-center">No saved chats yet.</p>
+          ) : (
+            <div className="max-h-80 overflow-y-auto space-y-1">
+              {sessions.map((s) => (
+                <div key={s.id} className="flex items-center gap-2 rounded-md border border-border/50 px-2.5 py-1.5 hover:border-border">
+                  <button onClick={() => openSession(s)} className="min-w-0 flex-1 text-left">
+                    <div className="text-xs text-foreground/90 truncate">{s.title}</div>
+                    <div className="text-[10px] text-muted-foreground/60">{relativeTime(s.updatedAt)}</div>
+                  </button>
+                  <button onClick={() => deleteSession(s.id)} title="Delete" className="p-1 text-muted-foreground hover:text-destructive shrink-0">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
             </div>
           )}
         </DialogContent>

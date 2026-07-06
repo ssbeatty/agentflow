@@ -475,6 +475,15 @@ def _apply_reasoning(extra: dict, provider: str, base_url: "str | None", level: 
             eb = dict(extra.get("extra_body") or {})
             eb.setdefault("enable_thinking", True)
             extra["extra_body"] = eb
+            # Unlike Anthropic's budget_tokens, this gateway toggle has no explicit
+            # thinking budget — the whole completion (thinking + answer) shares one
+            # max_tokens pool. Reasoning models (Qwen3/GLM/…) can burn through a
+            # small/default max_tokens entirely on the hidden <think> section,
+            # leaving no room for the visible answer. Give it the same floor as the
+            # Anthropic budget so a long think doesn't starve the answer.
+            budget = _REASONING_BUDGET[level]
+            if not extra.get("max_tokens") or extra["max_tokens"] <= budget:
+                extra["max_tokens"] = budget + 4096
         else:
             extra.setdefault("reasoning_effort", level)
 
