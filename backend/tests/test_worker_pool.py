@@ -252,6 +252,87 @@ def test_engine_routes_through_worker_and_reuses(db, monkeypatch):
     assert w is not None and w.jobs_run == 2
 
 
+def test_concurrent_acquire_spawns_single_worker():
+    """Regression (Bug #4 — cold-boot stampede): N concurrent acquire() calls for
+    the same not-yet-warm script must serialize and share ONE worker. Without the
+    per-script lock in acquire(), each caller saw the others' still-booting worker
+    as 'not alive', killed it mid-boot, and spawned its own — so all but the last
+    raised 'worker exited during boot' (this is exactly what broke eval, whose
+    cases run concurrently)."""
+    async def go():
+        sid = "wp-race"
+        _setup_script(sid, ECHO_MAIN)
+        workers = await asyncio.gather(
+            *[worker_pool.manager.acquire(sid, "run", preheat=False) for _ in range(5)]
+        )
+        # all callers got the very same worker instance (no stampede)
+        assert all(w is workers[0] for w in workers)
+        assert worker_pool.manager.get(sid) is workers[0]
+        assert workers[0].alive()
+    asyncio.run(go())
+
+
+def test_paths_reflect_per_job_run_dir():
+    """Regression (Bug #1): agentflow.paths.run_dir / .workspace were snapshotted
+    at worker BOOT — before any job's AGENTFLOW_RUN_DIR / _WORKSPACE_DIR env
+    existed — freezing them to the boot cwd (the script dir) for every reused job.
+    They must resolve lazily so each job sees its own dirs (else image()/artifacts,
+    which write under paths.run_dir, land outside the served dir and 404)."""
+    async def go():
+        sid = "wp-paths"
+        main = (
+            "import agentflow\n"
+            "def run(input):\n"
+            "    return {'run_dir': str(agentflow.paths.run_dir),\n"
+            "            'workspace': str(agentflow.paths.workspace)}\n"
+        )
+        sdir = _setup_script(sid, main)
+        w = await worker_pool.manager.acquire(sid, "run", preheat=False)
+
+        rd = sdir / "runs" / "e1"
+        ws = sdir / "workspace"
+        rd.mkdir(parents=True, exist_ok=True)
+        (rd / "_input.json").write_text("{}", encoding="utf-8")
+        got: dict = {}
+
+        async def handler(is_stderr, line):
+            if line.startswith(_PREFIX):
+                p = json.loads(line[len(_PREFIX):])
+                if p.get("type") == "result":
+                    got.update(p["data"])
+
+        # job env carries the per-run dirs exactly like execution_engine does
+        job = {"job_id": "p", "run_dir": str(rd), "entry_fn": "run",
+               "env": {"AGENTFLOW_EXECUTION_ID": "p",
+                       "AGENTFLOW_RUN_DIR": str(rd),
+                       "AGENTFLOW_WORKSPACE_DIR": str(ws)}}
+        assert await w.run_job(job, handler) is True
+        assert got["run_dir"] == str(rd)          # was str(sdir) before the fix
+        assert got["workspace"] == str(ws)
+        assert got["run_dir"] != str(sdir)
+    asyncio.run(go())
+
+
+def test_worker_resets_injected_tools_to_empty_list_not_none():
+    """Regression (Bug #3): the worker resets agentflow._injected_tools per job.
+    With no MCP configured it must be [] (an iterable get_tools()/get_agent() can
+    extend), NOT None — otherwise the most common (no-MCP) agent script crashes
+    with 'NoneType object is not iterable'."""
+    async def go():
+        sid = "wp-injected"
+        main = (
+            "import agentflow\n"
+            "def run(input):\n"
+            "    return {'injected': agentflow._injected_tools}\n"
+        )
+        sdir = _setup_script(sid, main)
+        w = await worker_pool.manager.acquire(sid, "run", preheat=False)
+        r = await _run_job(w, sdir / "runs" / "e1", {})
+        assert r["ok"] is True
+        assert r["data"] == {"injected": []}      # was null (None) before the fix
+    asyncio.run(go())
+
+
 def test_worker_enabled_gating(db):
     from app.models import Script
     # flag on (fixture), warm script → enabled

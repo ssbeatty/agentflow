@@ -109,7 +109,8 @@ LLMs (configured as channels by the platform admin; see `get_platform_context`):
 
 ```python
 llm = get_llm()                     # the instance's default model
-llm = get_llm("gpt-4o")             # by model id, case-insensitive
+llm = get_llm("gpt-4o")             # by model id, case-insensitive (an
+                                    # unconfigured id raises ValueError — check list_llms())
 llm = get_llm(reasoning="medium")   # thinking mode: "off"|"low"|"medium"|"high"
 llm = get_llm(reasoning="medium", stream_reasoning=True)  # + auto-stream the
                                     # chain-of-thought to the chat UI as <think>

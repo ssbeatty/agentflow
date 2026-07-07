@@ -142,8 +142,10 @@ async def _run_one(job):
         os.chdir(run_dir)
     except Exception:
         pass
-    # reset per-job global state so runs don't bleed into each other
-    _af._injected_tools = None
+    # reset per-job global state so runs don't bleed into each other.
+    # MUST be [] (not None): with no MCP configured this stays as-is, and
+    # get_tools()/get_agent() iterate it — None would crash a no-MCP agent.
+    _af._injected_tools = []
     _reset_usage()
     ok = True
     try:
@@ -385,42 +387,59 @@ class WorkerManager:
     def __init__(self) -> None:
         self._workers: dict[str, _Worker] = {}
         self._reaper: asyncio.Task | None = None
+        self._locks: dict[str, asyncio.Lock] = {}
+
+    def _lock_for(self, script_id: str) -> asyncio.Lock:
+        lk = self._locks.get(script_id)
+        if lk is None:
+            lk = asyncio.Lock()
+            self._locks[script_id] = lk
+        return lk
 
     async def acquire(self, script_id: str, entry_fn: str, preheat: bool, base_env: dict | None = None) -> _Worker:
         """Return a live worker for the script, spawning one if needed. Reuses an
         existing worker only if it's alive, on the current venv python, and under
-        the max-jobs cap; otherwise it's retired and replaced."""
-        python = get_venv_python(script_id) if venv_exists(script_id) else Path(sys.executable)
-        script_dir = get_script_dir(script_id)
+        the max-jobs cap; otherwise it's retired and replaced.
 
-        w = self._workers.get(script_id)
-        stale = (
-            w is not None and (
-                not w.alive()
-                or str(w.python) != str(python)
-                or (WORKER_MAX_JOBS > 0 and w.jobs_run >= WORKER_MAX_JOBS)
+        Serialized per script: without this lock a cold-boot stampede (eval's
+        concurrent cases, or concurrent API runs of the same script) had each
+        caller see the others' still-booting worker as "not alive", kill it
+        mid-boot, and spawn its own — so all but the last raised "worker exited
+        during boot". The first caller now boots while the rest await, then reuse
+        the warm worker. Job execution stays concurrent-safe via the per-worker
+        lock in run_job(); this only guards the spawn/reuse decision."""
+        async with self._lock_for(script_id):
+            python = get_venv_python(script_id) if venv_exists(script_id) else Path(sys.executable)
+            script_dir = get_script_dir(script_id)
+
+            w = self._workers.get(script_id)
+            stale = (
+                w is not None and (
+                    not w.alive()
+                    or str(w.python) != str(python)
+                    or (WORKER_MAX_JOBS > 0 and w.jobs_run >= WORKER_MAX_JOBS)
+                )
             )
-        )
-        if stale and w is not None:
-            w.kill()
-            self._workers.pop(script_id, None)
-            metrics.record_worker_retirement("stale")
-            w = None
-        if w is not None:
-            metrics.record_worker_acquire("reused")
-            return w
+            if stale and w is not None:
+                w.kill()
+                self._workers.pop(script_id, None)
+                metrics.record_worker_retirement("stale")
+                w = None
+            if w is not None:
+                metrics.record_worker_acquire("reused")
+                return w
 
-        w = _Worker(script_id, python, script_dir, entry_fn, preheat)
-        self._workers[script_id] = w
-        try:
-            await w.start(base_env or {})
-        except Exception:
-            self._workers.pop(script_id, None)
-            metrics.record_worker_acquire("failed")
-            raise
-        metrics.record_worker_acquire("spawned")
-        self._ensure_reaper()
-        return w
+            w = _Worker(script_id, python, script_dir, entry_fn, preheat)
+            self._workers[script_id] = w
+            try:
+                await w.start(base_env or {})
+            except Exception:
+                self._workers.pop(script_id, None)
+                metrics.record_worker_acquire("failed")
+                raise
+            metrics.record_worker_acquire("spawned")
+            self._ensure_reaper()
+            return w
 
     def get(self, script_id: str) -> _Worker | None:
         return self._workers.get(script_id)
@@ -441,6 +460,7 @@ class WorkerManager:
             w.kill()
         metrics.record_worker_retirement("shutdown", len(workers))
         self._workers.clear()
+        self._locks.clear()
         if self._reaper is not None and not self._reaper.done():
             self._reaper.cancel()
         self._reaper = None

@@ -15,7 +15,6 @@ import sys
 import json
 import uuid as _uuid
 from pathlib import Path
-from types import SimpleNamespace
 
 _PREFIX = "__AGENTFLOW__"
 _IN_PLATFORM = bool(os.environ.get("AGENTFLOW_EXECUTION_ID"))
@@ -48,12 +47,38 @@ def _p(env_key: str) -> Path:
     return Path(v) if v else Path.cwd()
 
 
-paths = SimpleNamespace(
-    run_dir=_p("AGENTFLOW_RUN_DIR"),
-    workspace=_p("AGENTFLOW_WORKSPACE_DIR"),
-    script_dir=_p("AGENTFLOW_SCRIPT_DIR"),
-    uploads=_p("AGENTFLOW_UPLOADS_DIR"),
-)
+class _Paths:
+    """Run paths, resolved lazily on **every access** (never snapshotted).
+
+    This must not be a value snapshotted at import time. Under the warm-worker
+    pool (services/worker_pool.py) this module is imported ONCE at worker boot —
+    before any job's per-run env (AGENTFLOW_RUN_DIR / AGENTFLOW_WORKSPACE_DIR)
+    exists — and then reused for every subsequent job. A snapshot would freeze
+    all paths to the boot-time cwd (the script dir) for the whole life of the
+    worker, so `paths.run_dir` / `paths.workspace` would silently point at the
+    wrong directory on every reused run (and `image()` / artifacts, which write
+    under `paths.run_dir`, would land out of the served dir and 404). Resolving
+    on access keeps them correct for both the one-shot runner and the worker.
+    """
+
+    @property
+    def run_dir(self) -> Path:
+        return _p("AGENTFLOW_RUN_DIR")
+
+    @property
+    def workspace(self) -> Path:
+        return _p("AGENTFLOW_WORKSPACE_DIR")
+
+    @property
+    def script_dir(self) -> Path:
+        return _p("AGENTFLOW_SCRIPT_DIR")
+
+    @property
+    def uploads(self) -> Path:
+        return _p("AGENTFLOW_UPLOADS_DIR")
+
+
+paths = _Paths()
 
 
 # ── Uploaded-file wrapper ──────────────────────────────────────────────────────
@@ -664,6 +689,17 @@ def get_llm(name: str = "default", reasoning=None, stream_reasoning: bool = Fals
             raw = os.environ.get(candidates[0])
             print(f"[agentflow] no default LLM flagged; using {candidates[0]}", file=sys.stderr)
     if not raw:
+        # A specific model was asked for but isn't configured: fail loudly with the
+        # real cause (typo'd / unconfigured id) instead of returning None and
+        # letting the caller hit a confusing `'NoneType' has no attribute 'invoke'`
+        # later. `get_llm()` (default) still returns None when no LLM exists at all.
+        if name != "default":
+            available = list_llms()
+            raise ValueError(
+                f"LLM model {name!r} is not configured on this AgentFlow instance"
+                + (f"; available models: {available}" if available else "")
+                + ". Check the model id (see list_llms()) or configure a channel in Settings."
+            )
         return None
     try:
         cfg = json.loads(raw)
@@ -1094,12 +1130,17 @@ def get_tools(
         tools = get_tools(servers=["tavily"])    # specific server only
     """
     result = list(_get_builtin_tools()) if include_builtins else []
+    # `_injected_tools` is normally a list (empty when no MCP server is bound).
+    # Guard against None so get_tools()/get_agent() never crash with "NoneType is
+    # not iterable": the warm worker resets this global per job and a no-MCP run
+    # leaves it unset, so a bound-to-nothing agent must still get the builtins.
+    injected = _injected_tools or []
     if servers is None:
-        to_inject = _injected_tools
+        to_inject = injected
     else:
         server_set = set(servers)
         to_inject = [
-            t for t in _injected_tools
+            t for t in injected
             # langchain-mcp-adapters prefixes tool names with "<server>__<tool>"
             if (getattr(t, "name", "") or "").split("__")[0] in server_set
         ]
