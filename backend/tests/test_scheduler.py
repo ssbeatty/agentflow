@@ -53,6 +53,25 @@ def test_effective_timezone_always_round_trips(monkeypatch):
     datetime.now(ZoneInfo(name))  # must not raise
 
 
+def test_upsert_job_trigger_carries_configured_timezone(monkeypatch):
+    """Regression: a pre-constructed CronTrigger does NOT inherit the scheduler's
+    default timezone — with no explicit tz it locks in `get_localzone()` at
+    creation. So upsert_job MUST pass the scheduler tz into from_crontab, else
+    SCHEDULER_TIMEZONE is silently ignored and cron fires in the host-local zone
+    (UTC on the slim image). We assert with a configured zone DIFFERENT from this
+    host's local zone, so a regression (trigger following local) is caught."""
+    monkeypatch.setattr(settings, "scheduler_timezone", "America/New_York")
+    svc = sched.SchedulerService()
+
+    captured = {}
+    monkeypatch.setattr(svc._scheduler, "get_job", lambda jid: None)
+    monkeypatch.setattr(svc._scheduler, "add_job",
+                        lambda func, trigger, **kw: captured.update(trigger=trigger))
+
+    svc.upsert_job("cj1", "s1", "0 9 * * *", {})
+    assert str(captured["trigger"].timezone) == "America/New_York"
+
+
 def test_timezone_endpoint_shape(monkeypatch):
     monkeypatch.setattr(settings, "scheduler_timezone", "Asia/Shanghai")
     from app.routers import cron_jobs

@@ -59,9 +59,13 @@ class SchedulerService:
         job_id = f"cron_{cron_job_id}"
         if self._scheduler.get_job(job_id):
             self._scheduler.remove_job(job_id)
+        # Pass the scheduler's timezone EXPLICITLY: a pre-constructed
+        # CronTrigger instance does NOT inherit the scheduler default — with no
+        # timezone it locks in `get_localzone()` at creation, so SCHEDULER_TIMEZONE
+        # would be silently ignored (fires in the container-local zone / UTC).
         self._scheduler.add_job(
             self._fire,
-            CronTrigger.from_crontab(cron_expr),
+            CronTrigger.from_crontab(cron_expr, timezone=self._scheduler.timezone),
             id=job_id,
             args=[cron_job_id, script_id, input_data],
             replace_existing=True,
