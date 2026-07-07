@@ -79,6 +79,15 @@ async def lifespan(app: FastAPI):
         logger.exception("Assistant seed skipped")
     finally:
         db.close()
+
+    # Fallback for the async script-delete path: reclaim any orphaned
+    # data/scripts/<id> folder a background delete never finished (crash /
+    # Windows file lock). Fire-and-forget in a worker thread so a stale
+    # hundreds-of-MB venv can neither slow startup nor block the event loop;
+    # scheduled AFTER seed_assistant so the assistant — and every live script —
+    # has a DB row and is protected by the time the sweep queries them.
+    asyncio.create_task(_sweep_orphan_dirs())
+
     scheduler_service.start()
     logger.info("Scheduler started")
 
@@ -106,6 +115,28 @@ async def lifespan(app: FastAPI):
         except Exception:
             pass
         logger.info("AgentFlow backend shut down")
+
+
+async def _sweep_orphan_dirs() -> None:
+    """Reclaim orphaned script folders (the async-delete fallback) off the
+    startup critical path. A stale orphan can be a hundreds-of-MB venv, so run
+    the sweep in a worker thread — its rmtree never blocks the event loop — and
+    fire-and-forget so it never delays readiness. Uses its own session (a
+    SQLAlchemy session isn't safe to hand across threads)."""
+    def _run() -> int:
+        db = SessionLocal()
+        try:
+            from services.script_cleanup import sweep_orphan_script_dirs
+            return sweep_orphan_script_dirs(db)
+        finally:
+            db.close()
+
+    try:
+        n = await asyncio.to_thread(_run)
+        if n:
+            logger.info("Reclaimed {} orphaned script folder(s)", n)
+    except Exception:  # never let cleanup surface as an error
+        logger.exception("Orphaned script-dir sweep skipped")
 
 
 async def _preheat_keep_warm() -> None:

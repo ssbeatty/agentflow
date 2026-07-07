@@ -1,5 +1,4 @@
 import json
-import shutil
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse
@@ -9,7 +8,6 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.config import DATA_DIR
 from app.database import get_db, SessionLocal
 from app.models import Script, ScriptFile, ScriptRevision, ScriptInputPreset, Execution
 from app.schemas import (
@@ -91,7 +89,7 @@ def update_script(script_id: str, body: ScriptUpdate, db: Session = Depends(get_
 
 
 @router.delete("/{script_id}", status_code=204)
-async def delete_script(script_id: str, db: Session = Depends(get_db)):
+async def delete_script(script_id: str, background: BackgroundTasks, db: Session = Depends(get_db)):
     script = _get_or_404(script_id, db)
     name = script.name
 
@@ -122,12 +120,15 @@ async def delete_script(script_id: str, db: Session = Depends(get_db)):
 
     db.delete(script)  # cascade removes files/executions/logs/cron/revisions/presets rows
     db.commit()
-
-    # Remove the on-disk folder too (.venv / runs / workspace / materialized
-    # files). Without this the whole dir — the venv alone is hundreds of MB —
-    # would leak forever under data/scripts/<id>/ on every script delete.
-    shutil.rmtree(DATA_DIR / script_id, ignore_errors=True)
     logger.info("Script deleted: {} ({})", script_id, name)
+
+    # Reclaim the on-disk folder (.venv / runs / workspace / materialized files)
+    # OFF the request path: the venv alone is hundreds of MB, so an inline
+    # rmtree made this endpoint slow. The DB row is already gone (UI updates
+    # now); a BackgroundTask frees the bytes after the response. If it never
+    # finishes (crash / Windows file lock leaving a partial folder), the startup
+    # `sweep_orphan_script_dirs` fallback reclaims the leftover as an orphan.
+    background.add_task(_delete_script_dir_bg, script_id)
 
 
 # ── File management ────────────────────────────────────────────────────────────
@@ -446,6 +447,17 @@ def _refresh_schema_bg(script_id: str) -> None:
         logger.exception("[script {}] background schema refresh failed", script_id)
     finally:
         db.close()
+
+
+def _delete_script_dir_bg(script_id: str) -> None:
+    """Background: reclaim a deleted script's on-disk folder (.venv / runs / …)
+    after the response is sent. Best-effort — the startup orphan sweep is the
+    fallback for anything left behind."""
+    try:
+        from services.script_cleanup import delete_script_dir
+        delete_script_dir(script_id)
+    except Exception:
+        logger.exception("[script {}] background folder delete failed", script_id)
 
 
 def _invalidate_worker(script_id: str) -> None:
