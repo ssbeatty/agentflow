@@ -11,9 +11,39 @@ from apscheduler.triggers.cron import CronTrigger
 log = logging.getLogger(__name__)
 
 
+def _resolve_timezone():
+    """Timezone the scheduler should interpret crontabs in.
+
+    ``SCHEDULER_TIMEZONE`` (an IANA name like ``Asia/Shanghai``) wins; empty →
+    return ``None`` so APScheduler follows the process/container local zone (the
+    standard ``TZ`` env var, or UTC if unset). A bad/unresolvable name never
+    crashes startup — we log a warning and fall back to local. Requires the
+    ``tzdata`` package so named zones resolve on the slim docker image.
+    """
+    from app.config import settings
+    name = (settings.scheduler_timezone or "").strip()
+    if not name:
+        return None
+    try:
+        from zoneinfo import ZoneInfo
+        return ZoneInfo(name)
+    except Exception as e:  # ZoneInfoNotFoundError, bad name, missing tzdata …
+        log.warning("Invalid SCHEDULER_TIMEZONE %r (%s); using local timezone", name, e)
+        return None
+
+
 class SchedulerService:
     def __init__(self):
-        self._scheduler = AsyncIOScheduler()
+        tz = _resolve_timezone()
+        self._scheduler = AsyncIOScheduler(timezone=tz) if tz is not None else AsyncIOScheduler()
+        log.info("Scheduler timezone: %s", self.effective_timezone())
+
+    def effective_timezone(self) -> str:
+        """IANA name of the timezone cron jobs actually fire in (for the UI)."""
+        try:
+            return str(self._scheduler.timezone)
+        except Exception:
+            return "UTC"
 
     def start(self) -> None:
         self._scheduler.start()

@@ -247,6 +247,8 @@ AgentFlow **serves** an MCP endpoint (distinct from *consuming* external MCP ser
 
 Backend uses naive `datetime.utcnow()` everywhere (stored without TZ). Frontend `formatDate` / `toLocalDate` in `frontend/src/lib/utils.ts` append `Z` to TZ-less strings before parsing. **Don't change one side without the other**, or times will silently shift 8 hours.
 
+**Cron scheduler timezone** is a *separate* axis (it only decides *when a crontab fires*, never how a timestamp is stored/shown — those stay UTC). `services/scheduler.py::_resolve_timezone()` reads the `SCHEDULER_TIMEZONE` setting (an IANA name, `app/config.py`); blank → APScheduler follows the process/container local zone (the standard `TZ` env), which is **UTC on the slim docker image unless set**. Both knobs need the tz database: `tzdata` is a pinned backend dep (`requirements.txt`) so `zoneinfo.ZoneInfo("Asia/Shanghai")` resolves even though `python:3.12-slim` ships no system tzdata and Linux `tzlocal` doesn't pull it in. A bad `SCHEDULER_TIMEZONE` never crashes startup — it warns and falls back to local. `scheduler_service.effective_timezone()` exposes the resolved zone; `GET /api/cron-jobs/timezone` returns `{timezone, utc_offset, configured}` and the script-page Schedule tab shows a "Times are interpreted in …" hint so users know which zone `0 9 * * *` means. `docker-compose.yml` documents both env knobs. Tests: `tests/test_scheduler.py`.
+
 ### Internationalization (i18n) — English/Chinese UI
 
 The frontend UI supports English + Chinese, switchable at runtime, on a **static-export** Next.js app (no server, no `[locale]` routing/middleware) — so it's built as a plain client-side `i18next` + `react-i18next` + `i18next-browser-languagedetector` setup, not `next-intl`'s routing-based model.

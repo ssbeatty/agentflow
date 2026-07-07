@@ -1064,10 +1064,12 @@ function ScheduleTab({ scriptId }: { scriptId: string }) {
   const [editJson, setEditJson] = useState("");
   const [editError, setEditError] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
+  const [tz, setTz] = useState<{ timezone: string; utc_offset: string | null } | null>(null);
 
   useEffect(() => {
     cronJobs.list(scriptId).then(setJobs).catch(() => null);
     inputPresets.list(scriptId).then(setPresets).catch(() => null);
+    cronJobs.timezone().then(setTz).catch(() => null);
   }, [scriptId]);
 
   async function add() {
@@ -1166,6 +1168,13 @@ function ScheduleTab({ scriptId }: { scriptId: string }) {
               {adding ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
             </Button>
           </div>
+          {tz && (
+            <p className="text-[10px] text-muted-foreground/70">
+              {t("schedule.timezoneHint", {
+                tz: tz.timezone + (tz.utc_offset ? ` (UTC${tz.utc_offset})` : ""),
+              })}
+            </p>
+          )}
           <div className="space-y-1">
             <div className="flex items-center justify-between">
               <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/70">

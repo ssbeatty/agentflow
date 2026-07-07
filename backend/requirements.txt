@@ -45,6 +45,13 @@ deepagents
 ddgs
 beautifulsoup4
 
+# IANA time-zone database as a pip package. The docker base image
+# (python:3.12-slim) ships no system tzdata, and on Linux `tzlocal` does NOT
+# pull it in transitively, so without this `zoneinfo.ZoneInfo("Asia/Shanghai")`
+# (and thus SCHEDULER_TIMEZONE / a container `TZ`) can't resolve and the cron
+# scheduler silently falls back to UTC. See services/scheduler.py.
+tzdata
+
 # Optional DB drivers — installed in the docker image so DATABASE_URL can
 # switch between sqlite / postgres / mysql without changing the image.
 psycopg2-binary>=2.9.9

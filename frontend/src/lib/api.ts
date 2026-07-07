@@ -547,4 +547,9 @@ export const cronJobs = {
     req<CronJob>(`/cron-jobs/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
 
   delete: (id: string) => req<void>(`/cron-jobs/${id}`, { method: "DELETE" }),
+
+  timezone: () =>
+    req<{ timezone: string; utc_offset: string | null; configured: boolean }>(
+      "/cron-jobs/timezone",
+    ),
 };

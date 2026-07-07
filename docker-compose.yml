@@ -24,6 +24,12 @@ services:
       SECRET_KEY: ${SECRET_KEY:-}
       SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-168}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      # Timezone the cron scheduler interprets crontab expressions in. Leave
+      # both unset and cron fires in UTC. Either knob works (SCHEDULER_TIMEZONE
+      # wins; TZ also shifts the process' local time). The image bundles tzdata
+      # so IANA names resolve.  e.g. TZ=Asia/Shanghai
+      TZ: ${TZ:-}
+      SCHEDULER_TIMEZONE: ${SCHEDULER_TIMEZONE:-}
     ports:
       - "${APP_PORT:-8000}:8000"
     volumes:

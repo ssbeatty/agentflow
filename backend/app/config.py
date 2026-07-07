@@ -48,6 +48,14 @@ class Settings(BaseSettings):
     # Mark the session cookie Secure (https-only). Enable in production over TLS.
     cookie_secure: bool = False
 
+    # ── Scheduler ─────────────────────────────────────────────────────────────
+    # IANA timezone the cron scheduler interprets crontab expressions in, e.g.
+    # "Asia/Shanghai". Leave blank to follow the process/container local zone
+    # (the standard `TZ` env var, or UTC if unset). Requires the `tzdata` package
+    # (pinned in requirements.txt) so named zones resolve on the slim image.
+    # Only affects when cron jobs FIRE — stored/displayed timestamps stay UTC.
+    scheduler_timezone: str = ""
+
     # ── Logging ───────────────────────────────────────────────────────────────
     # loguru level for the backend's own operational log (console + rotating
     # file under data/logs/). Does NOT affect user-script execution logs, which

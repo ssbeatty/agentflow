@@ -92,6 +92,7 @@
     },
     "invalidJson": "Invalid JSON",
     "newSchedule": "New schedule",
+    "timezoneHint": "Times are interpreted in {{tz}}",
     "cronPlaceholder": "0 * * * *",
     "labelPlaceholder": "label",
     "inputJsonLabel": "Input JSON",

@@ -9,6 +9,27 @@ from services.scheduler import scheduler_service
 router = APIRouter()
 
 
+@router.get("/timezone")
+def get_timezone():
+    """The timezone cron expressions are interpreted in (so the UI can tell the
+    user whether `0 9 * * *` means 9am local or 9am UTC). Configured via
+    SCHEDULER_TIMEZONE / the container `TZ`; see services/scheduler.py."""
+    from datetime import datetime
+
+    from app.config import settings
+
+    tz_name = scheduler_service.effective_timezone()
+    offset = None
+    try:
+        from zoneinfo import ZoneInfo
+        raw = datetime.now(ZoneInfo(tz_name)).strftime("%z")  # e.g. "+0800"
+        offset = f"{raw[:3]}:{raw[3:]}" if raw else None       # -> "+08:00"
+    except Exception:
+        pass
+    return {"timezone": tz_name, "utc_offset": offset,
+            "configured": bool(settings.scheduler_timezone)}
+
+
 @router.get("", response_model=list[CronJobOut])
 def list_jobs(script_id: str | None = None, db: Session = Depends(get_db)):
     q = db.query(CronJob).order_by(CronJob.created_at)

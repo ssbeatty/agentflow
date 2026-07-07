@@ -91,6 +91,7 @@
     },
     "invalidJson": "无效的 JSON",
     "newSchedule": "新建定时任务",
+    "timezoneHint": "按 {{tz}} 时区解析",
     "cronPlaceholder": "0 * * * *",
     "labelPlaceholder": "标签",
     "inputJsonLabel": "输入 JSON",
