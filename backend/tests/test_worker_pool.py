@@ -333,6 +333,52 @@ def test_worker_resets_injected_tools_to_empty_list_not_none():
     asyncio.run(go())
 
 
+def test_sys_exit_does_not_kill_worker():
+    """Regression (F5): a user script that calls sys.exit() / raises SystemExit
+    must fail only THIS job with a clean message — NOT tear down the warm worker.
+    SystemExit is a BaseException, so before the fix it slipped past the job's
+    `except Exception`, escaped run_until_complete, printed asyncio 'Task exception
+    was never retrieved' noise into the run's logs, and killed the interpreter —
+    forcing a needless cold reboot for the next run."""
+    async def go():
+        sid = "wp-sysexit"
+        main = (
+            "import sys\n"
+            "def run(input):\n"
+            "    if input.get('bail'):\n"
+            "        sys.exit(3)\n"
+            "    return {'ok': True}\n"
+        )
+        sdir = _setup_script(sid, main)
+        w = await worker_pool.manager.acquire(sid, "run", preheat=False)
+
+        rd = sdir / "runs" / "x"
+        rd.mkdir(parents=True, exist_ok=True)
+        (rd / "_input.json").write_text(json.dumps({"bail": True}), encoding="utf-8")
+        all_lines: list[str] = []
+        err: dict = {}
+
+        async def handler(is_stderr, line):
+            all_lines.append(line)
+            if line.startswith(_PREFIX):
+                p = json.loads(line[len(_PREFIX):])
+                if p.get("type") == "error":
+                    err.update(p)
+
+        ok = await w.run_job({"job_id": "x", "run_dir": str(rd), "entry_fn": "run",
+                              "env": {"AGENTFLOW_EXECUTION_ID": "x"}}, handler)
+        assert ok is False
+        assert err and "sys.exit" in err.get("message", ""), err
+        # the worker SURVIVES a SystemExit and serves the next job (stays warm)
+        assert w.alive(), "sys.exit() must not kill the warm worker"
+        good = await _run_job(w, sdir / "runs" / "g", {"bail": False})
+        assert good["ok"] is True and good["data"] == {"ok": True}
+        assert w.jobs_run == 2
+        # and no asyncio teardown noise leaked into the run's log stream
+        assert not any("Task exception was never retrieved" in l for l in all_lines)
+    asyncio.run(go())
+
+
 def test_worker_enabled_gating(db):
     from app.models import Script
     # flag on (fixture), warm script → enabled

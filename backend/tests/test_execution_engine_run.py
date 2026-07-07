@@ -190,6 +190,75 @@ def test_completion_callback_fires_on_terminal(db, monkeypatch):
     #  subprocess past the test's asyncio.run.)
 
 
+def test_unserializable_return_stringifies_not_crashes(db):
+    """Regression (F6): a run() returning a dict with a NESTED non-JSON-native
+    value (an object / a set / bytes) must not crash the runner with a raw json
+    TypeError from platform internals. `default=str` in the runner's _emit
+    stringifies such values so the run still completes with a best-effort output
+    (the top-level result guard only covered a non-container top level)."""
+    main_py = (
+        "def run(input):\n"
+        "    return {'obj': object(), 'nums': {1, 2, 3}}\n"
+    )
+    execution = _run(db, main_py)
+    assert execution.status == "completed", execution.error
+    out = execution.output_data or {}
+    assert isinstance(out.get("obj"), str) and "object" in out["obj"]
+    assert isinstance(out.get("nums"), str)  # a set isn't JSON-native → stringified
+
+
+def test_unchanged_script_file_not_rewritten(db):
+    """Regression (F7 — concurrent same-script file race): every run materializes
+    the script's files into the SHARED script_dir, which each run's subprocess
+    imports. Rewriting main.py on every run means a concurrent run's subprocess can
+    import it mid-truncate → 'module user_script has no attribute run'. The engine
+    must SKIP the write when the on-disk content is already identical, so the shared
+    file is never needlessly truncated out from under a concurrent importer."""
+    import pathlib
+    from services.venv_manager import get_script_dir
+
+    script = Script(name="norace", entry_function="run")
+    db.add(script)
+    db.flush()
+    db.add(ScriptFile(script_id=script.id, filename="main.py", is_main=True,
+                      content="def run(input):\n    return {'ok': True}\n"))
+    e1 = Execution(script_id=script.id, status="pending", input_data={})
+    db.add(e1)
+    db.commit()
+    eid1 = e1.id
+
+    asyncio.run(execution_engine.start_execution(eid1))
+    db.expire_all()
+    assert db.query(Execution).filter_by(id=eid1).first().status == "completed"
+
+    shared_main = get_script_dir(script.id) / "main.py"
+    assert shared_main.exists()
+
+    # spy on writes to the SHARED main.py during a second run of the same script
+    orig_write = pathlib.Path.write_text
+    writes: list[str] = []
+
+    def _spy(self, *a, **k):
+        if str(self) == str(shared_main):
+            writes.append(str(self))
+        return orig_write(self, *a, **k)
+
+    pathlib.Path.write_text = _spy
+    try:
+        execution_engine._semaphore = None  # fresh semaphore for the new loop below
+        e2 = Execution(script_id=script.id, status="pending", input_data={})
+        db.add(e2)
+        db.commit()
+        eid2 = e2.id
+        asyncio.run(execution_engine.start_execution(eid2))
+    finally:
+        pathlib.Path.write_text = orig_write
+
+    db.expire_all()
+    assert db.query(Execution).filter_by(id=eid2).first().status == "completed"
+    assert writes == [], "unchanged shared script_dir/main.py must not be rewritten"
+
+
 def test_stopped_run_is_cancelled_not_failed(db):
     # Regression: stop_execution() kills the subprocess, which exits non-zero.
     # Without remembering the stop was deliberate, finalization marked it "failed"

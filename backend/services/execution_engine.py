@@ -208,7 +208,11 @@ os.environ["AGENTFLOW_EXECUTION_ID"] = "{execution_id}"
 _P = "{_PREFIX}"
 
 def _emit(d):
-    print(_P + json.dumps(d, ensure_ascii=False), flush=True)
+    # default=str so a run() return value (or log payload) containing a
+    # non-JSON-native object stringifies gracefully instead of crashing the
+    # runner with a raw TypeError from deep inside json (the top-level result
+    # guard below only covers a non-container top level, not nested values).
+    print(_P + json.dumps(d, ensure_ascii=False, default=str), flush=True)
 
 # Allow nested asyncio.run() so sync LangGraph .invoke() can call tools inside our async runner.
 try:
@@ -633,10 +637,23 @@ async def start_execution(execution_id: str) -> None:
                 return
 
         # ── write script files to disk ────────────────────────────────────────
+        # These land in the SHARED script_dir (imported by every run's subprocess
+        # via sys.path). Concurrent runs of the same script would otherwise race:
+        # one run truncates+rewrites main.py while another run's subprocess is
+        # importing it → the reader sees an empty/partial file →
+        # "module 'user_script' has no attribute 'run'". Skip the write when the
+        # content is already identical (the steady state under load), so the file
+        # is never needlessly truncated. (The per-execution run_dir copy below is
+        # private, so it has no cross-run race.)
         script_dir = get_script_dir(exc_row.script_id)
         for f in script.files:
             target = script_file_path(script_dir, f.filename)
             target.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                if target.exists() and target.read_text(encoding="utf-8") == f.content:
+                    continue
+            except (OSError, UnicodeDecodeError):
+                pass
             target.write_text(f.content, encoding="utf-8")
 
         # ── per-execution working directory (cwd) + persistent workspace ──────

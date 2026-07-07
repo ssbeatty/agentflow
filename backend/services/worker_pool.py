@@ -90,7 +90,9 @@ os.environ.setdefault("AGENTFLOW_EXECUTION_ID", "worker")
 
 _P = "{_PREFIX}"
 def _emit(d):
-    print(_P + json.dumps(d, ensure_ascii=False), flush=True)
+    # default=str: a run() return value / log payload with a non-JSON-native
+    # object stringifies instead of crashing the worker with a raw json TypeError.
+    print(_P + json.dumps(d, ensure_ascii=False, default=str), flush=True)
 
 _LOOP = asyncio.new_event_loop()
 asyncio.set_event_loop(_LOOP)
@@ -164,6 +166,16 @@ async def _run_one(job):
         _emit({{"type": "result", "data": result
             if isinstance(result, (dict, list, str, int, float, bool, type(None)))
             else str(result)}})
+    except SystemExit as exc:
+        # A user script calling sys.exit()/raising SystemExit must fail only THIS
+        # job, not tear down the whole warm worker. SystemExit is a BaseException,
+        # so the plain `except Exception` below misses it: it would escape
+        # run_until_complete, print asyncio "Task exception was never retrieved"
+        # noise, and kill the interpreter (forcing a needless cold reboot).
+        ok = False
+        _emit({{"type": "error",
+               "message": "script called sys.exit(" + repr(exc.code) + ")",
+               "traceback": traceback.format_exc()}})
     except Exception as exc:
         ok = False
         _emit({{"type": "error", "message": str(exc), "traceback": traceback.format_exc()}})
@@ -189,7 +201,7 @@ for _line in sys.stdin:
     _jid = _job.get("job_id")
     try:
         _ok = _LOOP.run_until_complete(_run_one(_job))
-    except Exception as _exc:
+    except (Exception, SystemExit) as _exc:  # SystemExit here too: keep the worker alive
         _ok = False
         _emit({{"type": "error", "message": str(_exc), "traceback": traceback.format_exc()}})
     _emit({{"type": "job_done", "job_id": _jid, "ok": _ok}})
