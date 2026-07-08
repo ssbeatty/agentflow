@@ -10,6 +10,10 @@ import MermaidView from "@/components/MermaidView";
 interface Props {
   trace: TraceEvent[];
   topology: GraphTopology | null;
+  // The run has reached a terminal state (completed/failed/cancelled). Any row
+  // still "open" then never got its end event — the process was cancelled or
+  // crashed mid-node — so it must stop showing a perpetual "running" badge.
+  runEnded?: boolean;
 }
 
 // Pair start/end events by run_id for compact rendering.
@@ -23,7 +27,17 @@ export interface TraceRow {
   output?: unknown;
   error?: string;
   isOpen: boolean;       // true if start without end yet
+  interrupted?: boolean; // was open when the run ended (cancelled/crashed mid-node)
   log?: unknown;
+}
+
+// When the run has ended, seal any still-open row: it isn't running anymore
+// (its end event will never arrive), so drop the "running" badge and mark it
+// interrupted. Without this a cancelled/failed run leaves nodes stuck on
+// "running..." forever even though the run is done.
+export function sealOpenRows(rows: TraceRow[], runEnded: boolean): TraceRow[] {
+  if (!runEnded) return rows;
+  return rows.map(r => (r.isOpen ? { ...r, isOpen: false, interrupted: true } : r));
 }
 
 export function buildRows(events: TraceEvent[]): TraceRow[] {
@@ -166,9 +180,9 @@ function highlightMermaid(src: string, counts: Map<string, number>): string {
   return lines.join("\n");
 }
 
-export default function FlowPanel({ trace, topology }: Props) {
+export default function FlowPanel({ trace, topology, runEnded = false }: Props) {
   const { t } = useTranslation("scriptPanels");
-  const rows = useMemo(() => buildRows(trace), [trace]);
+  const rows = useMemo(() => sealOpenRows(buildRows(trace), runEnded), [trace, runEnded]);
   const counts = useMemo(() => visitedNodeCounts(trace), [trace]);
   const hasContent = rows.length > 0 || !!topology;
 
@@ -227,6 +241,9 @@ function TraceRowView({ row }: { row: TraceRow }) {
         <span className="text-muted-foreground/60 text-[10px]">{t(`flowPanel.kindLabels.${row.kind}`)}</span>
         {row.isOpen && (
           <span className="text-blue-400 text-[10px] animate-pulse">{t("flowPanel.row.running")}</span>
+        )}
+        {row.interrupted && (
+          <span className="text-amber-500 text-[10px]">{t("flowPanel.row.interrupted")}</span>
         )}
         {row.error && (
           <span className="text-destructive text-[10px]">{t("flowPanel.row.error")}</span>

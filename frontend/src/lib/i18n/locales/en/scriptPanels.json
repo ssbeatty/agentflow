@@ -85,6 +85,7 @@
     "empty": "Trace events will appear here while the script runs.",
     "row": {
       "running": "running…",
+      "interrupted": "interrupted",
       "error": "error",
       "durationMs": "{{ms}} ms"
     },

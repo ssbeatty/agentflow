@@ -38,7 +38,14 @@ vars are scrubbed. Two per-call escape hatches open that up explicitly:
 
 The Python sandbox reuses whatever Python is running the current script (the
 per-script venv when there is one), so packages the user installed via
-`requirements.txt` (numpy, pandas, …) are importable inside it too.
+`requirements.txt` (numpy, pandas, …) are importable inside it too. The bash
+sandbox gets the same venv reach a *different* way: the venv's ``bin`` /
+``Scripts`` dir is prepended to the sandbox ``PATH`` (see :func:`_sandbox_env`),
+so ``python`` / ``pip`` and console scripts installed in the venv (e.g. a
+skill's CLI) resolve there rather than to a system/pyenv python. On Windows the
+bash tool prefers a real Git bash over the System32 WSL launcher (see
+:func:`_shell`), because WSL is a separate Linux environment where the Windows
+venv is unreachable.
 """
 from __future__ import annotations
 
@@ -61,12 +68,44 @@ _ENV_KEEP = (
     "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE", "TZ",
     "TMPDIR", "TEMP", "TMP", "SYSTEMROOT", "WINDIR", "COMSPEC",
     "LD_LIBRARY_PATH",  # needed by some manylinux wheels (numpy/scipy)
+    # Proxy / TLS config. Sandboxed code allows network by default, so it must
+    # reach the internet the SAME way the rest of the platform does. Without
+    # these, a host that needs a proxy silently "loses network" in the sandbox
+    # (direct connect → SSL EOF / connection reset / timeout) even though the
+    # main run — which uses venv_manager._clean_env (no proxy scrub) — works
+    # fine. These are network config, not AGENTFLOW platform credentials, so
+    # keeping them doesn't widen the secret-exposure threat model.
+    "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
+    "http_proxy", "https_proxy", "all_proxy", "no_proxy",
+    "REQUESTS_CA_BUNDLE", "SSL_CERT_FILE", "SSL_CERT_DIR", "CURL_CA_BUNDLE",
 )
+
+
+def _venv_bin_dir() -> str | None:
+    """Directory holding the current interpreter — a venv's ``Scripts`` on
+    Windows, ``bin`` on POSIX. Prepending it to the sandbox ``PATH`` lets bash /
+    subprocess code resolve the per-script venv's ``python`` / ``pip`` and any
+    console scripts the user installed (e.g. a skill's CLI) to the SAME venv that
+    :func:`run_python` already uses via ``sys.executable`` — instead of a system
+    or pyenv python that lacks the installed packages. No credential is exposed:
+    only this PATH entry is added; every env VALUE stays scrubbed (``_ENV_KEEP``).
+    """
+    try:
+        d = os.path.dirname(os.path.abspath(sys.executable))
+        return d if os.path.isdir(d) else None
+    except Exception:
+        return None
 
 
 def _sandbox_env() -> dict:
     env = {k: os.environ[k] for k in _ENV_KEEP if k in os.environ}
     env.setdefault("PATH", "/usr/local/bin:/usr/bin:/bin")
+    # Put the venv's bin/Scripts dir FIRST so `python`/`pip`/console scripts
+    # resolve to the per-script venv (matching run_python's sys.executable),
+    # not a system / pyenv python that can't see the installed packages.
+    bindir = _venv_bin_dir()
+    if bindir:
+        env["PATH"] = bindir + os.pathsep + env["PATH"]
     env["PYTHONUNBUFFERED"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONDONTWRITEBYTECODE"] = "1"
@@ -324,7 +363,48 @@ def run_python(
 
 # ── Bash sandbox ───────────────────────────────────────────────────────────────
 
+def _windows_git_bash() -> str | None:
+    """Locate a real (Git) bash on Windows, avoiding the System32 ``bash.exe``
+    WSL launcher. Checks the usual Git-for-Windows install paths, then derives
+    one from ``git`` on PATH, then accepts any non-System32/WindowsApps ``bash``.
+    Returns None if only the WSL launcher is available."""
+    prog = os.environ.get("ProgramFiles", r"C:\Program Files")
+    progx = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
+    local = os.environ.get("LocalAppData", "")
+    candidates = [
+        os.path.join(prog, "Git", "bin", "bash.exe"),
+        os.path.join(progx, "Git", "bin", "bash.exe"),
+    ]
+    if local:
+        candidates.append(os.path.join(local, "Programs", "Git", "bin", "bash.exe"))
+    for c in candidates:
+        if os.path.isfile(c):
+            return c
+    git = shutil.which("git")
+    if git:  # <git>\cmd\git.exe or <git>\bin\git.exe → <git>\...\bash.exe
+        root = os.path.dirname(os.path.dirname(git))
+        for sub in (("bin", "bash.exe"), ("usr", "bin", "bash.exe")):
+            cand = os.path.join(root, *sub)
+            if os.path.isfile(cand):
+                return cand
+    found = shutil.which("bash")
+    if found and "system32" not in found.lower() and "windowsapps" not in found.lower():
+        return found
+    return None
+
+
 def _shell() -> str:
+    """Path to a POSIX shell for run_bash. On Windows, prefer a real (Git) bash
+    over the System32 ``bash.exe`` WSL launcher: WSL runs in a SEPARATE Linux
+    environment where the Windows per-script venv is unreachable (its
+    python/pip/console scripts live on the Windows filesystem, off WSL's PATH),
+    so bash there is disconnected from the run's venv. Git Bash shares the
+    Windows filesystem + PATH, so the venv-bin prepend in _sandbox_env() works.
+    Falls back to the WSL launcher only when no real bash exists."""
+    if os.name == "nt":
+        gb = _windows_git_bash()
+        if gb:
+            return gb
     return shutil.which("bash") or shutil.which("sh") or "bash"
 
 

@@ -149,6 +149,18 @@ agent = get_agent(tools=get_tools()                            # agent works on
                   + exec_tools(cwd=os.environ["AGENTFLOW_WORKSPACE_DIR"]))  # workspace
 ```
 
+Both tools reach the **per-script venv**: `run_python` runs under the venv python
+(so `import numpy`/etc. work), and the venv's `bin`/`Scripts` dir is on the bash
+`PATH` too, so `run_bash("python …")`, `run_bash("pip install …")` and venv
+**console scripts** (e.g. a CLI a skill installs) resolve to the venv. Install a
+skill's deps into the venv (add them to the script `requirements.txt`, or
+`run_bash("pip install <pkg>")` once) before invoking its CLI.
+
+> **Windows dev note:** on Windows the `bash` tool needs a real **Git bash**; if
+> only WSL's `bash.exe` is present it runs in a separate Linux environment that
+> can't see the Windows venv (its `python`/CLIs won't resolve). Prefer the
+> `python` tool there, or test bash-driven CLIs in the Linux Docker image.
+
 Secrets & HTTP (secrets are stored by the admin; list keys via `get_platform_context`):
 
 ```python

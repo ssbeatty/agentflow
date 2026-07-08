@@ -72,6 +72,67 @@ def test_missing_dependency_fails_with_visible_error(db):
     assert any("No module named" in log.message for log in error_logs)
 
 
+def test_stop_records_cancel_intent_for_inflight_run_without_live_proc():
+    """A stop clicked while a run is in-flight but before it registers its
+    subprocess (e.g. during a warm worker's cold boot) must still record the
+    cancel intent, so finalization honors it instead of overwriting the row back
+    to completed/failed. Regression for stop_execution returning early without
+    marking _cancelled_ids."""
+    eid = "cancel-race-inflight-no-proc"
+    execution_engine._cancelled_ids.discard(eid)
+    execution_engine._procs.pop(eid, None)
+    execution_engine._inflight.add(eid)  # simulate a live coroutine, mid cold-boot
+    try:
+        stopped = asyncio.run(execution_engine.stop_execution(eid))
+        assert stopped is False  # nothing live to kill yet…
+        assert eid in execution_engine._cancelled_ids  # …but the intent IS recorded
+    finally:
+        execution_engine._cancelled_ids.discard(eid)
+        execution_engine._inflight.discard(eid)
+
+
+def test_stop_on_finished_run_does_not_leak_cancel_intent():
+    """A stop targeting a run with no live coroutine (already finished — e.g. the
+    run_sync timeout path calls stop_execution after the task ended) must NOT add
+    to _cancelled_ids: nothing would ever discard it, so it would leak forever."""
+    eid = "cancel-on-finished-run"
+    execution_engine._cancelled_ids.discard(eid)
+    execution_engine._procs.pop(eid, None)
+    execution_engine._inflight.discard(eid)  # NOT in-flight
+
+    stopped = asyncio.run(execution_engine.stop_execution(eid))
+
+    assert stopped is False
+    assert eid not in execution_engine._cancelled_ids  # no leak
+
+
+def test_cancel_intent_wins_over_a_successful_run(db):
+    """If a stop was recorded before/while the run finished, the row must end
+    `cancelled`, never `completed` — a run must never be resurrected out of a
+    cancel. Exercises the pre-dispatch guard + the _finalize_run cancel-honor."""
+    script = Script(name="cancel-honor-script", entry_function="run")
+    db.add(script)
+    db.flush()
+    db.add(ScriptFile(
+        script_id=script.id, filename="main.py",
+        content="def run(input):\n    return {'ok': True}\n", is_main=True,
+    ))
+    execution = Execution(script_id=script.id, status="pending", input_data={})
+    db.add(execution)
+    db.commit()
+    eid = execution.id
+
+    execution_engine._cancelled_ids.add(eid)  # simulate a stop recorded pre-run
+    try:
+        asyncio.run(execution_engine.start_execution(eid))
+    finally:
+        execution_engine._cancelled_ids.discard(eid)
+
+    db.expire_all()
+    row = db.query(Execution).filter_by(id=eid).first()
+    assert row.status == "cancelled", f"expected cancelled, got {row.status}"
+
+
 def test_successful_run_completes_and_returns_output(db):
     # Sanity anchor: the same harness produces a clean success, so a `failed`
     # result above is meaningful (not just "everything always fails").

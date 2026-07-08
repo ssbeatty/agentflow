@@ -738,7 +738,7 @@ function ScriptPage() {
                   <LogPanel logs={logs} />
                 </TabsContent>
                 <TabsContent value="flow" className="h-full m-0">
-                  <FlowPanel trace={trace} topology={topology} />
+                  <FlowPanel trace={trace} topology={topology} runEnded={["completed", "failed", "cancelled"].includes(runStatus)} />
                 </TabsContent>
                 <TabsContent value="output" className="h-full m-0 p-3">
                   <ScrollArea className="h-full">

@@ -5,7 +5,7 @@ import {
   Wrench, ChevronRight, ChevronDown, Loader2, Check, AlertCircle, Sparkles, BookOpen,
 } from "lucide-react";
 import type { TraceEvent } from "@/lib/types";
-import { buildRows, type TraceRow } from "@/components/FlowPanel";
+import { buildRows, sealOpenRows, type TraceRow } from "@/components/FlowPanel";
 import { MarkdownContent } from "@/components/Markdown";
 import { cn } from "@/lib/utils";
 
@@ -98,13 +98,17 @@ function ToolCallBox({ row }: { row: TraceRow }) {
 export default function AgentNarrative({
   traces,
   excludeLastLlmText = true,
+  runEnded = false,
 }: {
   traces: TraceEvent[];
   excludeLastLlmText?: boolean;
+  // The turn has finished (answer done / stopped): seal any node still "open"
+  // so a cancelled turn doesn't leave nodes stuck on a spinner forever.
+  runEnded?: boolean;
 }) {
   const { t } = useTranslation("assistant");
   const [expanded, setExpanded] = useState(false);
-  const rows = buildRows(traces);
+  const rows = sealOpenRows(buildRows(traces), runEnded);
 
   // Index of the final LLM turn — its text is the answer, rendered elsewhere.
   let lastLlm = -1;

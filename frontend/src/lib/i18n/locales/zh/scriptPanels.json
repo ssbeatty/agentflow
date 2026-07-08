@@ -85,6 +85,7 @@
     "empty": "运行脚本时,追踪事件将显示在此处。",
     "row": {
       "running": "运行中…",
+      "interrupted": "已中断",
       "error": "错误",
       "durationMs": "{{ms}} 毫秒"
     },

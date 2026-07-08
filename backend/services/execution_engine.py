@@ -118,6 +118,15 @@ _procs: dict[str, subprocess.Popen] = {}
 # remember we asked for it.
 _cancelled_ids: set[str] = set()
 
+# execution_ids with a live start_execution() coroutine (added at its top,
+# removed in its finally). stop_execution() only records a cancel into
+# _cancelled_ids for a run that's actually in-flight — so a stop targeting an
+# already-finished run (e.g. the run_sync timeout path, which calls
+# stop_execution AFTER the task has ended) can't leak an id that nothing will
+# ever discard. During a cold worker boot the run is in-flight but has no _procs
+# entry yet, so this (not _procs) is the right "still running?" signal.
+_inflight: set[str] = set()
+
 # strong refs so background tasks aren't garbage-collected mid-run
 _tasks: set[asyncio.Task] = set()
 
@@ -407,6 +416,13 @@ async def _finalize_run(
     exc_row = db.query(Execution).filter_by(id=execution_id).first()
     if exc_row is None:
         return
+    # Never resurrect a cancelled run: if the user asked to stop (recorded in
+    # _cancelled_ids OR already persisted as "cancelled" by the stop endpoint),
+    # honor it even if the process raced to finish first. Otherwise a run that
+    # completed a hair after the stop click would flip back to completed/failed.
+    if execution_id in _cancelled_ids or exc_row.status == "cancelled":
+        cancelled = True
+        ok = False
     exc_row.finished_at = datetime.utcnow()
     if state.usage_data:
         exc_row.prompt_tokens = int(state.usage_data.get("prompt_tokens") or 0)
@@ -520,6 +536,19 @@ async def _run_via_worker(
 
     reused = worker.jobs_run > 0
     _procs[execution_id] = worker.proc  # so stop_execution can kill the worker
+
+    # Cancelled during the (possibly slow) worker boot, before there was a proc
+    # to kill? Don't dispatch the job at all — just finalize as cancelled.
+    if execution_id in _cancelled_ids:
+        _procs.pop(execution_id, None)
+        logger.info("[{}] cancelled before dispatch (during worker boot)", execution_id[:8])
+        await _finalize_run(
+            db, execution_id, script, script_dir, state,
+            ok=False, cancelled=True, returncode=None,
+            prof_line="cancelled before dispatch", cleanup_paths=[input_file],
+        )
+        return
+
     _t_ready = time.perf_counter()
     metrics.observe_profile(queue_wait=t_slot - t_enter)  # cold_import/prep/script are one-shot-only
     _prof(execution_id, (
@@ -589,6 +618,7 @@ async def start_execution(execution_id: str) -> None:
     slot_acquired = False
     _t_enter = time.perf_counter()
     _t_slot = _t_spawn = _t_enter
+    _inflight.add(execution_id)  # "this run has a live coroutine" — see _inflight
     try:
         exc_row: Execution = db.query(Execution).filter_by(id=execution_id).first()
         if not exc_row:
@@ -907,6 +937,18 @@ async def start_execution(execution_id: str) -> None:
                 **popen_kwargs,
             )
 
+        # Cancelled before we even spawned (stop clicked during prep)? Don't
+        # launch the subprocess — finalize as cancelled. (`state` is built after
+        # spawn below; nothing has run yet, so an empty one is correct.)
+        if execution_id in _cancelled_ids:
+            logger.info("[{}] cancelled before spawn", execution_id[:8])
+            await _finalize_run(
+                db, execution_id, script, script_dir, _DrainState(),
+                ok=False, cancelled=True, returncode=None,
+                prof_line="cancelled before spawn", cleanup_paths=[runner, input_file],
+            )
+            return
+
         try:
             proc = _spawn(cmd)
         except OSError:
@@ -1032,6 +1074,7 @@ async def start_execution(execution_id: str) -> None:
             _get_semaphore().release()
         _procs.pop(execution_id, None)
         _cancelled_ids.discard(execution_id)
+        _inflight.discard(execution_id)
         db.close()
         _schedule_ws_cleanup(execution_id)
 
@@ -1088,22 +1131,59 @@ def _schedule_ws_cleanup(execution_id: str) -> None:
         pass
 
 
+def _terminate_proc_tree(proc, *, force: bool = False) -> None:
+    """Terminate a run's process AND the children it spawned.
+
+    On Windows a bare ``proc.terminate()`` kills only the worker/runner itself,
+    leaving the ``bash`` / WSL / ``python`` subprocesses the agent spawned (each
+    in its own process group) still running — so a cancel could leave orphans
+    churning. ``taskkill /F /T`` walks the whole child tree. On POSIX we send the
+    signal to the process only: the run subprocess shares the backend's process
+    group (no ``setsid`` — see ``make_run_preexec``), so ``killpg`` would take
+    down the backend, and sandbox children carry their own wall-clock timeout, so
+    they self-reap. Best-effort: any failure falls back to plain terminate/kill.
+    """
+    if os.name == "nt":
+        try:
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                capture_output=True,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            return
+        except (OSError, subprocess.SubprocessError):
+            pass  # fall through to the plain per-process signal
+    try:
+        proc.kill() if force else proc.terminate()
+    except (ProcessLookupError, OSError):
+        pass
+
+
 async def stop_execution(execution_id: str) -> bool:
+    # Record the stop intent BEFORE the proc lookup — but only for a run that's
+    # actually in-flight. The warm-worker path registers _procs[execution_id]
+    # only AFTER acquiring the worker, and a cold boot can take seconds; a stop
+    # clicked in that window used to return here WITHOUT recording anything, so
+    # _finalize_run later saw cancelled=False and overwrote the row's "cancelled"
+    # status with completed/failed while the run ran on. Recording it (the
+    # dispatch-time guard in start_execution / _run_via_worker then skips running
+    # it) makes the cancel stick even with no live process yet. Gating on
+    # _inflight keeps a stop on an ALREADY-finished run (e.g. the run_sync
+    # timeout path) from leaking an id nothing would ever discard.
+    if execution_id in _inflight:
+        _cancelled_ids.add(execution_id)
     proc = _procs.get(execution_id)
     if not proc:
         metrics.inc_stop(found=False)
         return False
-    # Remember this was a deliberate stop so finalization records "cancelled",
-    # not "failed" (a killed process just exits non-zero — see _cancelled_ids).
-    _cancelled_ids.add(execution_id)
     metrics.inc_stop(found=True)
     logger.info("[{}] stop requested (pid={})", execution_id[:8], proc.pid)
-    proc.terminate()
+    _terminate_proc_tree(proc)
     try:
         await asyncio.wait_for(asyncio.to_thread(proc.wait), timeout=5.0)
     except asyncio.TimeoutError:
         logger.warning("[{}] did not terminate in time, killing (pid={})", execution_id[:8], proc.pid)
-        proc.kill()
+        _terminate_proc_tree(proc, force=True)
     return True
 
 
