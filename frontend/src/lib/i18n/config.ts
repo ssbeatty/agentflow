@@ -95,7 +95,10 @@ if (!i18n.isInitialized) {
       ns: Object.keys(resources.en),
       defaultNS: "common",
       detection: {
-        order: ["localStorage", "navigator", "htmlTag"],
+        // English is the product default: browser language is deliberately
+        // not consulted — only an explicit choice made via the Settings
+        // language switcher (persisted to localStorage) selects Chinese.
+        order: ["localStorage"],
         caches: ["localStorage"],
         lookupLocalStorage: LOCALE_STORAGE_KEY,
       },

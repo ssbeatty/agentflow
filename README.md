@@ -1,187 +1,206 @@
+<div align="center">
+
 # AgentFlow
 
-**在浏览器里写 LangGraph / LangChain Python 脚本，一键跑成线上 AI Agent。**
+**Write LangGraph / LangChain agents in your browser. Run them as a service.**
 
-给每个脚本自动建隔离 venv，配好 LLM 就能运行 —— 支持实时日志、内置聊天调试、定时触发、HTTP / MCP 调用，以及 MCP 工具与 Agent Skills 扩展。自托管、单镜像、`docker compose up` 即用。
+[![CI](https://github.com/ssbeatty/agentflow/actions/workflows/test.yml/badge.svg)](https://github.com/ssbeatty/agentflow/actions/workflows/test.yml)
+[![Docker](https://img.shields.io/badge/ghcr.io-ssbeatty%2Fagentflow-blue?logo=docker)](https://github.com/ssbeatty/agentflow/pkgs/container/agentflow)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
+English | [简体中文](README.zh-CN.md)
+
+</div>
+
+AgentFlow is a **self-hosted home for your agent code**. You write a plain Python `run(input)` function — real code, real `pip` dependencies, real stack traces — and one Docker image turns it into an operable service: isolated per-script venvs, live logs and agent traces, a chat UI, cron scheduling, an HTTP API with webhooks, per-run token accounting, regression evals, and MCP in both directions.
+
+No per-node metering. No seat fees. No lock-in. `docker compose up` and it's yours.
 
 <p align="center">
-  <img src="docs/images/dashboard.png" alt="AgentFlow 首页" width="900">
+  <img src="docs/images/dashboard.png" alt="AgentFlow dashboard" width="900">
 </p>
-
-> 适合想给团队 / 自己搭一个轻量 AI 脚本中台的人 —— 不需要 Airflow / Dify 那种重型框架，也不用为每个 agent 单独写 Dockerfile、配环境、搭接口。
 
 ---
 
-## ✨ 能做什么
+## Why AgentFlow?
+
+**Visual flow builders hit a ceiling.** Drag-and-drop platforms are great for the first 80% — then the canvas turns to spaghetti, the sandboxed "code node" won't import the library you need, and the error says `Node execution failed`. In AgentFlow the script *is* the product: multi-file Python projects, any dependency via `requirements.txt` in an isolated venv, full tracebacks persisted to the run log, and an automatic revision snapshot on every save.
+
+**LangGraph is a library, not a service.** It gives you a graph — not a scheduler, a run API, a logs UI, secrets, or evals. Hosted agent platforms fill that gap with per-node metering and enterprise contracts. AgentFlow fills it with a single free container on your own machine.
+
+**Your coding agent can drive it.** AgentFlow exposes an MCP endpoint, so Claude Code / Cursor can connect and create, edit, run, debug, and eval scripts remotely — *develop with your coding agent, run on AgentFlow*. Flow-builder JSON is opaque to coding agents; Python is their native tongue.
+
+---
+
+## Features
 
 | | |
 |---|---|
-| 🐍 **浏览器代码编辑器** | Monaco + Python 语法高亮 + 实时语法检查，写完即存 |
-| 📦 **隔离 venv** | 每个脚本一套独立环境，自动预装 langchain / langgraph 全家桶 |
-| 🔌 **接任何 LLM** | OpenAI / Anthropic / DeepSeek / Ollama / 任何 OpenAI 兼容网关，UI 配置、脚本里 `get_llm()` 即用 |
-| ▶️ **运行 & 调试** | WebSocket 实时日志流、结构化日志、Output / Flow / Artifacts 面板、历史回看 |
-| 📊 **成本可观测** | 每次运行自动记录 LLM token 用量,首页看近 7 天趋势 / 消耗 Top 脚本,Runs 里每条带 token 数 |
-| 🧪 **评估 & 回归** | 给脚本建测试集(输入 + 断言,支持包含/正则/LLM 裁判),一键跑批出通过率,和上一版对比防回归 |
-| 💬 **内置聊天页** | 选个脚本直接对话，自动维护上下文；支持流式输出与「思考过程」折叠展示 |
-| 🔧 **MCP 工具 & 🧩 Skills** | 接外部 MCP server、装可复用的 Agent Skill，按脚本勾选后自动注入 agent |
-| ⏰ **定时触发** | cron 表达式（APScheduler）后台跑 |
-| 🌐 **HTTP / MCP 接口** | 外部系统用 API Key 直接 `POST` 调用；也能让 Claude Code / Cursor 连上来开发脚本 |
-| 🔐 **登录鉴权** | 整站管理后台登录保护，对外接口用签发的 API Key |
-| 🗄️ **多数据库** | SQLite（本地零依赖）/ Postgres / MySQL，切 `DATABASE_URL` 即可 |
-| 🐳 **Docker 化** | 前端编译进单镜像，`docker compose` 一键起 |
+| 🐍 **Browser IDE** | Monaco editor, multi-file scripts, Python lint on save, drag-and-drop upload |
+| 📦 **Isolated venvs** | One environment per script, langchain / langgraph stack preinstalled, `uv`-accelerated |
+| 🔌 **Any LLM** | OpenAI / Anthropic / DeepSeek / Ollama / any OpenAI-compatible gateway — configure once, `get_llm()` anywhere |
+| ▶️ **Run & observe** | Live WebSocket logs (with replay), agent trace view of every LLM turn and tool call, Output / Flow / Artifacts panels, full run history |
+| 📊 **Cost visibility** | Token usage recorded per run, 7-day trend and top-spending scripts on the dashboard, Prometheus `/metrics` |
+| 🧪 **Evals & regression** | Per-script test datasets (contains / regex / LLM-as-judge assertions), pass-rate deltas vs the previous run, pinned to script revisions |
+| 💬 **Built-in chat UI** | Any script becomes a streaming chat app — markdown, collapsible reasoning, tool-call trace, embeddable |
+| 🔧 **MCP & 🧩 Agent Skills** | Consume external MCP servers (with OAuth), install [Agent Skills](https://github.com/anthropics/skills) from a built-in marketplace, opt in per script |
+| ⏰ **Scheduling** | Cron triggers with timezone control, saved input presets |
+| 🌐 **HTTP API + webhooks** | Sync `POST /run`, or async `wait=false` with a completion callback; poll by execution id — all via issued API keys |
+| 🔔 **Failure alerts** | PushPlus / Bark / email when a scheduled run dies at 3am |
+| 🤖 **AI in the loop** | Built-in script assistant writes and edits scripts with diff review + one-click revert; outward MCP gateway for Claude Code / Cursor |
+| 🔐 **Auth** | Single-admin login for the console, hashed API keys for machines |
+| 🗄️ **Any database** | SQLite (zero-dep default) / Postgres / MySQL — switch with one env var, schema migrates itself |
 
 ---
 
-## 🚀 5 分钟上手
+## Quickstart (5 minutes)
 
-### 方式 1 · Docker（推荐，本地 / 内网）
+### Option 1 · Docker (recommended)
 
-直接拉 GHCR 上由 CI 构建的镜像 `ghcr.io/ssbeatty/agentflow:latest`：
+Pull the CI-built image `ghcr.io/ssbeatty/agentflow:latest`:
 
 ```bash
-cp .env.example .env      # 想跑 Postgres 就改个 POSTGRES_PASSWORD；用 SQLite 见下方注释
+cp .env.example .env      # set POSTGRES_PASSWORD, or go SQLite-only (below)
 docker compose pull
 docker compose up -d
 ```
 
-打开 <http://localhost:8000> → 首次访问进入 **创建管理员** 页，设好账号密码就能用。
+Open <http://localhost:8000> → the first visit walks you through **creating the admin account** — and you're in.
 
 <p align="center">
-  <img src="docs/images/setup.png" alt="首次初始化 —— 创建管理员" width="440">
+  <img src="docs/images/setup.png" alt="First-run setup — create the admin account" width="440">
 </p>
 
-> **想更轻量？** 不带 Postgres、只用内置 SQLite：
+> **Even lighter?** Skip Postgres and use the embedded SQLite:
 > ```bash
 > DATABASE_URL=sqlite:////app/backend/data/agentflow.db docker compose up -d app --no-deps
 > ```
-> **想钉版本 / 本地构建？**
+> **Pin a version / build from source?**
 > ```bash
-> AGENTFLOW_IMAGE=ghcr.io/ssbeatty/agentflow:v1.2.3 docker compose up -d   # 指定版本
-> docker build -t agentflow:local . && AGENTFLOW_IMAGE=agentflow:local docker compose up -d   # 从源码构建
+> AGENTFLOW_IMAGE=ghcr.io/ssbeatty/agentflow:v1.2.3 docker compose up -d
+> docker build -t agentflow:local . && AGENTFLOW_IMAGE=agentflow:local docker compose up -d
 > ```
 
-### 方式 2 · HTTPS 上线（Traefik 自动证书）
+### Option 2 · HTTPS with automatic certificates (Traefik)
 
-公网部署最省事的方式：Traefik 在前面终结 TLS、自动申请 Let's Encrypt 证书、`80 → 443` 跳转。
+The easiest public deployment: Traefik terminates TLS, fetches Let's Encrypt certificates, and redirects `80 → 443`.
 
-**前置**：一个解析到本机的域名（A 记录），放开 `80` / `443` 端口。
+**Prerequisites**: a domain with an A record pointing at the host, ports `80`/`443` open.
 
-新建 `.env`，**只填两行**：
+Create `.env` with **just two lines**:
 
 ```env
 DOMAIN=agentflow.example.com
 SSL_EMAIL=you@example.com
 ```
 
-然后起：
+Then:
 
 ```bash
 docker compose -f docker-compose.traefik.yml up -d
 ```
 
-打开 `https://你的域名` → 创建管理员，完事。
+Open `https://your-domain`, create the admin account, done. Traefik wiring sets `PUBLIC_BASE_URL` / `COOKIE_SECURE` / `CORS_ORIGINS` for you, so login cookies and MCP OAuth work over HTTPS out of the box.
 
-Traefik 会自动帮你把 `PUBLIC_BASE_URL` / `COOKIE_SECURE` / `CORS_ORIGINS` 设好，所以 **登录 Cookie 和 MCP OAuth 在 https 下都开箱即用**，不用再手动折腾。
+> 🔒 **For real production** also set `SECRET_KEY=<random string>` (sessions survive restarts/replicas) and a strong `POSTGRES_PASSWORD`.
+> 🧭 **Using your own reverse proxy** (Nginx / Caddy)? Set `PUBLIC_BASE_URL=https://your-domain` yourself, or MCP OAuth callbacks will be built from the internal http address and rejected.
 
-> 🔒 **正式生产**再补两个：`SECRET_KEY=<随机串>`（重启 / 多副本后登录态不失效）、`POSTGRES_PASSWORD=<强密码>`。
-> 🧭 **用别的反代**（Nginx / Caddy，不走 Traefik）时，记得自己设 `PUBLIC_BASE_URL=https://你的域名`，否则 MCP OAuth 回调地址会用到内网 http 地址被拒。
+### Option 3 · Local development
 
-### 方式 3 · 本地开发
-
-需要 Python 3.12+、Node 20+：
+Needs Python 3.12+ and Node 20+:
 
 ```bash
-# 后端
+# backend
 cd backend
 python -m venv .venv
-.venv\Scripts\activate           # Windows；macOS/Linux 用 source .venv/bin/activate
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 uvicorn app.main:app --port 8000
 
-# 另开一个终端 —— 前端 dev server（热更新，:3000）
+# in another terminal — frontend dev server (hot reload, :3000)
 cd frontend
 npm install
 npm run dev
 ```
 
-> VS Code 用户：直接按 `F5`，会先编译前端再启动带 debugpy 的后端。
+> VS Code users: just press `F5` — it builds the frontend and starts the backend with debugpy attached.
 
 ---
 
-## 🖥️ 界面速览
+## A tour of the UI
 
 <table>
   <tr>
     <td width="50%">
-      <b>① 写脚本</b> —— 从模板起步：ReAct Agent / 流式聊天 / Deep Agent / LangGraph 循环 …<br>
-      <img src="docs/images/new-script.png" alt="新建脚本，内置多种模板">
+      <b>① Write scripts</b> — start from a template: ReAct agent / streaming chat / deep agent / LangGraph loop…<br>
+      <img src="docs/images/new-script.png" alt="New script dialog with templates">
     </td>
     <td width="50%">
-      <b>② 编辑 & 运行</b> —— Monaco 编辑器 + 右侧配置面板 + 底部日志 / Output / Flow。<br>
-      <img src="docs/images/editor.png" alt="脚本编辑器">
-    </td>
-  </tr>
-  <tr>
-    <td width="50%">
-      <b>③ 聊天调试</b> —— 选脚本直接对话，Markdown 渲染 + 折叠「思考过程」。<br>
-      <img src="docs/images/chat.png" alt="内置聊天页">
-    </td>
-    <td width="50%">
-      <b>④ 配 LLM 渠道</b> —— 一个渠道 = 一个供应商端点 + 一组模型，按优先级择优。<br>
-      <img src="docs/images/settings.png" alt="LLM 渠道设置">
+      <b>② Edit & run</b> — Monaco editor, config panel on the right, Logs / Output / Flow tabs below.<br>
+      <img src="docs/images/editor.png" alt="Script editor">
     </td>
   </tr>
   <tr>
     <td width="50%">
-      <b>⑤ 工具 & 技能</b> —— 内置 web 搜索、接 MCP server、装 Agent Skill。<br>
-      <img src="docs/images/tools.png" alt="工具 / MCP / 技能">
+      <b>③ Chat with your agent</b> — pick a script and talk to it; markdown rendering, collapsible reasoning.<br>
+      <img src="docs/images/chat.png" alt="Built-in chat page">
     </td>
     <td width="50%">
-      <b>⑥ 对外接口</b> —— HTTP 同步调用，或让 Claude Code / Cursor 连 MCP 进来开发。<br>
-      <img src="docs/images/api-docs.png" alt="API 参考页">
+      <b>④ Connect LLMs</b> — one channel = one provider endpoint + a set of models, picked by priority.<br>
+      <img src="docs/images/settings.png" alt="LLM channel settings">
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <b>⑤ Tools & skills</b> — built-in web search, external MCP servers, installable Agent Skills.<br>
+      <img src="docs/images/tools.png" alt="Tools / MCP / Skills">
+    </td>
+    <td width="50%">
+      <b>⑥ External API</b> — call scripts over HTTP, or let Claude Code / Cursor develop through MCP.<br>
+      <img src="docs/images/api-docs.png" alt="API reference page">
     </td>
   </tr>
 </table>
 
 ---
 
-## ✍️ 写第一个脚本
+## Your first script
 
-点右上角 **New Script** → 选个模板（或空白）→ 编辑器里就是一个 `run(input)` 函数：
+Click **New Script** → pick a template (or blank) → what you edit is just a `run(input)` function:
 
 ```python
 from agentflow import log, get_llm
 
 def run(input: dict) -> dict:
     msg = input.get("message", "hello")
-    log("收到消息", data={"msg": msg}, step="recv")
+    log("received", data={"msg": msg}, step="recv")
 
-    llm = get_llm()                 # 取默认渠道的默认模型
+    llm = get_llm()                 # default model of the default channel
     if llm is None:
-        return {"reply": "还没配置 LLM，去 Settings 加一个渠道"}
+        return {"reply": "No LLM configured yet — add a channel in Settings."}
 
-    resp = llm.invoke(f"用大写复述这句话：{msg}")
+    resp = llm.invoke(f"Repeat this in uppercase: {msg}")
     return {"reply": resp.content}
 ```
 
-右侧面板点 **Create venv**（自动装 baseline 依赖）→ **Run**。日志、返回值会实时出现在底部面板。
+Hit **Create venv** in the right panel (installs the baseline stack), then **Run**. Logs and the return value stream into the bottom panels live.
 
-> 入口函数默认叫 `run`、签名 `def run(input: dict) -> Any`，返回值就是这次执行的输出。可在脚本配置里改入口名。
+> The entry point defaults to `run` with signature `def run(input: dict) -> Any`; the return value becomes the execution's output. Both are configurable per script.
 
-### 想要一个能用工具的 Agent？
+### An agent with tools
 
-`get_agent()` 一行拿到带内置工具（web 搜索 / 抓网页）、以及你为该脚本勾选的 MCP 工具、Skill 的 ReAct agent：
+`get_agent()` returns a ReAct agent pre-wired with the built-in tools (web search / fetch) plus whatever MCP servers and skills you've enabled for the script:
 
 ```python
 from agentflow import get_agent
 
 def run(input: dict) -> dict:
-    agent = get_agent(system_prompt="你是研究助手，用 web_search 查资料并给出来源。")
+    agent = get_agent(system_prompt="You are a research assistant. Use web_search and cite sources.")
     result = agent.invoke({"messages": [("human", input["question"])]})
     return {"answer": result["messages"][-1].content}
 ```
 
-### 一个 LangGraph 例子
+### A LangGraph example
 
 ```python
 from typing import TypedDict
@@ -205,195 +224,207 @@ def run(input):
     return build().invoke({"count": 0})
 ```
 
-内置 SDK 常用函数：`log()` 打日志、`get_llm()` / `get_agent()` / `get_deep_agent()` 拿模型和 agent、`get_tools()` 拿工具、`get_secret()` 读密钥、`web_search()` / `web_fetch()` 联网、`markdown()` / `table()` / `image()` 在聊天里渲染卡片。完整清单见平台内 `/docs` 页。
+The SDK in one breath: `log()` for structured logs, `get_llm()` / `get_agent()` / `get_deep_agent()` for models and agents, `get_tools()` for the tool list, `get_secret()` for credentials, `web_search()` / `web_fetch()` for the internet, `markdown()` / `table()` / `image()` to render rich cards in chat, and a module-level `INPUT_SCHEMA` to give `run()` a typed, validated input with an auto-generated form. The full reference lives on the in-app `/docs` page.
 
 ---
 
-## 🔌 配置 LLM 渠道
+## Develop with Claude Code, run on AgentFlow
 
-进 **Settings** → **Add channel**。一个「渠道」= 一个供应商端点（key + base_url）服务一组模型；脚本用 `get_llm("<模型 id>")` 取，`get_llm()` 取默认。同一个模型被多个渠道服务时，按 `priority` 择优。
-
-| 供应商 | provider | base_url 示例 |
-|---|---|---|
-| OpenAI | `openai` | 留空 |
-| DeepSeek | `openai` | `https://api.deepseek.com/v1` |
-| 月之暗面 / Kimi | `openai` | `https://api.moonshot.cn/v1` |
-| 智谱 / GLM | `openai` | `https://open.bigmodel.cn/api/paas/v4` |
-| Anthropic | `anthropic` | — |
-| Ollama | `ollama` | `http://localhost:11434` |
-
-国内大多数平台都是 OpenAI 兼容协议，`provider` 选 `openai` 填 `base_url` 即可（`anthropic` / `ollama` 走独立分支）。渠道卡片上标 ⭐ 的模型就是 `get_llm()` 的默认返回。
-
----
-
-## 🔐 鉴权与对外调用
-
-整个管理后台（所有页面 + `/api/*` 管理接口）都在**管理员登录**之后。首次访问自动进入创建管理员页；密码经 PBKDF2 哈希存库，会话用 httpOnly Cookie 维持。改密码 / 签发 API Key 在导航栏 🛡️ **安全设置**。
-
-**外部系统调用脚本** —— 用 API Key 走同步运行接口，无需登录：
-
-```bash
-curl -X POST 'http://localhost:8000/api/executions/run?timeout=120' \
-  -H 'X-API-Key: af_xxxxxxxx' \
-  -H 'Content-Type: application/json' \
-  -d '{"script_id":"<脚本 UUID>","input_data":{"message":"hi"}}'
-# 阻塞直到脚本跑完，返回 {id,status,output_data,error,...}
-```
-
-`script_id` 从编辑器顶栏 📋 复制。API Key **只显示一次**，服务端只存哈希，丢了重新签发即可。
-
-**长任务别干等 —— 异步提交 + 回调（webhook）** —— 加 `wait=false` 立即拿到 `id` 返回，脚本在后台跑；再给个 `callback_url`，跑完（无论成功/失败）平台会把结果 `POST` 过去：
-
-```bash
-curl -X POST 'http://localhost:8000/api/executions/run?wait=false' \
-  -H 'X-API-Key: af_xxxxxxxx' -H 'Content-Type: application/json' \
-  -d '{"script_id":"<UUID>","input_data":{...},"callback_url":"https://你的服务/hook"}'
-# 立即返回 {"id":"...","status":"queued",...}
-```
-
-之后可以用同一个 API Key 轮询 `GET /api/executions/{id}` 看状态/结果；或者干脆等回调 —— 回调体是 `{id,script_id,status,output_data,error,started_at,finished_at,retry_count,total_tokens}`。回调是**尽力而为**（失败会重试几次再放弃，绝不影响脚本本身运行）。
-
-**让 Claude Code / Cursor 连进来开发脚本** —— AgentFlow 自身暴露一个 MCP 端点，编程 agent 可以直接建/改脚本、装 venv、跑脚本、读报错：
+AgentFlow serves its own MCP endpoint. Point a coding agent at it and the whole write → run → debug → eval loop happens remotely — the agent creates scripts, edits files (with lint feedback), builds venvs, runs executions, reads tracebacks, and adds graded eval cases:
 
 ```bash
 claude mcp add --transport http agentflow http://localhost:8000/mcp --header "X-API-Key: af_…"
 ```
 
-> 生产 HTTPS 记得 `COOKIE_SECURE=true`；多副本部署显式设 `SECRET_KEY`（否则各副本会话不互通）。
+There's also a companion [Agent Skill](https://github.com/anthropics/skills) that teaches the agent AgentFlow's scripting conventions — download it from `GET /mcp/skill` or let the agent call the `get_scripting_guide` tool. And if you'd rather stay in the browser: the built-in AI assistant writes and edits scripts for you, with per-file diff review and one-click revert.
 
 ---
 
-## 🗄️ 数据库切换
+## Connect an LLM
 
-环境变量 `DATABASE_URL` 控制，**无需改代码**：
+Go to **Settings → Add channel**. A *channel* is one provider endpoint (key + base_url) serving a set of models; scripts fetch models by id with `get_llm("<model-id>")`, or `get_llm()` for the default. If several channels serve the same model, the highest-priority one wins.
+
+| Provider | `provider` | `base_url` example |
+|---|---|---|
+| OpenAI | `openai` | *(leave empty)* |
+| Anthropic | `anthropic` | — |
+| DeepSeek | `openai` | `https://api.deepseek.com/v1` |
+| Moonshot / Kimi | `openai` | `https://api.moonshot.cn/v1` |
+| Zhipu / GLM | `openai` | `https://open.bigmodel.cn/api/paas/v4` |
+| Ollama | `ollama` | `http://localhost:11434` |
+
+Most gateways speak the OpenAI-compatible protocol — pick `openai` and fill in `base_url` (`anthropic` / `ollama` have dedicated integrations). The ⭐-starred model on a channel card is what `get_llm()` returns by default.
+
+---
+
+## Auth & the external API
+
+The entire console (all pages + `/api/*` management endpoints) sits behind the **admin login**. The first visit routes to admin creation; passwords are PBKDF2-hashed, sessions ride an httpOnly cookie. Change the password / issue API keys under 🛡️ **Security** in the navbar.
+
+**Call a script from an external system** — API key, no login:
 
 ```bash
-DATABASE_URL=sqlite:///./data/agentflow.db                              # SQLite（默认，零依赖）
-DATABASE_URL=postgresql+psycopg2://user:pass@host:5432/dbname           # Postgres
-DATABASE_URL=mysql+pymysql://user:pass@host/dbname                      # MySQL（取消 requirements 里 pymysql 注释）
+curl -X POST 'http://localhost:8000/api/executions/run?timeout=120' \
+  -H 'X-API-Key: af_xxxxxxxx' \
+  -H 'Content-Type: application/json' \
+  -d '{"script_id":"<script UUID>","input_data":{"message":"hi"}}'
+# blocks until the run finishes, returns {id,status,output_data,error,...}
 ```
 
-表结构由 **Alembic** 管理，应用启动时自动 `upgrade head`（sqlite / postgres 通用）。旧库、空库都能自愈接管，无需手工干预。
+Copy `script_id` from the 📋 button in the editor header. API keys are shown **once**; only a hash is stored — if you lose one, issue a new one.
+
+**Long task? Don't hold the connection — submit async + webhook.** Add `wait=false` to get the execution `id` back immediately; pass a `callback_url` and the final result is `POST`ed to you on any terminal state (success or failure):
+
+```bash
+curl -X POST 'http://localhost:8000/api/executions/run?wait=false' \
+  -H 'X-API-Key: af_xxxxxxxx' -H 'Content-Type: application/json' \
+  -d '{"script_id":"<UUID>","input_data":{...},"callback_url":"https://your-service/hook"}'
+# returns immediately: {"id":"...","status":"queued",...}
+```
+
+You can also poll `GET /api/executions/{id}` with the same key. The callback body is `{id,script_id,status,output_data,error,started_at,finished_at,retry_count,total_tokens}`; delivery is best-effort (a few retries, never affects the run itself).
+
+> For HTTPS deployments set `COOKIE_SECURE=true`; for multi-replica setups set an explicit `SECRET_KEY` (otherwise sessions won't be shared across replicas).
 
 ---
 
-## ⚙️ 配置项参考
+## Database
 
-通过环境变量 / `.env` 设置：
+One env var, no code changes:
 
-| key | 默认 | 说明 |
+```bash
+DATABASE_URL=sqlite:///./data/agentflow.db                              # SQLite (default, zero deps)
+DATABASE_URL=postgresql+psycopg2://user:pass@host:5432/dbname           # Postgres
+DATABASE_URL=mysql+pymysql://user:pass@host/dbname                      # MySQL (uncomment pymysql in requirements)
+```
+
+The schema is owned by **Alembic** and auto-migrates on startup (`upgrade head`, sqlite and postgres alike). Old databases — even partially-migrated ones — are healed and adopted automatically.
+
+---
+
+## Configuration reference
+
+Set via environment variables / `.env`:
+
+| key | default | what it does |
 |---|---|---|
-| `DATABASE_URL` | sqlite 本地文件 | SQLAlchemy URL |
-| `DATA_DIR` | `./data/scripts` | 每脚本 venv 存放目录 |
-| `CORS_ORIGINS` | `*` | 逗号分隔的允许来源，或 `*` |
-| `APP_PORT` | `8000` | 仅 docker-compose 用 |
-| `SECRET_KEY` | 自动生成并存 `data/.secret_key` | 签发登录 Cookie 的密钥；多副本部署需显式设置 |
-| `SESSION_TTL_HOURS` | `168` | 登录有效期（小时） |
-| `COOKIE_SECURE` | `false` | HTTPS 部署设 `true` |
-| `PUBLIC_BASE_URL` | 空（用请求地址） | **非 Traefik 的反代/HTTPS 部署必填**，如 `https://域名`；用于拼 MCP OAuth 回调地址（Traefik 版会自动设） |
-| `DOMAIN` / `SSL_EMAIL` | — | 仅 `docker-compose.traefik.yml` 用：域名 + Let's Encrypt 邮箱 |
-| `POSTGRES_PASSWORD` | `agentflow` | 用 Postgres 时改成强密码 |
+| `DATABASE_URL` | local sqlite file | SQLAlchemy URL |
+| `DATA_DIR` | `./data/scripts` | where per-script venvs live |
+| `CORS_ORIGINS` | `*` | comma-separated allowed origins, or `*` |
+| `APP_PORT` | `8000` | docker-compose only |
+| `SECRET_KEY` | generated into `data/.secret_key` | signs login cookies; set explicitly for multi-replica |
+| `SESSION_TTL_HOURS` | `168` | login session lifetime (hours) |
+| `COOKIE_SECURE` | `false` | set `true` behind HTTPS |
+| `PUBLIC_BASE_URL` | *(request URL)* | **required behind a non-Traefik reverse proxy**, e.g. `https://your-domain`; used for MCP OAuth callbacks |
+| `DOMAIN` / `SSL_EMAIL` | — | `docker-compose.traefik.yml` only: domain + Let's Encrypt email |
+| `POSTGRES_PASSWORD` | `agentflow` | change it when using Postgres |
+| `SCHEDULER_TIMEZONE` | *(host local zone)* | IANA name (e.g. `Asia/Shanghai`) that cron expressions are interpreted in |
+| `AGENTFLOW_MAX_CONCURRENT` | `5` | max concurrently running executions |
+| `AGENTFLOW_WARM_WORKERS` | off | opt-in warm worker pool — keeps a per-script interpreter alive so repeat runs skip the cold import |
+| `AGENTFLOW_METRICS_PUBLIC` / `AGENTFLOW_METRICS_TOKEN` | off | open up `GET /metrics` for a trusted-network Prometheus, or give it a dedicated scrape token |
+| `LOG_LEVEL` | `INFO` | backend operational log level |
 
 ---
 
-## 🧱 架构一览
+## Architecture at a glance
 
 ```
 ┌─────────────────────────────────────────────┐
-│  Next.js 前端（静态导出，由 FastAPI 托管）    │
-│  首页 · 编辑器 · 聊天 · 工具 · 设置 · API 文档 │
+│  Next.js frontend (static export,           │
+│  served by FastAPI)                         │
+│  dashboard · editor · chat · tools · docs   │
 └───────────────────┬─────────────────────────┘
                     │ REST + WebSocket
 ┌───────────────────▼─────────────────────────┐
-│  FastAPI（uvicorn）                          │
-│  scripts / executions / channels / cron /    │
-│  mcp-servers / skills / ws 日志流 …          │
+│  FastAPI (uvicorn)                          │
+│  scripts / executions / channels / cron /   │
+│  mcp-servers / skills / ws log streams …    │
 └───────┬──────────────────┬──────────────────┘
         │                  │
    ┌────▼─────┐      ┌─────▼──────────────────┐
-   │ 数据库    │      │ subprocess.Popen         │
-   │ (SQL*)   │      │ 每脚本独立 .venv/python  │
-   └──────────┘      │ + 线程队列 → WS 实时推送 │
-                     └──────────────────────────┘
+   │ Database │      │ subprocess.Popen        │
+   │ (SQL*)   │      │ per-script .venv python │
+   └──────────┘      │ + thread queue → live WS│
+                     └─────────────────────────┘
 ```
 
-- 每次 run 在脚本自己的 venv 里 fork 一个 python 子进程，依赖隔离
-- 子进程 stdout / 结构化日志经后台线程 → asyncio 队列 → WebSocket 实时推
-- 重启 backend 不影响正在跑的脚本（进程组隔离）
+- Every run forks a python subprocess inside the script's own venv — dependency isolation by construction
+- Subprocess stdout / structured events flow through a background thread → asyncio queue → WebSocket, live
+- Restarting the backend doesn't kill running scripts (detached process groups)
 
-后端两个 Python 运行时的分工、子进程细节、迁移策略等更深入的说明见仓库根目录的 [`CLAUDE.md`](CLAUDE.md)。
-
----
-
-## ❓ 常见问题
-
-**venv 创建很慢？** 镜像内置 `uv`，优先用它替代 pip（快 ~10×）；没装 uv 会回落到 `python -m venv` + `pip`。
-
-**Windows 上 `NotImplementedError: subprocess`？** 已全程绕开 asyncio 子进程，用同步 `subprocess.Popen` + 线程队列，正常不会遇到。
-
-**改了 backend 代码、正在跑的脚本 DB 状态卡在 `running`？** 开发模式 `--reload` 会重启后端；子进程虽不被杀但 DB 记录可能停在 running。测试脚本时别开 `--reload`，或在 UI 点 Stop。
-
-**国内网络慢？** pip 慢 → 给容器加 `PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple`；LLM 调用慢 → 渠道 `extra_config` 里加 `{"timeout": 120}`。
+Deeper internals — the two-Python-runtimes split, subprocess plumbing, migration strategy — are documented in [`CLAUDE.md`](CLAUDE.md) at the repo root.
 
 ---
 
-## 🧰 技术栈
+## FAQ
 
-| 层 | 选型 |
+**Venv creation is slow?** The image ships `uv` and prefers it over pip (~10× faster); without uv it falls back to `python -m venv` + `pip`.
+
+**`NotImplementedError: subprocess` on Windows?** Already routed around — the engine uses sync `subprocess.Popen` + thread queues instead of asyncio subprocesses. You shouldn't hit this.
+
+**Edited backend code and a run is stuck at `running`?** Dev-mode `--reload` restarts the backend; the subprocess survives but its DB row may stay `running`. Don't use `--reload` while testing scripts, or hit Stop in the UI first.
+
+**Slow networks?** Slow pip → set `PIP_INDEX_URL` to a nearby mirror on the container. Slow LLM calls → add `{"timeout": 120}` to the channel's `extra_config`.
+
+---
+
+## Tech stack
+
+| Layer | Choice |
 |---|---|
-| 前端 | Next.js 15 / React 19 / TailwindCSS 4 / shadcn 风格 UI / Monaco Editor |
-| 后端 | FastAPI / SQLAlchemy 2 / Alembic / APScheduler / pydantic-settings |
+| Frontend | Next.js 15 / React 19 / TailwindCSS 4 / shadcn-style UI / Monaco Editor |
+| Backend | FastAPI / SQLAlchemy 2 / Alembic / APScheduler / pydantic-settings |
 | Agent SDK | LangChain / LangGraph / deepagents / langchain-mcp-adapters |
-| 包管理 | uv（回落 pip） |
-| 数据库 | SQLite / Postgres / MySQL |
+| Packaging | uv (pip fallback) |
+| Database | SQLite / Postgres / MySQL |
 
 ---
 
-## 🧭 架构局限与 Roadmap
+## Honest limits & roadmap
 
-AgentFlow 的定位是**单机 / 小团队自托管**的轻量 AI 脚本中台 —— 一个人或一个小组、一台机器，把散落的 agent 脚本收拢到一处跑起来。为了守住「写个 `run()` 函数就能上线」的简单，它在一些维度上**刻意没做重**。下面如实列出当前架构的边界和背后的取舍，方便你判断它是否适合你的场景。
+AgentFlow is built for **single-machine, single-admin / small-team self-hosting** — one person or one group, one box, all their agent scripts gathered in one operable place. To keep the "write a `run()` function and it's live" simplicity, some dimensions are *deliberately* not built heavy. Here is the honest map of where the edges are, so you can judge the fit yourself.
 
-### 已知局限
+### Known limitations
 
-| 维度 | 现状 | 原因 / 影响 |
+| Dimension | Today | Why / impact |
 |---|---|---|
-| **水平扩展** | 单机架构：执行是本机 `subprocess.Popen`，venv 在本地磁盘，并发由单个进程内 semaphore 控制；cron（APScheduler）、暖 worker 池、WS 重放缓冲都在进程内。 | **能 scale up（换大机器），不能 scale out**。多副本会重复触发 cron、无法共享执行负载。集群化需要把执行层抽成独立 worker + 外部队列（见 Roadmap）。 |
-| **隔离强度** | 主执行路径的沙箱（rlimit + bubblewrap）是**纵深防御、尽力而为**：仅 POSIX 生效，Windows / 无 bwrap 时自动降级为无隔离；网络与环境变量**不做隔离**（脚本需要自己的密钥和外网）。 | 能防「脚本把宿主 OOM / 窥探别的脚本文件」，但**不是硬多租户边界**，替代不了容器 / gVisor / VM per-run。需配合单管理员信任模型使用。 |
-| **信任模型** | 单管理员门禁 + 签发 API Key，无多用户 / RBAC / 租户。密钥全局共享 —— 每个脚本都能读到所有 Secret。 | 适合「自己 / 小团队」，不适合把不同租户的不可信脚本混跑在同一实例里。 |
-| **密钥静态存储** | `Secret.value`、渠道 `api_key`、OAuth token 在库里是**明文**（受「仅标准库、不引入加密依赖」约束，依赖数据卷本身受保护）。 | 没有静态加密 / KMS / Vault 集成 —— 数据库泄露即密钥泄露。 |
-| **对外接口** | API Key 走的对外接口只有**同步阻塞**的 `POST /run`（撑到脚本跑完才返回）；异步创建接口只对管理员开放。 | 缺「提交即返回 + 完成回调（webhook）」，长任务只能靠长连接或轮询。 |
-| **配额与限流** | API Key 无速率限制、无 token 预算、无脚本粒度权限（一个 key 通过 `/mcp` 即拥有全量脚本 CRUD + 运行权）。运行仅有墙钟超时 + 内存 rlimit 兜底。 | 跑飞的脚本能烧掉 API 预算；key 泄露影响面较大。 |
-| **可观测性** | 有 per-run token 用量、结构化日志、loguru 运维日志、失败通知渠道，但**没有** metrics 端点（Prometheus）/ 分布式追踪 / 更细粒度告警。 | 单机自查够用，接入现有监控体系需自己补。 |
-| **磁盘 / venv** | 每脚本一套完整 venv（数百 MB），无共享基础层去重；baseline 依赖升级不会自动同步到已建 venv；磁盘仅在删除 / 保留策略裁剪时回收。 | 脚本多时磁盘增长快；冷启动每次重导入全套 langchain（暖 worker 池可缓解 run #2+）。 |
-| **前端测试** | 后端有 pytest 回归套件；**前端无自动化测试**，静态导出也决定了没有服务端路由 / 中间件。 | UI 回归靠手动跑。 |
+| **Horizontal scaling** | Single-machine by design: execution is a local `subprocess.Popen`, venvs live on local disk, concurrency is an in-process semaphore; cron (APScheduler), the warm worker pool, and WS replay buffers are all in-process. | **Scales up (bigger box), not out.** Multiple replicas would double-fire cron and can't share load. Clustering needs the execution layer split into workers + an external queue (see roadmap). |
+| **Isolation strength** | The main-path sandbox (rlimits + bubblewrap) is **defense-in-depth, best-effort**: POSIX-only, and it degrades silently to no isolation on Windows or where the kernel blocks unprivileged namespaces. Network and env vars are deliberately *not* isolated (scripts need their own keys and the internet). | Stops "one script OOMs the host / reads another script's files" — but it is **not a hard multi-tenant boundary** and doesn't replace containers / gVisor / a VM per run. Pair it with the single-admin trust model. |
+| **Trust model** | Single admin + issued API keys. No multi-user, RBAC, or tenancy. Secrets are global — every script can read every secret. | Right for "me / my small team"; wrong for running mutually-untrusted tenants on one instance. |
+| **Secrets at rest** | `Secret.value`, channel `api_key`s, and OAuth tokens are **plaintext in the DB** (stdlib-only crypto constraint; the data volume is the protection boundary). | No at-rest encryption / KMS / Vault. A leaked database is a leaked keyring. |
+| **Quotas & rate limits** | API keys have no rate limits, token budgets, or per-script scopes (one key gets full script CRUD + run via `/mcp`). Runs are bounded only by wall-clock timeout + memory rlimit. | A runaway script can burn API budget; a leaked key has a wide blast radius. |
+| **Observability depth** | Per-run token usage, structured logs, loguru ops log, failure notification channels, and a Prometheus `/metrics` endpoint are built in — but there's **no distributed tracing / OTel export** and no fine-grained alerting rules. | Plenty for single-box self-checks; wiring into an existing tracing stack needs your own exporter. |
+| **Disk / venvs** | One full venv per script (hundreds of MB), no shared base layer; baseline upgrades don't retrofit existing venvs; disk is reclaimed only on delete / retention pruning. | Disk grows with script count; cold starts re-import the whole langchain stack (the opt-in warm worker pool eliminates this from run #2). |
+| **Frontend tests** | The backend has a pytest regression suite; **the frontend has no automated tests**, and static export means no server routes/middleware. | UI regressions are caught by hand. |
 
 ### Roadmap
 
-按「是否需要动架构」分两档，从高价值、低成本的先做。欢迎按实际需求提 issue 排优先级。
+Grouped by whether the architecture has to move. High-value, low-cost first — issues and votes welcome.
 
-**近期 · 增量改进（不改整体架构）**
+**Near-term · incremental (no architecture change)**
 
-- [x] **对外接口异步化**：`/run?wait=false` 立即返回 execution id + 可选 `callback_url` 完成回调，长任务不再阻塞 ✅
-- [ ] **API Key 粒度 & 配额**：按 key 限定可访问脚本 / 速率 / token 预算，`/mcp` 写权限可单独关闭
-- [ ] **密钥静态加密**：可选 `ENCRYPTION_KEY`，落库前加密 Secret / 渠道 key / OAuth token
-- [ ] **指标导出**：`/metrics`（Prometheus）暴露运行数、时延、token、失败率
-- [ ] **venv 瘦身**：共享 baseline 层 / 缓存，降低磁盘占用与冷启动
+- [x] **Async external API** — `/run?wait=false` returns the execution id immediately + optional `callback_url` completion webhook ✅
+- [x] **Metrics export** — Prometheus `GET /metrics`: runs, latency, tokens, failure rates, queue depth ✅
+- [ ] **API-key scopes & quotas** — per-key script allowlists / rate limits / token budgets; separately toggleable `/mcp` write access
+- [ ] **Secret encryption at rest** — optional `ENCRYPTION_KEY` to encrypt secrets / channel keys / OAuth tokens before they hit the DB
+- [ ] **Script export / import** — zip bundles (files + requirements + input schema + eval cases) for backup, sharing, and Git-friendly workflows
+- [ ] **Venv slimming** — shared baseline layer / cache to cut disk and cold-start cost
 
-**远期 · 需要架构演进**
+**Long-term · architectural**
 
-- [ ] **水平扩展**：执行层从进程内 subprocess 抽成独立 worker + 外部队列（Redis / Celery 等），调度换成带分布式锁的方案，WS 重放挪到 Redis，多副本无重复触发
-- [ ] **更硬的隔离**：容器 / gVisor / microVM per-run，可选网络策略（默认放通、按脚本白名单出网）
-- [ ] **多用户 / RBAC**：从单管理员门禁演进到团队 + 角色 + 每用户脚本 + 审计日志
-- [ ] **前端测试**：补 Playwright e2e / 关键组件测试
+- [ ] **Horizontal scaling** — split execution into standalone workers + an external queue (Redis / Celery-style), distributed-lock scheduling, WS replay in Redis
+- [ ] **Harder isolation** — container / gVisor / microVM per run, optional per-script network egress policies
+- [ ] **Multi-user / RBAC** — from single-admin gate to teams + roles + per-user scripts + audit log
+- [ ] **Frontend tests** — Playwright e2e for the critical flows
 
-**明确不做**（当前定位下的取舍，不是遗漏）
+**Explicit non-goals** (positioning, not neglect)
 
-- **不做 Airflow / Dify 级的重型 DAG 编排** —— 保持「一个 `run()` 函数就能跑」的心智
-- **不追求把 agentflow SDK 发成独立 pip 包** —— 它靠 runner 往 `sys.path` 注入，刻意随平台版本走
-- **不在主执行路径上做硬网络隔离** —— 脚本本就需要访问 LLM / MCP / 自己的外部服务
+- **No Airflow / Dify-scale DAG orchestration** — the mental model stays "one `run()` function, running"
+- **No standalone pip package for the `agentflow` SDK** — it's injected via `sys.path` by the runner and versions with the platform on purpose
+- **No hard network isolation on the main execution path** — scripts legitimately need their LLMs, MCP servers, and your own APIs
 
 ---
 
 ## License
 
-MIT
+[MIT](LICENSE)
