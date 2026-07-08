@@ -34,9 +34,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         bubblewrap \
     && rm -rf /var/lib/apt/lists/*
 
-# uv: fast venv & pip-replacement used by the platform's venv_manager
+# uv + uvx: fast venv/pip-replacement used by the platform's venv_manager, and
+# `uvx <pkg>` used to launch stdio MCP servers distributed as Python packages.
+# Copy BOTH binaries — the installer drops them in /root/.local/bin; shipping
+# only `uv` left `uvx` missing → `FileNotFoundError: 'uvx'` when a stdio MCP
+# server configured as `uvx …` tried to spawn.
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
-    && cp /root/.local/bin/uv /usr/local/bin/uv
+    && cp /root/.local/bin/uv /root/.local/bin/uvx /usr/local/bin/
+
+# Node.js 20 + npm (provides `npx`) so stdio MCP servers published as npm
+# packages (`npx -y some-mcp`) can be launched the same way as `uvx` ones.
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app/backend
 
