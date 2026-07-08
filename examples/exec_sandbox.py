@@ -38,13 +38,14 @@ How to use:
   1. Copy this file into a new AgentFlow script (main.py); entry function "run".
   2. Open it in /converse and ask things that need computation or a command,
      e.g. "what's the standard deviation of 2,4,4,4,5,5,7,9?" or
-     "how many .py files are in the current directory?" — watch the log strip:
-     the agent calls the `python` / `bash` tool, then answers from the output.
+     "how many .py files are in the current directory?" — the agent calls the
+     `python` / `bash` tool (shown in the "Agent trace" panel), then answers from
+     the output. The raw tool output is kept out of the reply by stream_agent().
 
 Input  : {"message": str, "history": [{"role": str, "content": str}]}
 Output : {"reply": str}
 """
-from agentflow import token, log, get_agent, get_tools, exec_tools
+from agentflow import stream_agent, get_agent, get_tools, exec_tools
 
 SYSTEM_PROMPT = """You are a careful analyst assistant with two sandboxed tools:
 - `python`: run Python for any calculation, data wrangling, or parsing. Prefer
@@ -73,18 +74,10 @@ async def run(input: dict) -> dict:
     history = [(m["role"], m["content"]) for m in input.get("history", [])]
     messages = history + [("human", user_msg)]
 
-    full_reply = ""
-    async for event in agent.astream_events({"messages": messages}, version="v2"):
-        kind = event["event"]
-        if kind == "on_chat_model_stream":
-            content = event["data"]["chunk"].content
-            if content:
-                token(content)              # stream tokens to the chat UI
-                full_reply += content
-        elif kind == "on_tool_start":
-            # Shows up as tool "python" or "bash" in the log strip.
-            log(f"Using tool: {event['name']}", step="tool")
-
+    # stream_agent() streams only the agent's answer text; the bash/python tool
+    # results (raw stdout) are dropped from the reply — they'd otherwise be spliced
+    # into the chat bubble. The tool calls still render in the /converse trace panel.
+    full_reply = await stream_agent(agent, messages)
     return {"reply": full_reply}
 
 

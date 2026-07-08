@@ -27,13 +27,13 @@ How to use:
   1. Copy this file into a new AgentFlow script (main.py); entry function "run".
   2. Bind your skill(s) in the right panel.
   3. Open the script in /converse and chat. When your request matches a skill's
-     description, watch the log strip: the agent calls `read_skill` to load it,
-     then answers following those instructions.
+     description, the agent calls `read_skill` to load it (shown in the "Agent
+     trace" panel), then answers following those instructions.
 
 Input  : {"message": str, "history": [{"role": str, "content": str}]}
 Output : {"reply": str}
 """
-from agentflow import token, get_agent, log, list_skills
+from agentflow import get_agent, stream_agent, log, list_skills
 
 SYSTEM_PROMPT = """You are a helpful assistant.
 You have one or more skills available (listed below). When the user's request
@@ -68,20 +68,11 @@ async def run(input: dict) -> dict:
     history = [(m["role"], m["content"]) for m in input.get("history", [])]
     messages = history + [("human", user_msg)]
 
-    full_reply = ""
-    async for event in agent.astream_events({"messages": messages}, version="v2"):
-        kind = event["event"]
-
-        if kind == "on_chat_model_stream":
-            content = event["data"]["chunk"].content
-            if content:
-                token(content)          # stream tokens to the chat UI
-                full_reply += content
-
-        elif kind == "on_tool_start":
-            # The agent loading a skill shows up here as tool "read_skill".
-            log(f"Using tool: {event['name']}", step="tool")
-
+    # stream_agent() streams only the agent's answer text (skill/tool results are
+    # dropped from the reply); the read_skill tool call still renders live in the
+    # /converse "Agent trace" panel.
+    full_reply = await stream_agent(agent, messages)
+    log("turn done", data={"reply_chars": len(full_reply)})
     return {"reply": full_reply}
 
 

@@ -1303,21 +1303,43 @@ def get_deep_agent(
             "No LLM configured. Add one in AgentFlow Settings before calling get_deep_agent()."
         )
 
-    # Advertise bound skills (name + description) in the prompt; the agent reads
-    # the full files itself through the filesystem tools.
-    preamble = _skill_preamble()
-    if preamble:
-        system_prompt = f"{system_prompt}\n\n{preamble}" if system_prompt else preamble
-
-    # create_deep_agent's parameter names vary across versions; introspect and
-    # only pass what this build actually accepts (it may also take **kwargs).
+    # create_deep_agent's parameter names vary across versions; introspect first
+    # so we can tell whether deepagents will handle skills NATIVELY.
     params = inspect.signature(create_deep_agent).parameters
     accepts_kwargs = any(p.kind == p.VAR_KEYWORD for p in params.values())
 
     def _supports(key: str) -> bool:
         return accepts_kwargs or key in params
 
+    run_dir = os.environ.get("AGENTFLOW_RUN_DIR")
+    have_skills_dir = bool(run_dir and (Path(run_dir) / "skills").is_dir())
+    # deepagents' own SkillsMiddleware (activated by passing skills=[...] with a
+    # mounted backend) already injects the bound-skill list + progressive-
+    # disclosure "read_file the SKILL.md path (limit=1000)" guidance into the
+    # system prompt on every turn. When it's active, adding OUR read_skill tool +
+    # skill preamble on top is not just redundant — it hands the model a second,
+    # CONFLICTING way to read a skill (read_skill-by-name vs read_file-by-path),
+    # and because our read_skill returns the whole SKILL.md as one blob, deepagents
+    # offloads it to /large_tool_results and makes the model read_file it back (a
+    # clunky double read that looks like the agent "keeps re-reading the skill").
+    # So let deepagents own the skill UX here; only fall back to read_skill/preamble
+    # when it can't (older deepagents without `skills=`, or no backend mount).
+    native_skills = bool(have_skills_dir and _supports("backend") and _supports("skills"))
+
     call: dict = {"model": llm, **kwargs}
+
+    merged_tools = list(tools) if tools else []
+    if not native_skills:
+        # Fallback path: advertise skills in the prompt + expose read_skill,
+        # exactly like get_agent() (deepagents won't do it for us on this build).
+        preamble = _skill_preamble()
+        if preamble:
+            system_prompt = f"{system_prompt}\n\n{preamble}" if system_prompt else preamble
+        skill_tool = _make_skill_tool()
+        if skill_tool is not None and not any(
+            getattr(t, "name", "") == "read_skill" for t in merged_tools
+        ):
+            merged_tools.append(skill_tool)
 
     if system_prompt:
         # newer deepagents: `system_prompt`; classic: `instructions`.
@@ -1328,14 +1350,6 @@ def get_deep_agent(
         elif accepts_kwargs:
             call.setdefault("system_prompt", system_prompt)
 
-    # Always expose the same `read_skill` tool as get_agent() — a reliable,
-    # cross-platform way to load a skill's SKILL.md (plain file read). This is the
-    # unified skill entry point across both agent modes; the deepagents filesystem
-    # mount below additionally lets the agent browse a skill's *other* files.
-    skill_tool = _make_skill_tool()
-    merged_tools = list(tools) if tools else []
-    if skill_tool is not None:
-        merged_tools.append(skill_tool)
     if merged_tools and _supports("tools"):
         call.setdefault("tools", merged_tools)
 
@@ -1347,7 +1361,6 @@ def get_deep_agent(
     # moment the skills loader hands the agent a skill-file path. Virtual paths
     # behave identically on every platform. Skills are materialized to
     # run_dir/skills → the virtual source "/skills".
-    run_dir = os.environ.get("AGENTFLOW_RUN_DIR")
     virtual = False
     if run_dir and _supports("backend"):
         be_params = inspect.signature(FilesystemBackend).parameters
@@ -1356,9 +1369,121 @@ def get_deep_agent(
             be_kwargs["virtual_mode"] = True
             virtual = True
         call.setdefault("backend", FilesystemBackend(**be_kwargs))
-    if run_dir and _supports("skills") and (Path(run_dir) / "skills").is_dir():
+    if native_skills:
         # Virtual backend → virtual source path; otherwise the real path (POSIX).
         src = "/skills" if virtual else str(Path(run_dir) / "skills")
         call.setdefault("skills", [src])
 
     return create_deep_agent(**call)
+
+
+# ── Agent answer streaming (correct-by-construction) ───────────────────────────
+
+def _ai_message_text(chunk) -> str:
+    """Answer text carried by a streamed message — **only** when it is an AI
+    message.
+
+    ``agent.stream(..., stream_mode="messages")`` yields *every* message the graph
+    produces: AI messages (the answer), **ToolMessages (raw tool output)**, and
+    intermediate human/system messages. Emitting a ToolMessage's content as answer
+    text is the classic bug where a tool's raw output — a ``bash``/CLI dump, a JSON
+    blob, a file's contents — gets spliced into the chat bubble (e.g. a ``python``
+    tool returning ``56088`` ends up glued to the front of the real reply). We keep
+    only AI text here.
+
+    Filtering by **message type** (not by ``langgraph_node`` name) is deliberate:
+    the model node is called ``"agent"`` in a ReAct agent but ``"model"`` in a deep
+    agent (plus middleware nodes), so a node-name filter silently breaks on
+    ``get_deep_agent()``. The type check works across both and every middleware.
+
+    Reasoning (Anthropic ``thinking`` blocks / DeepSeek ``reasoning_content``) is
+    intentionally excluded — the platform surfaces it as a ``<think>`` block when
+    ``stream_reasoning=True``; it must never enter the reply.
+    """
+    # Match by class name to avoid an eager langchain import / version skew.
+    # AIMessage(Chunk) → keep; ToolMessage / HumanMessage / SystemMessage → drop.
+    if type(chunk).__name__ not in ("AIMessageChunk", "AIMessage"):
+        return ""
+    content = getattr(chunk, "content", "")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):  # provider content blocks (e.g. Anthropic)
+        return "".join(
+            part.get("text", "")
+            for part in content
+            if isinstance(part, dict) and part.get("type") in (None, "text")
+        )
+    return ""
+
+
+async def stream_agent(agent, messages, *, stream: bool = True) -> str:
+    """Stream a LangChain/LangGraph agent's answer to the chat UI **correctly**,
+    and return the full reply string.
+
+    This is the recommended way to drive ``get_agent()`` / ``get_deep_agent()`` from
+    a chat script. It runs the agent with ``stream_mode="messages"`` but emits (via
+    ``token()``) **only the model's answer text** — tool results and other non-AI
+    messages are dropped, so a tool's raw output never leaks into the reply. It
+    works the same for a ReAct agent and a deep agent (see ``_ai_message_text``),
+    replacing the hand-rolled ``for chunk, meta in agent.stream(...)`` loop that is
+    easy to get wrong (that yields tool messages too, and the ``langgraph_node``
+    filter people reach for breaks on deep agents).
+
+    Chain-of-thought is **not** part of the reply: pass ``stream_reasoning=True`` to
+    ``get_agent`` / ``get_deep_agent`` and the platform renders it as a collapsible
+    ``<think>`` block automatically.
+
+    Args:
+        agent:    an object returned by ``get_agent()`` / ``get_deep_agent()``.
+        messages: the chat messages — a list of ``(role, content)`` tuples or
+                  message objects — or a full state dict ``{"messages": [...]}``.
+        stream:   ``False`` runs to completion without live tokens and returns only
+                  the final (tool-filtered) answer.
+
+    Returns:
+        The full answer text (the same string that was streamed).
+
+    Example::
+
+        async def run(input: dict) -> dict:
+            agent = get_deep_agent(system_prompt=SYS, stream_reasoning=True)
+            history = [(m["role"], m["content"]) for m in input.get("history", [])]
+            reply = await stream_agent(agent, history + [("human", input["message"])])
+            return {"reply": reply}
+    """
+    state = messages if isinstance(messages, dict) else {"messages": messages}
+    if stream:
+        parts: list[str] = []
+        async for chunk, _meta in agent.astream(state, stream_mode="messages"):
+            text = _ai_message_text(chunk)
+            if text:
+                token(text)
+                parts.append(text)
+        if parts:
+            return "".join(parts)
+        # Some agent configs don't stream token-by-token → fall back to the result.
+    result = await agent.ainvoke(state)
+    msgs = result.get("messages") if isinstance(result, dict) else None
+    return _ai_message_text(msgs[-1]) if msgs else ""
+
+
+def stream_agent_sync(agent, messages, *, stream: bool = True) -> str:
+    """Synchronous ``stream_agent()`` for a sync ``def run(input)``.
+
+    Same filtering and return contract; uses ``agent.stream()`` / ``agent.invoke()``
+    instead of the async variants. Prefer the async :func:`stream_agent` in an
+    ``async def run``.
+    """
+    state = messages if isinstance(messages, dict) else {"messages": messages}
+    if stream:
+        parts: list[str] = []
+        for chunk, _meta in agent.stream(state, stream_mode="messages"):
+            text = _ai_message_text(chunk)
+            if text:
+                token(text)
+                parts.append(text)
+        if parts:
+            return "".join(parts)
+    result = agent.invoke(state)
+    msgs = result.get("messages") if isinstance(result, dict) else None
+    return _ai_message_text(msgs[-1]) if msgs else ""

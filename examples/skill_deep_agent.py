@@ -28,13 +28,14 @@ Prerequisites:
 How to use:
   1. Copy this file into a new AgentFlow script (main.py); entry function "run".
   2. Bind your skill(s); open the script in /converse and chat.
-  3. Watch the log strip: the agent uses filesystem tools (ls / read_file) to
-     open skill files as it needs them.
+  3. The "Agent trace" panel shows the agent using filesystem tools (ls /
+     read_file) to open skill files as it needs them; stream_agent() keeps that
+     tool output out of the chat answer.
 
 Input  : {"message": str, "history": [{"role": str, "content": str}]}
 Output : {"reply": str}
 """
-from agentflow import token, get_deep_agent, log, list_skills
+from agentflow import get_deep_agent, stream_agent, log, list_skills
 
 SYSTEM_PROMPT = """You are a capable assistant with access to skills mounted on
 your filesystem under ./skills/. When a request matches a skill, open its
@@ -60,23 +61,9 @@ async def run(input: dict) -> dict:
     history = [(m["role"], m["content"]) for m in input.get("history", [])]
     messages = history + [("human", user_msg)]
 
-    full_reply = ""
-    async for event in agent.astream_events({"messages": messages}, version="v2"):
-        kind = event["event"]
-        if kind == "on_chat_model_stream":
-            content = event["data"]["chunk"].content
-            if content:
-                token(content)
-                full_reply += content
-        elif kind == "on_tool_start":
-            # e.g. ls / read_file as the agent explores a skill's files.
-            log(f"Using tool: {event['name']}", step="tool")
-
-    if not full_reply:
-        # Some deep-agent configs don't stream text; fall back to the final message.
-        result = await agent.ainvoke({"messages": messages})
-        msgs = result.get("messages") if isinstance(result, dict) else None
-        if msgs:
-            full_reply = getattr(msgs[-1], "content", "") or ""
-
-    return {"reply": full_reply}
+    # stream_agent() streams ONLY the model's answer to the chat UI — it drops the
+    # deep agent's tool results (ls / read_file / bash output), which otherwise get
+    # spliced into the reply. The tool calls themselves still render live in the
+    # /converse "Agent trace" panel via the platform tracer.
+    reply = await stream_agent(agent, messages)
+    return {"reply": reply}

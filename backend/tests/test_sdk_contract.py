@@ -19,6 +19,8 @@ PUBLIC_NAMES = [
     "paths", "AgentFlowFile",
     # models & agents
     "get_llm", "get_llm_with_tools", "get_agent", "get_deep_agent", "get_tools",
+    # agent answer streaming (tool-output-safe)
+    "stream_agent", "stream_agent_sync",
     # skills
     "list_skills", "get_skill", "skill_path",
     # secrets & http helpers
@@ -51,3 +53,19 @@ def test_get_agent_accepts_documented_kwargs():
 
 def test_get_deep_agent_accepts_reasoning():
     assert "reasoning" in _params(agentflow.get_deep_agent)
+
+
+def test_stream_agent_filters_tool_and_non_ai_messages():
+    """The whole point of stream_agent: only AI-message text is answer text.
+    A ToolMessage's content (raw tool output) must never be treated as reply."""
+    # Fabricate minimal stand-ins with the class *names* stream_agent keys on.
+    ai = type("AIMessageChunk", (), {})()
+    ai.content = "the answer"
+    tool = type("ToolMessage", (), {})()
+    tool.content = "56088"  # raw python/bash tool output — must be dropped
+    blocks = type("AIMessage", (), {})()
+    blocks.content = [{"type": "text", "text": "hi"}, {"type": "thinking", "thinking": "secret"}]
+
+    assert agentflow._ai_message_text(ai) == "the answer"
+    assert agentflow._ai_message_text(tool) == ""      # tool output filtered out
+    assert agentflow._ai_message_text(blocks) == "hi"  # thinking block excluded

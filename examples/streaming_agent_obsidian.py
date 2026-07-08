@@ -2,7 +2,8 @@
 Streaming ReAct agent with Obsidian MCP tools.
 
 Tokens stream to the frontend while the agent thinks and calls tools.
-Tool calls (e.g. reading notes) appear as log events in the log strip.
+Tool calls (e.g. reading notes) appear in the "Agent trace" panel; stream_agent()
+streams only the answer, keeping raw tool output out of the reply.
 
 Prerequisites:
   - Configure the Obsidian MCP server in AgentFlow > Tools.
@@ -17,7 +18,7 @@ How to use:
 Input  : {"message": str, "history": [{"role": str, "content": str}]}
 Output : {"reply": str}
 """
-from agentflow import token, get_agent, log
+from agentflow import get_agent, stream_agent
 
 SYSTEM_PROMPT = """You are a helpful assistant with access to the user's Obsidian vault.
 When asked about notes, always search or read them before answering.
@@ -30,23 +31,8 @@ async def run(input: dict) -> dict:
     history = [(m["role"], m["content"]) for m in input.get("history", [])]
     messages = history + [("human", input["message"])]
 
-    full_reply = ""
-    async for event in agent.astream_events({"messages": messages}, version="v2"):
-        kind = event["event"]
-
-        if kind == "on_chat_model_stream":
-            # LLM is generating a token
-            content = event["data"]["chunk"].content
-            if content:
-                token(content)
-                full_reply += content
-
-        elif kind == "on_tool_start":
-            # Agent is calling a tool (e.g. obsidian_search)
-            log(f"Using tool: {event['name']}", step="tool")
-
-        elif kind == "on_tool_end":
-            # Optionally log tool result summary
-            pass
-
+    # stream_agent() streams only the assistant's answer — the MCP tool results
+    # (obsidian_search / read note) are dropped from the reply, and the tool calls
+    # still render in the /converse "Agent trace" panel via the platform tracer.
+    full_reply = await stream_agent(agent, messages)
     return {"reply": full_reply}

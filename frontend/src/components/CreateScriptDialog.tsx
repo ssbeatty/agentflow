@@ -116,7 +116,7 @@ text reply streams token-by-token next to the rendered card in the Artifacts
 tab. Needs a tool-calling model (GPT-4o-mini / Claude Haiku / DeepSeek-V3)."""
 from langchain_core.tools import tool
 from langchain_core.messages import HumanMessage, AIMessage
-from agentflow import token, log, get_agent, get_llm
+from agentflow import token, log, get_agent, get_llm, stream_agent
 from agentflow import (
     markdown as _markdown,
     image as _image,
@@ -193,15 +193,9 @@ async def run(input: dict) -> dict:
             msgs.append(AIMessage(m["content"]))
     msgs.append(HumanMessage(message))
 
-    # Stream only the agent's own text (skip token streams from tool nodes).
-    reply = ""
-    async for chunk, meta in agent.astream({"messages": msgs}, stream_mode="messages"):
-        if meta.get("langgraph_node") != "agent":
-            continue
-        text = getattr(chunk, "content", None)
-        if text and isinstance(text, str):
-            token(text)
-            reply += text
+    # stream_agent() streams only the model's answer, dropping tool results so a
+    # tool's raw output never leaks into the reply (works for plain + deep agents).
+    reply = await stream_agent(agent, msgs)
 
     log("turn done", data={"reply_chars": len(reply)})
     return {"reply": reply}

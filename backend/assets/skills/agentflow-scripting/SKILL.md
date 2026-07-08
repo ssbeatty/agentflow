@@ -199,27 +199,28 @@ as a collapsible `<think>` block, kept out of your returned `reply` automaticall
 loop only ever streams the answer — never emit `<think>` tags or read
 `reasoning_content` yourself (that's the error-prone path the flag exists to remove).
 
-Minimal chat agent (reasoning surfaced automatically by the flag):
+**Streaming an agent: use `stream_agent()`, do NOT hand-roll the loop.** When an
+agent uses tools, `agent.stream(stream_mode="messages")` yields the **tool results**
+(bash/CLI dumps, JSON, file contents) alongside the answer — emit those and they get
+spliced into the chat bubble (e.g. a `python` tool's `56088` glued to the front of the
+reply). The `meta.get("langgraph_node") == "agent"` filter people reach for only works
+for `get_agent()` (its model node is `"agent"`); a **deep agent's node is `"model"`**,
+so that filter silently breaks it. `stream_agent()` filters by **message type** (AI
+only), so it is correct for both agent kinds and returns the full reply:
 
 ```python
-from agentflow import get_agent, token
+from agentflow import get_agent, stream_agent
 
-def run(input: dict) -> dict:
+async def run(input: dict) -> dict:
     history = [(m["role"], m["content"]) for m in input.get("history", [])]
     agent = get_agent(reasoning=input.get("reasoning"), stream_reasoning=True)
-    out = []
-    for chunk, meta in agent.stream(
-        {"messages": history + [("user", input["message"])]},
-        stream_mode="messages",
-    ):
-        if getattr(chunk, "content", None) and meta.get("langgraph_node") == "agent":
-            text = chunk.content if isinstance(chunk.content, str) else "".join(
-                c.get("text", "") for c in chunk.content if isinstance(c, dict))
-            if text:
-                token(text)
-                out.append(text)
-    return {"reply": "".join(out)}
+    reply = await stream_agent(agent, history + [("human", input["message"])])
+    return {"reply": reply}
 ```
+
+Same call for `get_deep_agent()`. In a sync `def run`, use `stream_agent_sync(...)`.
+A **direct** `get_llm().astream(...)` (no tools) has no tool messages, so streaming its
+`chunk.content` is fine without `stream_agent`.
 
 ## Gotchas
 

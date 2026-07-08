@@ -30,7 +30,7 @@ from langchain_core.tools import tool
 from langchain_core.messages import HumanMessage, AIMessage
 
 from agentflow import (
-    token, log, get_agent, get_llm,
+    token, log, get_agent, get_llm, stream_agent,
     markdown as _markdown,
     image as _image,
     table as _table,
@@ -172,19 +172,10 @@ async def run(input: dict) -> dict:
             msgs.append(AIMessage(content))
     msgs.append(HumanMessage(user_msg))
 
-    full_text = ""
-    async for chunk, meta in agent.astream(
-        {"messages": msgs},
-        stream_mode="messages",
-    ):
-        # Skip token streams from tool nodes — only the agent's own LLM step
-        # should appear in the chat bubble.
-        if meta.get("langgraph_node") != "agent":
-            continue
-        text = getattr(chunk, "content", None)
-        if text and isinstance(text, str):
-            token(text)
-            full_text += text
+    # stream_agent() streams only the agent's own text; the artifact tools still
+    # fire (rendering cards), but their "rendered …" tool results are dropped from
+    # the reply. Works for plain + deep agents (no fragile langgraph_node filter).
+    full_text = await stream_agent(agent, msgs)
 
     log("turn done", data={"reply_chars": len(full_text)})
     return {"reply": full_text}
