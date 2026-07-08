@@ -4,7 +4,6 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from loguru import logger
 from pydantic import BaseModel
-from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -56,6 +55,10 @@ def create_script(body: ScriptCreate, db: Session = Depends(get_db)):
     db.add(main_file)
     db.commit()
     db.refresh(script)
+    # Baseline revision #1 = the pristine starting point, so the version history
+    # has a true origin to diff against (every later save diffs vs the previous
+    # revision, and #1 anchors "what changed since the very beginning").
+    _snapshot(script.id, "", db)
     logger.info("Script created: {} ({})", script.id, script.name)
     return script
 
@@ -363,6 +366,9 @@ def fork_revision(script_id: str, rev_id: str, body: ForkRevisionRequest, db: Se
 
     db.commit()
     db.refresh(new_script)
+    # Baseline revision #1 for the fork, same as a fresh script — its history
+    # starts from the copied-in snapshot.
+    _snapshot(new_script.id, "", db)
     try:
         from services.script_schema import refresh_script_schema
         refresh_script_schema(db, new_script)
@@ -517,12 +523,40 @@ def _rev_detail(rev: ScriptRevision) -> RevisionDetailOut:
 
 def _snapshot(script_id: str, label: str, db: Session) -> ScriptRevision:
     script = _get_or_404(script_id, db)
-    max_num = db.query(func.max(ScriptRevision.revision_number)).filter_by(script_id=script_id).scalar() or 0
 
     files_data = [
         {"filename": f.filename, "content": f.content, "is_main": f.is_main}
         for f in script.files
     ]
+
+    latest = (
+        db.query(ScriptRevision)
+        .filter_by(script_id=script_id)
+        .order_by(ScriptRevision.revision_number.desc())
+        .first()
+    )
+
+    # De-dupe *automatic* (unlabeled) snapshots: saving that changes nothing which
+    # defines a version — files / requirements / entry_function — must not pile up
+    # an identical revision (e.g. a metadata-only save that only touched name or
+    # config). A labeled snapshot is always kept; the caller explicitly wants a
+    # marked point. Compare filename-sorted so the unordered `files` relationship
+    # can't cause a false "changed".
+    if not label and latest is not None:
+        try:
+            prev_files = json.loads(latest.files_snapshot or "[]")
+        except Exception:
+            prev_files = None
+        _by_name = lambda fs: sorted(fs, key=lambda f: f.get("filename", ""))
+        if (
+            prev_files is not None
+            and _by_name(prev_files) == _by_name(files_data)
+            and (latest.requirements or "") == (script.requirements or "")
+            and latest.entry_function == script.entry_function
+        ):
+            return latest
+
+    max_num = latest.revision_number if latest is not None else 0
     rev = ScriptRevision(
         script_id=script_id,
         revision_number=max_num + 1,

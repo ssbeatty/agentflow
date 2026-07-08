@@ -28,6 +28,8 @@ export default function RevisionPanel({ scriptId, currentFileContents, onLoad, r
 
   // Diff dialog state
   const [diffRev, setDiffRev] = useState<ScriptRevisionDetail | null>(null);
+  const [diffPrev, setDiffPrev] = useState<ScriptRevisionDetail | null>(null);
+  const [diffMode, setDiffMode] = useState<"prev" | "current">("prev");
   const [diffFile, setDiffFile] = useState<string>("");
   const [diffLoading, setDiffLoading] = useState(false);
 
@@ -58,8 +60,15 @@ export default function RevisionPanel({ scriptId, currentFileContents, onLoad, r
     setDiffLoading(true);
     try {
       const detail = await revisionsApi.get(scriptId, rev.id);
+      // Baseline of the diff = the *previous* revision, so "Diff" answers
+      // "what did this version change?" (like `git show`). #1 has no previous
+      // revision → fall back to comparing against the current editor.
+      const prevSummary = items.find(r => r.revision_number === rev.revision_number - 1);
+      const prevDetail = prevSummary ? await revisionsApi.get(scriptId, prevSummary.id) : null;
       const mainFile = detail.files.find(f => f.is_main) ?? detail.files[0];
       setDiffFile(mainFile?.filename ?? "");
+      setDiffPrev(prevDetail);
+      setDiffMode(prevDetail ? "prev" : "current");
       setDiffRev(detail);
     } catch (e) {
       toast.error(String(e));
@@ -117,8 +126,26 @@ export default function RevisionPanel({ scriptId, currentFileContents, onLoad, r
     }
   }
 
-  const diffRevOriginal = diffRev?.files.find(f => f.filename === diffFile)?.content ?? "";
-  const diffRevCurrent = currentFileContents.get(diffFile) ?? "";
+  const revContent = (d: ScriptRevisionDetail | null, fn: string) =>
+    d?.files.find(f => f.filename === fn)?.content ?? "";
+
+  // Files across both sides being compared, so an added/removed file still shows
+  // up as a tab (and diffs as fully added / fully removed).
+  const diffFileList = (() => {
+    if (!diffRev) return [] as string[];
+    const names = new Set<string>();
+    for (const f of diffRev.files) names.add(f.filename);
+    for (const f of diffMode === "prev" ? diffPrev?.files ?? [] : []) names.add(f.filename);
+    return [...names].sort();
+  })();
+
+  // prev mode: previous revision (left) → this revision (right)
+  // current mode: this revision (left) → current editor (right)
+  const diffOriginal = diffMode === "prev" ? revContent(diffPrev, diffFile) : revContent(diffRev, diffFile);
+  const diffModified = diffMode === "prev" ? revContent(diffRev, diffFile) : currentFileContents.get(diffFile) ?? "";
+
+  // The earliest kept revision is the baseline origin (shown with a distinct label).
+  const baselineNum = items.length ? items[items.length - 1].revision_number : null;
 
   return (
     <>
@@ -163,7 +190,11 @@ export default function RevisionPanel({ scriptId, currentFileContents, onLoad, r
                     title={t("revisionPanel.labelEditHint")}
                     onClick={() => { setEditingId(rev.id); setEditingLabel(rev.label); }}
                   >
-                    {rev.label || <span className="text-muted-foreground/50 italic">{t("revisionPanel.addLabelPlaceholder")}</span>}
+                    {rev.label
+                      ? rev.label
+                      : rev.revision_number === baselineNum
+                        ? <span className="text-muted-foreground/70">{t("revisionPanel.initialVersion")}</span>
+                        : <span className="text-muted-foreground/50 italic">{t("revisionPanel.addLabelPlaceholder")}</span>}
                   </span>
                 )}
 
@@ -208,26 +239,51 @@ export default function RevisionPanel({ scriptId, currentFileContents, onLoad, r
       </ScrollArea>
 
       {/* Diff dialog */}
-      <Dialog open={!!diffRev} onOpenChange={open => { if (!open) setDiffRev(null); }}>
+      <Dialog open={!!diffRev} onOpenChange={open => { if (!open) { setDiffRev(null); setDiffPrev(null); } }}>
         <DialogContent className="max-w-5xl w-[90vw] h-[80vh] flex flex-col gap-0 p-0">
           <DialogHeader className="px-4 py-3 border-b border-border shrink-0">
             <DialogTitle className="text-sm">
               {t("revisionPanel.diffDialog.title", { number: diffRev?.revision_number })}
               {diffRev?.label && <span className="ml-2 text-muted-foreground font-normal">{t("revisionPanel.diffDialog.labelSuffix", { label: diffRev.label })}</span>}
             </DialogTitle>
-            {diffRev && diffRev.files.length > 1 && (
-              <div className="flex gap-1 flex-wrap mt-1">
-                {diffRev.files.map(f => (
+            {/* Compare target: previous revision (default) vs the current editor */}
+            <div className="flex gap-1 mt-1.5">
+              <button
+                onClick={() => setDiffMode("prev")}
+                disabled={!diffPrev}
+                title={!diffPrev ? t("revisionPanel.diffDialog.noPrevHint") : undefined}
+                className={`text-[10px] px-2 py-0.5 rounded border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                  diffMode === "prev"
+                    ? "bg-primary/10 border-primary/40 text-primary"
+                    : "border-border/60 text-muted-foreground hover:border-border hover:text-foreground"
+                }`}
+              >
+                {t("revisionPanel.diffDialog.comparePrev")}
+              </button>
+              <button
+                onClick={() => setDiffMode("current")}
+                className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
+                  diffMode === "current"
+                    ? "bg-primary/10 border-primary/40 text-primary"
+                    : "border-border/60 text-muted-foreground hover:border-border hover:text-foreground"
+                }`}
+              >
+                {t("revisionPanel.diffDialog.compareCurrent")}
+              </button>
+            </div>
+            {diffFileList.length > 1 && (
+              <div className="flex gap-1 flex-wrap mt-1.5">
+                {diffFileList.map(fn => (
                   <button
-                    key={f.filename}
-                    onClick={() => setDiffFile(f.filename)}
+                    key={fn}
+                    onClick={() => setDiffFile(fn)}
                     className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
-                      diffFile === f.filename
+                      diffFile === fn
                         ? "bg-primary/10 border-primary/40 text-primary"
                         : "border-border/60 text-muted-foreground hover:border-border hover:text-foreground"
                     }`}
                   >
-                    {f.filename}
+                    {fn}
                   </button>
                 ))}
               </div>
@@ -235,8 +291,8 @@ export default function RevisionPanel({ scriptId, currentFileContents, onLoad, r
           </DialogHeader>
           <div className="flex-1 min-h-0">
             <DiffEditor
-              original={diffRevOriginal}
-              modified={diffRevCurrent}
+              original={diffOriginal}
+              modified={diffModified}
               language={diffFile.endsWith(".py") ? "python" : diffFile.endsWith(".json") ? "json" : "plaintext"}
               theme="vs-dark"
               options={{
@@ -250,7 +306,11 @@ export default function RevisionPanel({ scriptId, currentFileContents, onLoad, r
             />
           </div>
           <div className="px-4 py-2 border-t border-border shrink-0 flex items-center gap-2">
-            <span className="text-[10px] text-muted-foreground">{t("revisionPanel.diffDialog.legend")}</span>
+            <span className="text-[10px] text-muted-foreground">
+              {diffMode === "prev"
+                ? t("revisionPanel.diffDialog.legendPrev", { prev: diffPrev?.revision_number ?? "—", current: diffRev?.revision_number })
+                : t("revisionPanel.diffDialog.legendCurrent")}
+            </span>
           </div>
         </DialogContent>
       </Dialog>

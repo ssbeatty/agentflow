@@ -43,6 +43,7 @@
     "loading": "加载中…",
     "empty": "还没有版本记录。保存后将创建第一个版本。",
     "labelEditHint": "点击编辑标签",
+    "initialVersion": "初始版本",
     "addLabelPlaceholder": "添加标签…",
     "actions": {
       "diff": "对比",
@@ -52,8 +53,12 @@
     "forkNameSuffix": "{{name}}(副本)",
     "diffDialog": {
       "title": "版本 #{{number}}",
-      "labelSuffix": "— {{label}}",
-      "legend": "左侧:历史版本 · 右侧:当前编辑器"
+      "comparePrev": "对比上一版本",
+      "compareCurrent": "对比当前编辑器",
+      "noPrevHint": "这是最早的版本,没有可对比的上一版本。",
+      "legendPrev": "左侧:版本 #{{prev}} · 右侧:版本 #{{current}}(此版本引入的改动)",
+      "legendCurrent": "左侧:此版本 · 右侧:当前编辑器",
+      "labelSuffix": "— {{label}}"
     },
     "rollbackDialog": {
       "title": "加载版本 #{{number}}?",

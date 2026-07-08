@@ -43,6 +43,7 @@
     "loading": "Loading…",
     "empty": "No revisions yet. Save to create the first one.",
     "labelEditHint": "Click to edit label",
+    "initialVersion": "Initial version",
     "addLabelPlaceholder": "add label…",
     "actions": {
       "diff": "Diff",
@@ -52,8 +53,12 @@
     "forkNameSuffix": "{{name}} (copy)",
     "diffDialog": {
       "title": "Revision #{{number}}",
-      "labelSuffix": "— {{label}}",
-      "legend": "Left: revision · Right: current editor"
+      "comparePrev": "vs previous",
+      "compareCurrent": "vs current editor",
+      "noPrevHint": "This is the earliest revision — nothing to compare against.",
+      "legendPrev": "Left: revision #{{prev}} · Right: revision #{{current}} (what this version changed)",
+      "legendCurrent": "Left: this revision · Right: current editor",
+      "labelSuffix": "— {{label}}"
     },
     "rollbackDialog": {
       "title": "Load revision #{{number}}?",
