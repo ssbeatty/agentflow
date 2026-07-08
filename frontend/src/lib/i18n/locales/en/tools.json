@@ -199,11 +199,21 @@
     "title": "Skill Marketplace",
     "tabs": {
       "official": "Official anthropics/skills",
+      "url": "From URL",
       "skillsmp": "Community SkillsMP",
       "skillssh": "Community skills.sh"
     },
     "back": "Back",
     "refreshTitle": "Refresh",
+    "url": {
+      "urlLabel": "Git / GitHub URL",
+      "urlPlaceholder": "https://github.com/owner/repo",
+      "skillLabel": "Skill name (optional)",
+      "skillPlaceholder": "e.g. tushare-data",
+      "skillHint": "Leave blank to install the whole repo, or pick one skill from a multi-skill repo — like the --skill flag.",
+      "installButton": "Install",
+      "hint": "Paste any GitHub repo URL. A .git suffix, a branch/tag (@ref), and tree/blob links all work. Examples:"
+    },
     "choice": {
       "bundlesHint": "bundles several skills — choose one:"
     },

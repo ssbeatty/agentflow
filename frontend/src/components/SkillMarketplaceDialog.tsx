@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import {
-  Loader2, Download, Check, Star, RefreshCw, Search, BookOpen, ExternalLink, ArrowLeft,
+  Loader2, Download, Check, Star, RefreshCw, Search, BookOpen, ExternalLink, ArrowLeft, Link2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-type Tab = "official" | "skillsmp" | "skillssh";
+type Tab = "official" | "url" | "skillsmp" | "skillssh";
 
 interface Choice {
   owner: string;
@@ -49,6 +49,11 @@ export default function SkillMarketplaceDialog({
   const [installing, setInstalling] = useState<string | null>(null);
   const [installed, setInstalled] = useState<Set<string>>(new Set());
   const [choice, setChoice] = useState<Choice | null>(null);
+
+  // Install-from-URL tab (git/GitHub URL + optional --skill selector)
+  const [url, setUrl] = useState("");
+  const [urlSkill, setUrlSkill] = useState("");
+  const [urlBusy, setUrlBusy] = useState(false);
 
   const isRegistry = tab === "skillsmp" || tab === "skillssh";
 
@@ -112,6 +117,28 @@ export default function SkillMarketplaceDialog({
       onInstalled();
     } catch (e) { toast.error(String(e)); }
     finally { setInstalling(null); }
+  }
+
+  // Install directly from a pasted git/GitHub URL, optionally naming one skill in a
+  // multi-skill repo (like `npx skills add <url> --skill <name>`). Falls back to the
+  // choice picker when the repo bundles several skills and no name was given.
+  async function installFromUrl() {
+    const u = url.trim();
+    if (!u || urlBusy) return;
+    setUrlBusy(true);
+    try {
+      const r = await marketplace.install({ githubUrl: u, skill: urlSkill.trim() || undefined });
+      if (r.needs_choice && r.skills) {
+        setChoice({ owner: r.owner!, repo: r.repo!, ref: r.ref, skills: r.skills, label: u });
+        return;
+      }
+      const name = r.skill?.name ?? u;
+      toast.success(r.already_installed
+        ? t("marketplace.toast.alreadyInstalled", { label: name })
+        : t("marketplace.toast.installed", { name }));
+      onInstalled();
+    } catch (e) { toast.error(String(e)); }
+    finally { setUrlBusy(false); }
   }
 
   function Card({
@@ -189,7 +216,7 @@ export default function SkillMarketplaceDialog({
           <div className="flex-1 min-h-0 flex flex-col gap-3">
             {/* Tabs */}
             <div className="flex items-center gap-1 border-b border-border shrink-0">
-              {(["official", "skillsmp", "skillssh"] as Tab[]).map(tabId => (
+              {(["official", "url", "skillsmp", "skillssh"] as Tab[]).map(tabId => (
                 <button key={tabId} onClick={() => switchTab(tabId)}
                   className={`px-3 py-1.5 text-sm border-b-2 -mb-px transition-colors whitespace-nowrap ${
                     tab === tabId ? "border-primary text-foreground font-medium" : "border-transparent text-muted-foreground hover:text-foreground"
@@ -238,6 +265,43 @@ export default function SkillMarketplaceDialog({
                   ))}
                 </div>
               </>
+            ) : tab === "url" ? (
+              /* ── Install from a pasted git/GitHub URL ── */
+              <div className="flex-1 min-h-0 overflow-y-auto pr-1 flex flex-col gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-foreground">{t("marketplace.url.urlLabel")}</label>
+                  <div className="relative">
+                    <Link2 className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                    <Input
+                      value={url}
+                      onChange={e => setUrl(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter") installFromUrl(); }}
+                      placeholder={t("marketplace.url.urlPlaceholder")}
+                      className="pl-8 font-mono text-xs"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-foreground">{t("marketplace.url.skillLabel")}</label>
+                  <Input
+                    value={urlSkill}
+                    onChange={e => setUrlSkill(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter") installFromUrl(); }}
+                    placeholder={t("marketplace.url.skillPlaceholder")}
+                    className="font-mono text-xs"
+                  />
+                  <p className="text-[11px] text-muted-foreground">{t("marketplace.url.skillHint")}</p>
+                </div>
+                <Button onClick={installFromUrl} disabled={urlBusy || !url.trim()} className="self-start">
+                  {urlBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                  {t("marketplace.url.installButton")}
+                </Button>
+                <div className="rounded-lg border border-border bg-secondary/20 p-3 text-[11px] text-muted-foreground space-y-1">
+                  <p>{t("marketplace.url.hint")}</p>
+                  <code className="block font-mono text-foreground/80 break-all">https://github.com/waditu-tushare/skills.git</code>
+                  <code className="block font-mono text-foreground/80 break-all">owner/repo@branch</code>
+                </div>
+              </div>
             ) : (
               <>
                 <div className="flex items-center gap-2 shrink-0">

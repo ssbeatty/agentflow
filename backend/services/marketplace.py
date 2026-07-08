@@ -166,6 +166,25 @@ def resolve_targets(owner: str, repo: str, ref: str | None = None,
     return scan_skills(root, subpath)
 
 
+def pick_target(targets: list[dict], name: str) -> list[dict]:
+    """Filter resolved targets down to the one a caller named (like ``--skill``).
+
+    Matches case-insensitively on the frontmatter ``name``, the skill folder's
+    basename, or the full repo subpath — so ``tushare-data`` selects the
+    ``tushare-data/`` folder in a multi-skill repo. Returns ``[]`` (caller 404s)
+    when nothing matches, or all targets unchanged when ``name`` is blank.
+    """
+    wanted = (name or "").strip().lower()
+    if not wanted:
+        return targets
+    return [
+        t for t in targets
+        if (t.get("name") or "").strip().lower() == wanted
+        or (t.get("path") or "").rsplit("/", 1)[-1].lower() == wanted
+        or (t.get("path") or "").lower() == wanted
+    ]
+
+
 def install_skill(owner: str, repo: str, ref: str | None = None,
                   subpath: str = "", refresh: bool = False) -> dict:
     """Copy one skill folder (root/subpath, must contain SKILL.md) into the store.

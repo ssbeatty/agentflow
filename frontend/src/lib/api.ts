@@ -379,7 +379,7 @@ export const marketplace = {
 
   install: (body: {
     owner?: string; repo?: string; ref?: string | null;
-    subpath?: string; githubUrl?: string; refresh?: boolean;
+    subpath?: string; githubUrl?: string; skill?: string; refresh?: boolean;
   }) =>
     req<{
       installed?: boolean;

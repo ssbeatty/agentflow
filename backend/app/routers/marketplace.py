@@ -21,6 +21,9 @@ class InstallBody(BaseModel):
     ref: str | None = None
     subpath: str = ""
     githubUrl: str | None = None
+    # Pick one named skill out of a multi-skill repo (like `npx skills add … --skill <name>`).
+    # Matched against the skill's frontmatter name / folder basename / subpath.
+    skill: str | None = None
     refresh: bool = False
 
 
@@ -100,6 +103,15 @@ def install(body: InstallBody):
 
     if not targets:
         raise HTTPException(404, "no SKILL.md found at that location")
+
+    if body.skill:
+        # `--skill <name>`: install that one directly, skipping the choice picker.
+        matches = marketplace.pick_target(targets, body.skill)
+        if not matches:
+            available = ", ".join(sorted({t["path"].rsplit("/", 1)[-1] for t in targets}))
+            raise HTTPException(404, f"skill '{body.skill}' not found in repo (available: {available})")
+        targets = matches
+
     if len(targets) > 1:
         # Repo bundles several skills — let the caller pick which path to install.
         return {"needs_choice": True, "owner": owner, "repo": repo, "ref": ref, "skills": targets}

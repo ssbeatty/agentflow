@@ -198,11 +198,21 @@
     "title": "技能市场",
     "tabs": {
       "official": "官方 anthropics/skills",
+      "url": "从 URL 安装",
       "skillsmp": "社区 SkillsMP",
       "skillssh": "社区 skills.sh"
     },
     "back": "返回",
     "refreshTitle": "刷新",
+    "url": {
+      "urlLabel": "Git / GitHub 地址",
+      "urlPlaceholder": "https://github.com/owner/repo",
+      "skillLabel": "技能名称(可选)",
+      "skillPlaceholder": "例如 tushare-data",
+      "skillHint": "留空则安装整个仓库;若仓库包含多个技能,可指定其一 —— 相当于 --skill 参数。",
+      "installButton": "安装",
+      "hint": "粘贴任意 GitHub 仓库地址。支持 .git 后缀、分支/标签(@ref)以及 tree/blob 链接。示例:"
+    },
     "choice": {
       "bundlesHint": "包含多个技能 —— 请选择一个:"
     },
