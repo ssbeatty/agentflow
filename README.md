@@ -405,6 +405,7 @@ Grouped by whether the architecture has to move. High-value, low-cost first — 
 
 - [x] **Async external API** — `/run?wait=false` returns the execution id immediately + optional `callback_url` completion webhook ✅
 - [x] **Metrics export** — Prometheus `GET /metrics`: runs, latency, tokens, failure rates, queue depth ✅
+- [ ] **Stateful chat memory** — persist the chat/assistant agent's full LangGraph state (a checkpointer keyed by conversation id) so tool results (e.g. a loaded skill's SKILL.md) carry across turns instead of being re-fetched every turn
 - [ ] **API-key scopes & quotas** — per-key script allowlists / rate limits / token budgets; separately toggleable `/mcp` write access
 - [ ] **Secret encryption at rest** — optional `ENCRYPTION_KEY` to encrypt secrets / channel keys / OAuth tokens before they hit the DB
 - [ ] **Script export / import** — zip bundles (files + requirements + input schema + eval cases) for backup, sharing, and Git-friendly workflows
@@ -415,7 +416,6 @@ Grouped by whether the architecture has to move. High-value, low-cost first — 
 - [ ] **Horizontal scaling** — split execution into standalone workers + an external queue (Redis / Celery-style), distributed-lock scheduling, WS replay in Redis
 - [ ] **Harder isolation** — container / gVisor / microVM per run, optional per-script network egress policies
 - [ ] **Multi-user / RBAC** — from single-admin gate to teams + roles + per-user scripts + audit log
-- [ ] **Frontend tests** — Playwright e2e for the critical flows
 
 **Explicit non-goals** (positioning, not neglect)
 
