@@ -31,7 +31,12 @@ class ScriptCreate(BaseModel):
     requirements: str = ""
     mcp_server_ids: list[str] = []
     skill_ids: list[str] = []
+    module_ids: list[str] = []
     max_executions: int = 50
+    # "script" (runnable, default) | "module" (importable library, no run()/venv).
+    kind: str = "script"
+    # For kind="module": importable package name (defaults to a slug of `name`).
+    module_package: Optional[str] = None
 
 
 class ScriptUpdate(BaseModel):
@@ -41,12 +46,15 @@ class ScriptUpdate(BaseModel):
     requirements: Optional[str] = None
     mcp_server_ids: Optional[list[str]] = None
     skill_ids: Optional[list[str]] = None
+    module_ids: Optional[list[str]] = None
     max_executions: Optional[int] = Field(default=None, ge=0, le=10000)
     # The input schema is normally derived from the script (see script_schema.py),
     # but allow an explicit override / clear via PATCH too. Pass null to clear.
     input_schema: Optional[dict] = None
     warm: Optional[bool] = None
     keep_warm: Optional[bool] = None
+    # kind is fixed at creation and NOT updatable; module_package (module only) is.
+    module_package: Optional[str] = None
 
 
 class ScriptSummary(BaseModel):
@@ -56,7 +64,10 @@ class ScriptSummary(BaseModel):
     entry_function: str
     mcp_server_ids: list[str] = []
     skill_ids: list[str] = []
+    module_ids: list[str] = []
     max_executions: int = 50
+    kind: str = "script"
+    module_package: Optional[str] = None
     # Cached JSON Schema for run() input (null = untyped). Source of truth is the
     # script's own `INPUT_SCHEMA` / Pydantic model; refreshed on save / sync.
     input_schema: Optional[dict] = None
@@ -66,6 +77,13 @@ class ScriptSummary(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+    # A newly-added JSON column reads NULL on pre-existing rows before the backfill
+    # lands; coerce to [] so serialization never fails (mirrors ChannelOut.models).
+    @field_validator("mcp_server_ids", "skill_ids", "module_ids", mode="before")
+    @classmethod
+    def _none_to_list(cls, v):
+        return v or []
 
 
 class ScriptDetail(ScriptSummary):

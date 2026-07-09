@@ -20,6 +20,22 @@ class Script(Base):
     requirements = Column(Text, default="")
     mcp_server_ids = Column(JSON, default=list)
     skill_ids = Column(JSON, default=list)
+    # Reusable code modules this script imports (opt-in, like skill_ids). Holds
+    # the row ids of kind="module" Scripts. At run time the engine materializes
+    # each bound module's files into `script_dir/modules/<package>/` and puts
+    # `script_dir/modules` on sys.path, so the script can `from <package> import …`.
+    # A module has NO venv of its own; its `requirements` are merged into THIS
+    # script's venv install. See Alembic 0012 + services/module_support.py.
+    module_ids = Column(JSON, default=list)
+    # Script kind: "script" (a runnable entry point — the default) or "module"
+    # (an importable library other scripts bind via module_ids; no run()/venv,
+    # hidden from the run dashboard). server_default so existing rows read
+    # "script" and Alembic autogenerate sees no drift. See Alembic 0012.
+    kind = Column(String(16), default="script", server_default="script", nullable=False)
+    # For kind="module" only: the importable package name a referencing script
+    # uses (`from <module_package> import …`). A valid Python identifier, unique
+    # among modules. Null for kind="script". See services/module_support.py.
+    module_package = Column(String(255), nullable=True)
     # Optional JSON Schema describing this script's run() input. The *source of
     # truth* is the script itself (a module-level `INPUT_SCHEMA` dict, or a
     # Pydantic model's `.model_json_schema()`); this column is a CACHE, refreshed

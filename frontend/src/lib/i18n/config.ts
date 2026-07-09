@@ -23,6 +23,8 @@ import toolsEn from "./locales/en/tools.json";
 import toolsZh from "./locales/zh/tools.json";
 import skillEn from "./locales/en/skill.json";
 import skillZh from "./locales/zh/skill.json";
+import moduleEn from "./locales/en/module.json";
+import moduleZh from "./locales/zh/module.json";
 import docsEn from "./locales/en/docs.json";
 import docsZh from "./locales/zh/docs.json";
 import scriptEn from "./locales/en/script.json";
@@ -54,6 +56,7 @@ const resources = {
     settings: settingsEn,
     tools: toolsEn,
     skill: skillEn,
+    module: moduleEn,
     docs: docsEn,
     script: scriptEn,
     scriptEditor: scriptEditorEn,
@@ -73,6 +76,7 @@ const resources = {
     settings: settingsZh,
     tools: toolsZh,
     skill: skillZh,
+    module: moduleZh,
     docs: docsZh,
     script: scriptZh,
     scriptEditor: scriptEditorZh,

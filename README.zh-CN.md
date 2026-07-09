@@ -44,6 +44,7 @@ AgentFlow 是一个**自托管的 agent 代码之家**:你只写一个普通的 
 | 🧪 **评估 & 回归** | 给脚本建测试集(包含 / 正则 / LLM 裁判断言),通过率与上一版对比,可钉到脚本修订版本 |
 | 💬 **内置聊天页** | 任何脚本秒变流式聊天应用——Markdown 渲染、可折叠思考过程、工具调用轨迹、可嵌入 |
 | 🔧 **MCP & 🧩 Agent Skills** | 接外部 MCP server(支持 OAuth),从内置市场安装 [Agent Skill](https://github.com/anthropics/skills),按脚本勾选 |
+| 🧱 **可复用代码模块** | 在多个脚本间共享 Python 代码——模块写一次,任何勾选它的脚本即可 `from <包名> import …`;模块的依赖会安装进引用它的脚本 venv |
 | ⏰ **定时触发** | cron 表达式 + 时区控制 + 输入预设 |
 | 🌐 **HTTP API + webhook** | 同步 `POST /run`,或 `wait=false` 异步提交 + 完成回调;凭执行 id 轮询——全部走签发的 API Key |
 | 🔔 **失败告警** | 定时任务凌晨三点挂了?PushPlus / Bark / 邮件叫醒你 |
@@ -160,6 +161,16 @@ npm run dev
       <img src="docs/images/api-docs.png" alt="API 参考页">
     </td>
   </tr>
+  <tr>
+    <td width="50%">
+      <b>⑦ 可复用模块</b> —— 代码写一次;独立的「模块」页面列出你所有共享库。<br>
+      <img src="docs/images/modules.png" alt="模块页面">
+    </td>
+    <td width="50%">
+      <b>⑧ 绑定资源</b> —— 一个可搜索选择器,统一管理脚本用到的 MCP、技能与模块。<br>
+      <img src="docs/images/resource-picker.png" alt="资源选择器:工具 / 技能 / 模块">
+    </td>
+  </tr>
 </table>
 
 ---
@@ -223,6 +234,38 @@ def build():
 def run(input):
     return build().invoke({"count": 0})
 ```
+
+### 可复用模块 —— 在多个脚本间共享代码
+
+同一个 helper 复制粘贴进十个脚本很烦。**模块**就是一段可被其他脚本引用的 Python 代码
+(相当于一个私有小包),**按脚本勾选**,不是全局的。在首页的 **模块** 区块新建一个:
+它是一个 `kind="module"` 的脚本,有一个可导入的 **包名**(如 `textutils`),自身没有 `run()`。
+
+```python
+# 模块「文本工具」· 包名:textutils · 文件 __init__.py
+import re
+
+def strip_tags(html: str) -> str:
+    return re.sub(r"<[^>]+>", "", html)
+```
+
+<img src="docs/images/module-editor.png" alt="模块编辑器" width="100%">
+
+然后在任意脚本里打开 **配置 → 资源**,把这个模块加进来,按包名导入:
+
+```python
+from textutils import strip_tags        # from <包名> import ...
+from agentflow import log
+
+def run(input: dict) -> dict:
+    clean = strip_tags(input["html"])
+    log("cleaned", data={"chars": len(clean)})
+    return {"text": clean}
+```
+
+模块**自己没有 venv**——它的 `requirements` 会装进每个引用它的脚本的 venv,所以绑定模块
+(或它依赖变动)后,记得在引用它的脚本上重新点一次 **安装**。模块改一次,所有用到它的
+脚本下次运行就会生效。
 
 内置 SDK 一口气说完:`log()` 打结构化日志、`get_llm()` / `get_agent()` / `get_deep_agent()` 拿模型和 agent、`get_tools()` 拿工具、`get_secret()` 读密钥、`web_search()` / `web_fetch()` 联网、`markdown()` / `table()` / `image()` 在聊天里渲染卡片,以及模块级 `INPUT_SCHEMA` 给 `run()` 一个带校验的类型化输入(自动生成运行表单)。完整清单见平台内 `/docs` 页。
 

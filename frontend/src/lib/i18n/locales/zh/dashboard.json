@@ -13,6 +13,13 @@
     "chat": "对话",
     "open": "打开"
   },
+  "modules": {
+    "heading": "模块",
+    "subtitle": "可被脚本引用的复用代码",
+    "pageSubtitle": "可被其他脚本引用的 Python 代码——在脚本的 配置 → 资源 中绑定。",
+    "new": "新建模块",
+    "empty": "还没有模块。创建一个即可在多个脚本间复用代码。"
+  },
   "dialog": {
     "template": "模板",
     "name": "名称",

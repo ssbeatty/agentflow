@@ -186,6 +186,36 @@ instructions = get_skill("pdf-tools")     # full SKILL.md text
 folder = skill_path("pdf-tools")          # Path to the skill's files
 ```
 
+## Reusable code modules (share code across scripts)
+
+A **module** is reusable Python *code* other scripts import — think shared
+helpers/clients, distinct from a skill (which shares prompt instructions). A
+module is a script of `kind="module"`: it has files + a `requirements` list but
+**no `run()` and no venv of its own**, and it never runs directly. A script opts
+in (like skills/MCP) via its `module_ids`, then imports the module by its
+**package name**:
+
+```python
+# module "Text Utilities", package name "textutils", file clean.py:
+def strip_tags(html: str) -> str:
+    ...
+
+# a script that binds this module (Config panel → Resources → add the module):
+from textutils import strip_tags       # from <module_package> import ...
+
+def run(input: dict) -> dict:
+    return {"clean": strip_tags(input["html"])}
+```
+
+- The module's files are materialized into the importing script's
+  `script_dir/modules/<package>/` at run time and put on `sys.path` — no install,
+  no copy-paste. Module code can `import agentflow` too.
+- The module's **`requirements` are installed into the *importing* script's venv**
+  (merged with that script's own). So after binding a module (or when its deps
+  change), **re-run the importing script's env setup** (`setup_script_env`) to pull
+  the new deps in.
+- Modules are flat: a module can't itself bind other modules (v1).
+
 ## Chat scripts (the /converse page)
 
 Input arrives as `{"message": str, "history": [{"role","content"}], "reasoning": str}`;
@@ -224,8 +254,10 @@ A **direct** `get_llm().astream(...)` (no tools) has no tool messages, so stream
 
 ## Gotchas
 
-- A script only sees MCP tools whose server ids are in its `mcp_server_ids`, and
-  skills whose directory names are in `skill_ids` — set them with `update_script`.
+- A script only sees MCP tools whose server ids are in its `mcp_server_ids`,
+  skills whose directory names are in `skill_ids`, and code modules whose ids are
+  in `module_ids` — set them with `update_script`. A bound module's dependencies
+  install into THIS script's venv, so re-run `setup_script_env` after binding one.
 - Baseline venv packages: langchain-core, langchain-openai, langchain-deepseek,
   langgraph, httpx, ddgs, beautifulsoup4, langchain-mcp-adapters, nest-asyncio,
   deepagents. Anything else goes in `requirements` + `setup_script_env`.

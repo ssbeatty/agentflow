@@ -27,31 +27,52 @@ router = APIRouter()
 
 
 @router.get("", response_model=list[ScriptSummary])
-def list_scripts(db: Session = Depends(get_db)):
+def list_scripts(kind: str | None = None, db: Session = Depends(get_db)):
     # Hide the built-in "AI 脚本助手" system script from the dashboard / Chat
     # picker — it's an internal agent, not a user script. It's still reachable by
     # id (the AI panel starts it via POST /api/executions).
+    #
+    # `kind=module` lists reusable code modules (for the module editor + the
+    # resource picker); anything else (incl. no filter) lists runnable scripts,
+    # so modules never appear mixed into the run dashboard.
     from services.assistant_seed import ASSISTANT_SCRIPT_NAME
-    return (
-        db.query(Script)
-        .filter(Script.name != ASSISTANT_SCRIPT_NAME)
-        .order_by(Script.updated_at.desc())
-        .all()
-    )
+    q = db.query(Script).filter(Script.name != ASSISTANT_SCRIPT_NAME)
+    q = q.filter(Script.kind == ("module" if kind == "module" else "script"))
+    return q.order_by(Script.updated_at.desc()).all()
 
 
 @router.post("", response_model=ScriptDetail, status_code=201)
 def create_script(body: ScriptCreate, db: Session = Depends(get_db)):
-    script = Script(**body.model_dump())
+    from services.module_support import normalize_package_name, is_valid_package_name
+    data = body.model_dump()
+    is_module = data.get("kind") == "module"
+    if is_module:
+        pkg = (data.get("module_package") or "").strip() or normalize_package_name(data["name"])
+        if not is_valid_package_name(pkg):
+            raise HTTPException(400, "module_package must be a valid Python identifier")
+        _ensure_unique_module_package(db, pkg, None)
+        data["module_package"] = pkg
+    else:
+        data["module_package"] = None  # only modules carry a package name
+    script = Script(**data)
     db.add(script)
     db.flush()
-    # create default main.py
-    main_file = ScriptFile(
-        script_id=script.id,
-        filename="main.py",
-        content=_default_main(body.entry_function),
-        is_main=True,
-    )
+    # A module is an importable package (default __init__.py); a script is a
+    # runnable entry point (default main.py with its entry function).
+    if is_module:
+        main_file = ScriptFile(
+            script_id=script.id,
+            filename="__init__.py",
+            content=_default_module_init(script.module_package),
+            is_main=True,
+        )
+    else:
+        main_file = ScriptFile(
+            script_id=script.id,
+            filename="main.py",
+            content=_default_main(body.entry_function),
+            is_main=True,
+        )
     db.add(main_file)
     db.commit()
     db.refresh(script)
@@ -59,7 +80,7 @@ def create_script(body: ScriptCreate, db: Session = Depends(get_db)):
     # has a true origin to diff against (every later save diffs vs the previous
     # revision, and #1 anchors "what changed since the very beginning").
     _snapshot(script.id, "", db)
-    logger.info("Script created: {} ({})", script.id, script.name)
+    logger.info("{} created: {} ({})", "Module" if is_module else "Script", script.id, script.name)
     return script
 
 
@@ -70,9 +91,20 @@ def get_script(script_id: str, db: Session = Depends(get_db)):
 
 
 @router.patch("/{script_id}", response_model=ScriptDetail)
-def update_script(script_id: str, body: ScriptUpdate, db: Session = Depends(get_db)):
+def update_script(script_id: str, body: ScriptUpdate, background: BackgroundTasks, db: Session = Depends(get_db)):
     script = _get_or_404(script_id, db)
     changes = body.model_dump(exclude_none=True)
+    # module_package is meaningful only for modules; validate + enforce uniqueness.
+    if "module_package" in changes:
+        if script.kind != "module":
+            changes.pop("module_package")
+        else:
+            from services.module_support import is_valid_package_name
+            pkg = (changes["module_package"] or "").strip()
+            if not is_valid_package_name(pkg):
+                raise HTTPException(400, "module_package must be a valid Python identifier")
+            _ensure_unique_module_package(db, pkg, script_id)
+            changes["module_package"] = pkg
     for k, v in changes.items():
         setattr(script, k, v)
     db.commit()
@@ -84,10 +116,14 @@ def update_script(script_id: str, body: ScriptUpdate, db: Session = Depends(get_
             prune_executions(db, script.id, script.max_executions)
         except Exception:
             pass
-    # Turning warm off / changing its shape retires any live worker so the next
-    # run reflects the new setting.
-    if "warm" in changes or "keep_warm" in changes:
+    # Turning warm off / changing its shape, or changing which modules this script
+    # imports, retires this script's own worker (it booted with the old imports).
+    if "warm" in changes or "keep_warm" in changes or "module_ids" in changes:
         _invalidate_worker(script_id)
+    # If THIS is a module whose code/deps/package changed, every script that binds
+    # it now holds stale imports — retire their workers + refresh their schema.
+    if script.kind == "module" and any(k in changes for k in ("requirements", "module_package")):
+        _fanout_module_change(script_id, db, background)
     return script
 
 
@@ -138,7 +174,7 @@ async def delete_script(script_id: str, background: BackgroundTasks, db: Session
 
 @router.put("/{script_id}/files", response_model=ScriptFileOut, status_code=200)
 def upsert_file(script_id: str, body: ScriptFileUpsert, background: BackgroundTasks, db: Session = Depends(get_db)):
-    _get_or_404(script_id, db)
+    script = _get_or_404(script_id, db)
     try:
         filename = normalize_script_filename(body.filename)
     except ValueError as e:
@@ -160,11 +196,15 @@ def upsert_file(script_id: str, body: ScriptFileUpsert, background: BackgroundTa
     background.add_task(_refresh_schema_bg, script_id)
     # A code edit invalidates any warm worker holding the stale main.py.
     _invalidate_worker(script_id)
+    # Editing a module's file makes every dependent script's imports stale.
+    if script.kind == "module":
+        _fanout_module_change(script_id, db, background)
     return f
 
 
 @router.delete("/{script_id}/files/{filename:path}", status_code=204)
 def delete_file(script_id: str, filename: str, background: BackgroundTasks, db: Session = Depends(get_db)):
+    script = _get_or_404(script_id, db)
     try:
         filename = normalize_script_filename(filename)
     except ValueError as e:
@@ -179,6 +219,8 @@ def delete_file(script_id: str, filename: str, background: BackgroundTasks, db: 
     db.commit()
     background.add_task(_refresh_schema_bg, script_id)
     _invalidate_worker(script_id)
+    if script.kind == "module":
+        _fanout_module_change(script_id, db, background)
 
 
 # ── Venv & install (streamed) ──────────────────────────────────────────────────
@@ -265,6 +307,14 @@ async def preheat_worker(script_id: str, db: Session = Depends(get_db)):
     from services import worker_pool
     if not worker_pool.worker_enabled(script):
         return {"enabled": False, "ready": False, "reused": False}
+    # Materialize the script's own files + bound modules so the worker boots with
+    # current code even on a first-ever boot (no preceding run wrote them to disk).
+    try:
+        from services.module_support import prepare_worker_dir
+        from services.venv_manager import get_script_dir
+        prepare_worker_dir(db, script, get_script_dir(script.id))
+    except Exception:
+        logger.exception("[script {}] preheat dir prep failed", script_id)
     try:
         worker = await worker_pool.manager.acquire(
             script.id, script.entry_function, preheat=True,
@@ -294,11 +344,28 @@ async def install_deps(script_id: str, db: Session = Depends(get_db)):
     if not venv_exists(script_id):
         raise HTTPException(400, "Create venv first")
 
+    # Install the script's own requirements PLUS every bound module's — the deps
+    # a module needs must land in the venv of the script that imports it.
+    from services.module_support import effective_requirements
+    requirements = effective_requirements(db, script)
+
     async def gen():
-        async for line in stream_install(script_id, script.requirements or ""):
+        async for line in stream_install(script_id, requirements):
             yield line + "\n"
 
     return StreamingResponse(gen(), media_type="text/plain")
+
+
+@router.get("/{script_id}/dependents", response_model=list[ScriptSummary])
+def list_module_dependents(script_id: str, db: Session = Depends(get_db)):
+    """Scripts that import this module (via `module_ids`). Powers the module
+    editor's "used by" panel. Empty for a non-module script."""
+    _get_or_404(script_id, db)
+    from services.module_support import dependent_script_ids
+    dep_ids = dependent_script_ids(db, script_id)
+    if not dep_ids:
+        return []
+    return db.query(Script).filter(Script.id.in_(dep_ids)).order_by(Script.name).all()
 
 
 # ── Revisions ─────────────────────────────────────────────────────────────────
@@ -474,6 +541,44 @@ def _invalidate_worker(script_id: str) -> None:
         invalidate_worker(script_id)
     except Exception:
         pass
+
+
+def _ensure_unique_module_package(db: Session, package: str, exclude_id: str | None) -> None:
+    """A module's importable package name must be unique among modules, else two
+    bound modules would collide under script_dir/modules/<package>/."""
+    q = db.query(Script).filter(Script.kind == "module", Script.module_package == package)
+    if exclude_id:
+        q = q.filter(Script.id != exclude_id)
+    if q.first():
+        raise HTTPException(409, f"A module with package name {package!r} already exists")
+
+
+def _fanout_module_change(module_id: str, db: Session, background: BackgroundTasks) -> None:
+    """A module's code/deps changed: every script that imports it holds stale
+    module code (and possibly a stale schema). Retire each dependent's warm worker
+    (in-process, immediate) and refresh its cached input schema off the request
+    path. Best-effort — a fan-out hiccup never fails the module edit."""
+    try:
+        from services.module_support import dependent_script_ids
+        for dep_id in dependent_script_ids(db, module_id):
+            _invalidate_worker(dep_id)
+            background.add_task(_refresh_schema_bg, dep_id)
+    except Exception:
+        logger.exception("[module {}] dependent fan-out failed", module_id)
+
+
+def _default_module_init(package: str) -> str:
+    return f'''"""{package} — a reusable AgentFlow module.
+
+Bind this module to a script (its Config panel → Resources), then import it:
+
+    from {package} import hello
+"""
+
+
+def hello(name: str = "world") -> str:
+    return f"hello, {{name}}!"
+'''
 
 
 def _get_or_404(script_id: str, db: Session) -> Script:

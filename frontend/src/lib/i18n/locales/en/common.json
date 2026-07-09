@@ -4,6 +4,7 @@
   },
   "nav": {
     "dashboard": "Dashboard",
+    "modules": "Modules",
     "chat": "Chat",
     "docs": "Docs",
     "tools": "Tools",

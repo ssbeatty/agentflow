@@ -47,6 +47,41 @@ def _run(db, main_py: str, *, entry: str = "run", input_data: dict | None = None
     return db.query(Execution).filter_by(id=eid).first()
 
 
+def test_script_imports_bound_module(db):
+    """End-to-end: a script binds a kind="module" via module_ids, and its main.py
+    does `from <package> import …`. The engine must materialize the module into
+    script_dir/modules/<package>/ and put it on sys.path so the import resolves
+    and the run completes. Exercises the whole module import seam."""
+    module = Script(name="Math Helper", kind="module", module_package="mathhelper")
+    db.add(module)
+    db.flush()
+    db.add(ScriptFile(
+        script_id=module.id, filename="__init__.py",
+        content="def add(a, b):\n    return a + b\n", is_main=True,
+    ))
+
+    main_py = (
+        "from mathhelper import add\n\n"
+        "def run(input):\n"
+        "    return {'sum': add(input['a'], input['b'])}\n"
+    )
+    script = Script(name="uses-a-module", entry_function="run", module_ids=[module.id])
+    db.add(script)
+    db.flush()
+    db.add(ScriptFile(script_id=script.id, filename="main.py", content=main_py, is_main=True))
+    execution = Execution(script_id=script.id, status="pending", input_data={"a": 2, "b": 3})
+    db.add(execution)
+    db.commit()
+    eid = execution.id
+
+    asyncio.run(execution_engine.start_execution(eid))
+
+    db.expire_all()
+    row = db.query(Execution).filter_by(id=eid).first()
+    assert row.status == "completed", f"module import run failed: {row.error}"
+    assert row.output_data == {"sum": 5}
+
+
 def test_missing_dependency_fails_with_visible_error(db):
     main_py = (
         "import totally_missing_dependency_xyz  # not installed anywhere\n\n"

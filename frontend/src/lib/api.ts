@@ -69,17 +69,22 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 // ── Scripts ────────────────────────────────────────────────────────────────────
 
 export const scripts = {
-  list: () => req<ScriptSummary[]>("/scripts"),
+  // kind="module" lists reusable code modules; default lists runnable scripts.
+  list: (kind?: "script" | "module") =>
+    req<ScriptSummary[]>(`/scripts${kind ? `?kind=${kind}` : ""}`),
 
   get: (id: string) => req<Script>(`/scripts/${id}`),
 
-  create: (data: { name: string; description?: string; entry_function?: string }) =>
+  create: (data: { name: string; description?: string; entry_function?: string; kind?: "script" | "module"; module_package?: string | null }) =>
     req<Script>("/scripts", { method: "POST", body: JSON.stringify(data) }),
 
-  update: (id: string, data: Partial<Pick<Script, "name" | "description" | "entry_function" | "requirements" | "mcp_server_ids" | "skill_ids" | "max_executions" | "input_schema" | "warm" | "keep_warm">>) =>
+  update: (id: string, data: Partial<Pick<Script, "name" | "description" | "entry_function" | "requirements" | "mcp_server_ids" | "skill_ids" | "module_ids" | "module_package" | "max_executions" | "input_schema" | "warm" | "keep_warm">>) =>
     req<Script>(`/scripts/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
 
   delete: (id: string) => req<void>(`/scripts/${id}`, { method: "DELETE" }),
+
+  /** Scripts that import this module (via module_ids) — powers the "used by" panel. */
+  dependents: (id: string) => req<ScriptSummary[]>(`/scripts/${id}/dependents`),
 
   /** Re-derive the input schema from the script's code (INPUT_SCHEMA). */
   syncSchema: (id: string) =>

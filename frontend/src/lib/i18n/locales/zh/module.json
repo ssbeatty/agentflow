@@ -1,0 +1,45 @@
+{
+  "header": {
+    "namePlaceholder": "模块名称",
+    "badge": "模块",
+    "save": "保存",
+    "deleteTitle": "删除模块"
+  },
+  "meta": {
+    "packageLabel": "包名",
+    "importHint": "from {{pkg}} import ...",
+    "descriptionPlaceholder": "该模块提供的功能（绑定到脚本时显示）"
+  },
+  "usedBy": {
+    "label": "被引用（{{count}}）",
+    "none": "还没有脚本引用它。在脚本的配置面板 → 资源 中绑定它。"
+  },
+  "deleteDialog": {
+    "title": "删除模块？",
+    "description": "“{{name}}” 将被永久删除。",
+    "descriptionInUse": "“{{name}}” 正被 {{count}} 个脚本引用，删除后这些脚本的导入会失效。",
+    "cancel": "取消",
+    "delete": "删除",
+    "deleting": "删除中…"
+  },
+  "create": {
+    "title": "新建模块",
+    "description": "一个可被其他脚本引用的可复用代码库。它自身没有 venv；它的依赖会安装到引用它的脚本里。",
+    "name": "名称",
+    "namePlaceholder": "例如 文本工具",
+    "package": "包名",
+    "importHint": "脚本这样导入：from {{pkg}} import ...",
+    "nameRequired": "名称不能为空",
+    "cancel": "取消",
+    "create": "创建",
+    "creating": "创建中…",
+    "created": "模块已创建"
+  },
+  "toast": {
+    "loadFailed": "加载模块失败",
+    "nameRequired": "名称不能为空",
+    "renameMainForbidden": "无法重命名主文件",
+    "saved": "已保存",
+    "deleted": "模块已删除"
+  }
+}

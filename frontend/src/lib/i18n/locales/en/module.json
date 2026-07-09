@@ -1,0 +1,45 @@
+{
+  "header": {
+    "namePlaceholder": "Module name",
+    "badge": "Module",
+    "save": "Save",
+    "deleteTitle": "Delete module"
+  },
+  "meta": {
+    "packageLabel": "Package",
+    "importHint": "from {{pkg}} import ...",
+    "descriptionPlaceholder": "What this module provides (shown when binding it to a script)"
+  },
+  "usedBy": {
+    "label": "Used by ({{count}})",
+    "none": "Not imported by any script yet. Bind it from a script's Config panel → Resources."
+  },
+  "deleteDialog": {
+    "title": "Delete module?",
+    "description": "\"{{name}}\" will be permanently deleted.",
+    "descriptionInUse": "\"{{name}}\" is imported by {{count}} script(s). Deleting it will break their imports.",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "deleting": "Deleting..."
+  },
+  "create": {
+    "title": "New module",
+    "description": "A reusable code library other scripts can import. It has no venv of its own; its dependencies install into the scripts that use it.",
+    "name": "Name",
+    "namePlaceholder": "e.g. Text Utilities",
+    "package": "Package name",
+    "importHint": "Scripts import it as: from {{pkg}} import ...",
+    "nameRequired": "Name is required",
+    "cancel": "Cancel",
+    "create": "Create",
+    "creating": "Creating...",
+    "created": "Module created"
+  },
+  "toast": {
+    "loadFailed": "Failed to load module",
+    "nameRequired": "Name is required",
+    "renameMainForbidden": "Cannot rename the main file",
+    "saved": "Saved",
+    "deleted": "Module deleted"
+  }
+}

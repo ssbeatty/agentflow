@@ -66,7 +66,9 @@ async def install_ws(script_id: str, action: str = "install", ws: WebSocket = No
                 await ws.send_json({"type": "error", "message": "Create venv first"})
                 await ws.close()
                 return
-            gen = stream_install(script_id, script.requirements or "")
+            # Include bound modules' deps — they install into the importing script's venv.
+            from services.module_support import effective_requirements
+            gen = stream_install(script_id, effective_requirements(db, script))
 
         async for line in gen:
             done = line in ("DONE", ) or line.startswith("ERROR:")

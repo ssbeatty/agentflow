@@ -24,6 +24,10 @@ export interface JsonSchema {
   [key: string]: unknown;
 }
 
+// "script" = a runnable entry point; "module" = an importable library other
+// scripts bind via module_ids (no run()/venv, hidden from the run dashboard).
+export type ScriptKind = "script" | "module";
+
 export interface Script {
   id: string;
   name: string;
@@ -32,6 +36,9 @@ export interface Script {
   requirements: string;
   mcp_server_ids: string[];
   skill_ids: string[];
+  module_ids: string[];
+  kind: ScriptKind;
+  module_package?: string | null;   // importable package name (modules only)
   max_executions: number;
   input_schema?: JsonSchema | null;
   warm: boolean;
@@ -48,6 +55,9 @@ export interface ScriptSummary {
   entry_function: string;
   mcp_server_ids: string[];
   skill_ids: string[];
+  module_ids: string[];
+  kind: ScriptKind;
+  module_package?: string | null;
   max_executions: number;
   input_schema?: JsonSchema | null;
   warm: boolean;

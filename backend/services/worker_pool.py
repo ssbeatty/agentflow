@@ -77,6 +77,12 @@ from pathlib import Path
 
 sys.path.insert(0, r"{backend_root}")
 sys.path.insert(0, r"{script_dir}")
+# Bound code modules (script.module_ids) live under script_dir/modules/<package>/.
+# Materialized before the worker boots (start_execution / preheat). Appended
+# (lowest priority) so a module package never shadows the script's own files.
+_mod_dir = os.path.join(r"{script_dir}", "modules")
+if os.path.isdir(_mod_dir):
+    sys.path.append(_mod_dir)
 
 # agentflow.token()/log() decide whether to ALSO write raw text to stdout/stderr
 # based on a module-level `_IN_PLATFORM = bool(os.environ.get("AGENTFLOW_EXECUTION_ID"))`
@@ -311,9 +317,13 @@ class _Worker:
         threading.Thread(target=_pump, args=(self.proc.stdout, False), daemon=True).start()
         threading.Thread(target=_pump, args=(self.proc.stderr, True), daemon=True).start()
 
-        # Wait for the boot handshake (`worker_ready`). Non-prefixed boot lines
-        # (import warnings) are streamed to the backend log, not the run.
+        # Wait for the boot handshake (`worker_ready`). The worker imports the
+        # user's main.py (and any bound modules) at boot, so a bad import / missing
+        # dependency crashes it here — we collect the non-protocol boot output so
+        # the real traceback (e.g. ModuleNotFoundError) surfaces in the run error
+        # instead of a bare "worker exited during boot".
         t0 = time.monotonic()
+        boot_output: list[str] = []
         while True:
             try:
                 is_stderr, line = await asyncio.wait_for(self.queue.get(), timeout=WORKER_BOOT_TIMEOUT)
@@ -322,7 +332,8 @@ class _Worker:
                 raise WorkerDied(f"worker boot timed out after {WORKER_BOOT_TIMEOUT:.0f}s")
             if line is None:
                 self.kill()
-                raise WorkerDied("worker exited during boot")
+                tail = "\n".join(boot_output[-15:]).strip()
+                raise WorkerDied("worker exited during boot" + (f":\n{tail}" if tail else ""))
             if line.startswith(_PREFIX):
                 payload = _try_json(line)
                 if payload and payload.get("type") == "worker_ready":
@@ -332,8 +343,12 @@ class _Worker:
                     logger.info("[worker {}] ready (boot {:.2f}s, preheat={})",
                                 self.script_id[:8], boot_s, self.preheat)
                     return
-            elif is_stderr:
-                logger.debug("[worker {}] boot: {}", self.script_id[:8], line)
+            else:
+                # non-protocol boot output (import errors / tracebacks) — keep for the
+                # error message, and mirror stderr into the backend log at DEBUG.
+                boot_output.append(line)
+                if is_stderr:
+                    logger.debug("[worker {}] boot: {}", self.script_id[:8], line)
 
     async def run_job(self, job: dict, handler: Callable[[bool, str], Awaitable[None]]) -> bool:
         """Send one job and pump its output through `handler` until job_done.

@@ -61,6 +61,26 @@
     "skills": {
       "label": "技能"
     },
+    "resources": {
+      "label": "资源",
+      "manage": "管理",
+      "none": "还没有配置任何工具、技能或模块。",
+      "empty": "未绑定任何资源。点击「管理」添加工具、技能或模块。",
+      "remove": "移除",
+      "dialogTitle": "绑定资源",
+      "searchPlaceholder": "搜索工具、技能、模块…",
+      "noMatches": "没有匹配的资源",
+      "nothingSelected": "未选择任何资源",
+      "done": "完成",
+      "filters": {
+        "all": "全部"
+      },
+      "types": {
+        "mcp": "工具",
+        "skill": "技能",
+        "module": "模块"
+      }
+    },
     "warm": {
       "label": "常驻 worker",
       "reuse": "运行间复用 worker",

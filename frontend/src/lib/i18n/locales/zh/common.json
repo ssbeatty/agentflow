@@ -4,6 +4,7 @@
   },
   "nav": {
     "dashboard": "仪表盘",
+    "modules": "模块",
     "chat": "对话",
     "docs": "文档",
     "tools": "工具",

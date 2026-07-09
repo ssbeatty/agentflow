@@ -44,6 +44,7 @@ No per-node metering. No seat fees. No lock-in. `docker compose up` and it's you
 | 🧪 **Evals & regression** | Per-script test datasets (contains / regex / LLM-as-judge assertions), pass-rate deltas vs the previous run, pinned to script revisions |
 | 💬 **Built-in chat UI** | Any script becomes a streaming chat app — markdown, collapsible reasoning, tool-call trace, embeddable |
 | 🔧 **MCP & 🧩 Agent Skills** | Consume external MCP servers (with OAuth), install [Agent Skills](https://github.com/anthropics/skills) from a built-in marketplace, opt in per script |
+| 🧱 **Reusable code modules** | Share Python code across scripts — write a module once, `from <package> import …` in any script that opts in; its deps install into the importing script's venv |
 | ⏰ **Scheduling** | Cron triggers with timezone control, saved input presets |
 | 🌐 **HTTP API + webhooks** | Sync `POST /run`, or async `wait=false` with a completion callback; poll by execution id — all via issued API keys |
 | 🔔 **Failure alerts** | PushPlus / Bark / email when a scheduled run dies at 3am |
@@ -160,6 +161,16 @@ npm run dev
       <img src="docs/images/api-docs.png" alt="API reference page">
     </td>
   </tr>
+  <tr>
+    <td width="50%">
+      <b>⑦ Reusable modules</b> — write code once; a dedicated Modules page lists your shared libraries.<br>
+      <img src="docs/images/modules.png" alt="Modules page">
+    </td>
+    <td width="50%">
+      <b>⑧ Bind resources</b> — one searchable picker for the MCP servers, skills and modules a script uses.<br>
+      <img src="docs/images/resource-picker.png" alt="Resource picker: tools, skills, modules">
+    </td>
+  </tr>
 </table>
 
 ---
@@ -223,6 +234,42 @@ def build():
 def run(input):
     return build().invoke({"count": 0})
 ```
+
+### Reusable modules — share code across scripts
+
+Copy-pasting the same helper into ten scripts gets old. A **module** is reusable
+Python code other scripts import (a private mini-package), opted into **per script**
+— not global. Create one from the dashboard's **Modules** section: it's a
+`kind="module"` script with an importable **package name** (e.g. `textutils`) and
+no `run()` of its own.
+
+```python
+# module "Text Utilities" · package name: textutils · file __init__.py
+import re
+
+def strip_tags(html: str) -> str:
+    return re.sub(r"<[^>]+>", "", html)
+```
+
+<img src="docs/images/module-editor.png" alt="Module editor" width="100%">
+
+Then in any script, open **Config → Resources**, add the module, and import it by
+its package name:
+
+```python
+from textutils import strip_tags        # from <package> import ...
+from agentflow import log
+
+def run(input: dict) -> dict:
+    clean = strip_tags(input["html"])
+    log("cleaned", data={"chars": len(clean)})
+    return {"text": clean}
+```
+
+A module has **no venv of its own** — its `requirements` install into the venv of
+each script that imports it, so re-run **Install** on the importing script after
+binding a module (or when its deps change). Edit the module once and every script
+that uses it picks up the change on its next run.
 
 The SDK in one breath: `log()` for structured logs, `get_llm()` / `get_agent()` / `get_deep_agent()` for models and agents, `get_tools()` for the tool list, `get_secret()` for credentials, `web_search()` / `web_fetch()` for the internet, `markdown()` / `table()` / `image()` to render rich cards in chat, and a module-level `INPUT_SCHEMA` to give `run()` a typed, validated input with an auto-generated form. The full reference lives on the in-app `/docs` page.
 

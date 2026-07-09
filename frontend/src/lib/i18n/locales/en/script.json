@@ -62,6 +62,26 @@
     "skills": {
       "label": "Skills"
     },
+    "resources": {
+      "label": "Resources",
+      "manage": "Manage",
+      "none": "No tools, skills, or modules configured yet.",
+      "empty": "None bound. Click Manage to add tools, skills, or modules.",
+      "remove": "Remove",
+      "dialogTitle": "Bind resources",
+      "searchPlaceholder": "Search tools, skills, modules…",
+      "noMatches": "No matching resources",
+      "nothingSelected": "Nothing selected",
+      "done": "Done",
+      "filters": {
+        "all": "All"
+      },
+      "types": {
+        "mcp": "tools",
+        "skill": "skills",
+        "module": "modules"
+      }
+    },
     "warm": {
       "label": "Warm worker",
       "reuse": "Reuse worker between runs",

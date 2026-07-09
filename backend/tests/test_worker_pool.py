@@ -379,6 +379,22 @@ def test_sys_exit_does_not_kill_worker():
     asyncio.run(go())
 
 
+def test_boot_import_error_surfaces_in_worker_died():
+    """Regression: a warm worker imports main.py (and any bound modules) AT BOOT,
+    so a missing dependency crashes the boot. The failure must surface the real
+    traceback (ModuleNotFoundError) instead of a bare 'worker exited during boot',
+    so the user can see WHY — e.g. a bound module's deps weren't installed into
+    this script's venv (the #1 confusing warm-worker failure)."""
+    async def go():
+        sid = "wp-bootimport"
+        _setup_script(sid, "import nonexistent_pkg_zzz\n\ndef run(input):\n    return {}\n")
+        with pytest.raises(worker_pool.WorkerDied) as ei:
+            await worker_pool.manager.acquire(sid, "run", preheat=False)
+        assert "nonexistent_pkg_zzz" in str(ei.value)
+        assert "ModuleNotFoundError" in str(ei.value)
+    asyncio.run(go())
+
+
 def test_worker_enabled_gating(db):
     from app.models import Script
     # flag on (fixture), warm script → enabled

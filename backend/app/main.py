@@ -153,16 +153,25 @@ async def _preheat_keep_warm() -> None:
         targets = [(s.id, s.entry_function, s.name) for s in scripts]
     except Exception:
         logger.exception("keep_warm preheat query failed")
+        db.close()
         return
+
+    from services.module_support import prepare_worker_dir
+    from services.venv_manager import get_script_dir
+    try:
+        for sid, entry, name in targets:
+            try:
+                # Materialize the script's files + bound modules before the worker
+                # boots and imports main.py (this may be its first-ever boot).
+                script = db.query(Script).filter_by(id=sid).first()
+                if script is not None:
+                    prepare_worker_dir(db, script, get_script_dir(sid))
+                await worker_pool.manager.acquire(sid, entry, preheat=True)
+                logger.info("[worker {}] preheated on startup ({})", sid[:8], name)
+            except Exception as e:
+                logger.warning("[worker {}] startup preheat failed: {}", sid[:8], e)
     finally:
         db.close()
-
-    for sid, entry, name in targets:
-        try:
-            await worker_pool.manager.acquire(sid, entry, preheat=True)
-            logger.info("[worker {}] preheated on startup ({})", sid[:8], name)
-        except Exception as e:
-            logger.warning("[worker {}] startup preheat failed: {}", sid[:8], e)
 
 
 # Swagger/OpenAPI is moved under /api/* so the default "/docs" path stays free

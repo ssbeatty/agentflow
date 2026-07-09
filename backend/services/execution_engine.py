@@ -199,6 +199,7 @@ def _write_runner(
 ) -> tuple[Path, Path]:
     backend_root = str(BACKEND_ROOT).replace("\\", "/")
     script_dir_s = str(script_dir).replace("\\", "/")
+    modules_dir_s = str(script_dir / "modules").replace("\\", "/")
     input_file = run_dir / "_input.json"
     input_path = str(input_file).replace("\\", "/")
 
@@ -210,6 +211,11 @@ from pathlib import Path
 
 sys.path.insert(0, r"{backend_root}")
 sys.path.insert(0, r"{script_dir_s}")
+# Bound code modules (script.module_ids) live under script_dir/modules/<package>/.
+# Appended (lowest priority) so a module's package name never shadows the script's
+# own files or an installed package; it only resolves names nothing else claims.
+if os.path.isdir(r"{modules_dir_s}"):
+    sys.path.append(r"{modules_dir_s}")
 os.environ["AGENTFLOW_EXECUTION_ID"] = "{execution_id}"
 ''' +
         "".join(f'os.environ[{k!r}] = {v!r}\n' for k, v in llm_envs.items()) +
@@ -686,6 +692,16 @@ async def start_execution(execution_id: str) -> None:
                 pass
             target.write_text(f.content, encoding="utf-8")
 
+        # ── materialize bound code modules (importable packages) ──────────────
+        # Each kind="module" script this one binds (script.module_ids) is copied
+        # into script_dir/modules/<package>/ (skip-if-identical, same race guard).
+        # The runner + worker put script_dir/modules on sys.path so user code can
+        # `from <package> import …`. The module's own deps were merged into this
+        # script's venv at install time (services/module_support). Done before the
+        # worker branch so a warm worker boots with the modules already on disk.
+        from services.module_support import materialize_modules
+        module_manifest = materialize_modules(db, script, script_dir)
+
         # ── per-execution working directory (cwd) + persistent workspace ──────
         run_dir = script_dir / "runs" / execution_id
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -865,6 +881,7 @@ async def start_execution(execution_id: str) -> None:
             f"default={default_model or 'none'}; "
             f"MCP servers: {list(mcp_configs.keys()) or 'none'}; "
             f"skills: {[s['name'] for s in skill_manifest] or 'none'}; "
+            f"modules: {[m['package'] for m in module_manifest] or 'none'}; "
             f"secrets: {[s.key for s in secret_rows] or 'none'}; "
             f"search: {search_provider}"
             + (" (tavily key set)" if search_blob.get("tavily_api_key") else "")

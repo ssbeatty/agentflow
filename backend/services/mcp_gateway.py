@@ -476,7 +476,9 @@ async def setup_script_env(script_id: str, force: bool = False) -> dict:
         s = _script_or_error(db, script_id)
         if not s:
             return {"error": f"script {script_id} not found"}
-        requirements = s.requirements or ""
+        # Own requirements + every bound module's (they install into this venv).
+        from services.module_support import effective_requirements
+        requirements = effective_requirements(db, s)
     finally:
         db.close()
 

@@ -14,6 +14,13 @@
     "chat": "Chat",
     "open": "Open"
   },
+  "modules": {
+    "heading": "Modules",
+    "subtitle": "Reusable code that scripts import",
+    "pageSubtitle": "Reusable Python code other scripts import — bind it from a script's Config → Resources.",
+    "new": "New Module",
+    "empty": "No modules yet. Create one to share code across scripts."
+  },
   "dialog": {
     "template": "Template",
     "name": "Name",

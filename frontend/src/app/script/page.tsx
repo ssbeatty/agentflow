@@ -6,12 +6,13 @@ import { useTranslation } from "react-i18next";
 import {
   ArrowLeft, Play, Square, Save, Terminal, Settings2,
   Clock, ChevronRight, Loader2, CalendarClock, Workflow,
-  History, CheckCircle2, XCircle, MinusCircle, Copy, Trash2, Wrench, Check, Sparkles, Coins, FlaskConical, Flame,
+  History, CheckCircle2, XCircle, MinusCircle, Copy, Trash2, Check, Sparkles, Coins, FlaskConical, Flame,
   Search, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { scripts, executions, mcpServers, skills as skillsApi, revisions as revisionsApi, inputPresets } from "@/lib/api";
-import type { Script, ScriptFile, ExecutionLog, WsEvent, MCPServerConfig, SkillSummary, ScriptRevisionDetail, TraceEvent, GraphTopology, ScriptInputPreset, ArtifactEvent } from "@/lib/types";
+import type { Script, ScriptSummary, ScriptFile, ExecutionLog, WsEvent, MCPServerConfig, SkillSummary, ScriptRevisionDetail, TraceEvent, GraphTopology, ScriptInputPreset, ArtifactEvent } from "@/lib/types";
+import ResourcePicker, { type ResourceItem, type ResourceSelection } from "@/components/ResourcePicker";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
@@ -90,6 +91,8 @@ function ScriptPage() {
   const [availableMcpServers, setAvailableMcpServers] = useState<MCPServerConfig[]>([]);
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
   const [availableSkills, setAvailableSkills] = useState<SkillSummary[]>([]);
+  const [selectedModuleIds, setSelectedModuleIds] = useState<string[]>([]);
+  const [availableModules, setAvailableModules] = useState<ScriptSummary[]>([]);
   const [inputJson, setInputJson] = useState("{}");
   const [inputError, setInputError] = useState("");
   const [activeTab, setActiveTab] = useState("logs");
@@ -173,8 +176,8 @@ function ScriptPage() {
 
   // Load script
   useEffect(() => {
-    Promise.all([scripts.get(id), mcpServers.list(), skillsApi.list()])
-      .then(([s, servers, skillList]) => {
+    Promise.all([scripts.get(id), mcpServers.list(), skillsApi.list(), scripts.list("module")])
+      .then(([s, servers, skillList, moduleList]) => {
         setScript(s);
         setName(s.name);
         setEntryFn(s.entry_function);
@@ -185,6 +188,8 @@ function ScriptPage() {
         setAvailableMcpServers(servers.filter(srv => srv.enabled));
         setSelectedSkillIds(s.skill_ids || []);
         setAvailableSkills(skillList.filter(sk => sk.enabled));
+        setSelectedModuleIds(s.module_ids || []);
+        setAvailableModules(moduleList);
 
         const contents = new Map<string, string>();
         for (const f of s.files) contents.set(f.filename, f.content);
@@ -296,7 +301,7 @@ function ScriptPage() {
     try {
       const reqContent = fileContents.get("requirements.txt") ?? "";
       const ops: Promise<unknown>[] = [
-        scripts.update(id, { name, entry_function: entryFn, requirements: reqContent, mcp_server_ids: selectedMcpIds, skill_ids: selectedSkillIds, max_executions: maxExec, warm, keep_warm: keepWarm }),
+        scripts.update(id, { name, entry_function: entryFn, requirements: reqContent, mcp_server_ids: selectedMcpIds, skill_ids: selectedSkillIds, module_ids: selectedModuleIds, max_executions: maxExec, warm, keep_warm: keepWarm }),
       ];
       for (const filename of dirtyFiles) {
         if (filename === "requirements.txt" || filename === "__meta__") continue;
@@ -306,7 +311,7 @@ function ScriptPage() {
       }
       await Promise.all(ops);
       setDirtyFiles(new Set());
-      setScript(prev => prev ? { ...prev, name, entry_function: entryFn, requirements: reqContent, mcp_server_ids: selectedMcpIds, skill_ids: selectedSkillIds, max_executions: maxExec, warm, keep_warm: keepWarm } : prev);
+      setScript(prev => prev ? { ...prev, name, entry_function: entryFn, requirements: reqContent, mcp_server_ids: selectedMcpIds, skill_ids: selectedSkillIds, module_ids: selectedModuleIds, max_executions: maxExec, warm, keep_warm: keepWarm } : prev);
       setLoadedRevision(null);
       // Create revision snapshot after successful save
       revisionsApi.create(id).then(() => setRevisionRefresh(n => n + 1)).catch(() => null);
@@ -454,6 +459,22 @@ function ScriptPage() {
 
   function markDirty(filename: string) {
     setDirtyFiles(prev => new Set(prev).add(filename));
+  }
+
+  // ── Resources (MCP + skills + modules) for the unified picker ──────────────
+  const resourceItems: ResourceItem[] = [
+    ...availableMcpServers.map(s => ({ type: "mcp" as const, id: s.id, name: s.name, description: s.transport })),
+    ...availableSkills.map(s => ({ type: "skill" as const, id: s.id, name: s.name, description: s.description })),
+    ...availableModules.map(m => ({ type: "module" as const, id: m.id, name: m.name, description: m.module_package ? `${m.module_package} — ${m.description}` : m.description })),
+  ];
+  const resourceSelection: ResourceSelection = {
+    mcp: selectedMcpIds, skill: selectedSkillIds, module: selectedModuleIds,
+  };
+  function handleResourceChange(next: ResourceSelection) {
+    setSelectedMcpIds(next.mcp);
+    setSelectedSkillIds(next.skill);
+    setSelectedModuleIds(next.module);
+    markDirty("__meta__");
   }
 
   async function handleNewFile(filename: string) {
@@ -889,75 +910,12 @@ function ScriptPage() {
                   )}
                 </div>
 
-                {/* MCP Servers */}
-                {availableMcpServers.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/70 flex items-center gap-1.5">
-                      <Wrench className="h-3 w-3" />{t("config.mcp.label")}
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {availableMcpServers.map(srv => {
-                        const active = selectedMcpIds.includes(srv.id);
-                        return (
-                          <button
-                            key={srv.id}
-                            onClick={() => {
-                              setSelectedMcpIds(prev => active ? prev.filter(x => x !== srv.id) : [...prev, srv.id]);
-                              markDirty("__meta__");
-                            }}
-                            title={srv.transport}
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border transition-all ${
-                              active
-                                ? "bg-primary/10 border-primary/40 text-primary"
-                                : "bg-secondary/30 border-border/60 text-muted-foreground hover:border-border hover:text-foreground"
-                            }`}
-                          >
-                            {active
-                              ? <Check className="h-3 w-3 shrink-0" />
-                              : <span className="h-3 w-3 shrink-0" />
-                            }
-                            {srv.name}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Skills */}
-                {availableSkills.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/70 flex items-center gap-1.5">
-                      <Sparkles className="h-3 w-3" />{t("config.skills.label")}
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {availableSkills.map(sk => {
-                        const active = selectedSkillIds.includes(sk.id);
-                        return (
-                          <button
-                            key={sk.id}
-                            onClick={() => {
-                              setSelectedSkillIds(prev => active ? prev.filter(x => x !== sk.id) : [...prev, sk.id]);
-                              markDirty("__meta__");
-                            }}
-                            title={sk.description || sk.name}
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border transition-all ${
-                              active
-                                ? "bg-primary/10 border-primary/40 text-primary"
-                                : "bg-secondary/30 border-border/60 text-muted-foreground hover:border-border hover:text-foreground"
-                            }`}
-                          >
-                            {active
-                              ? <Check className="h-3 w-3 shrink-0" />
-                              : <span className="h-3 w-3 shrink-0" />
-                            }
-                            {sk.name}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
+                {/* Resources: MCP servers + skills + code modules, one searchable picker */}
+                <ResourcePicker
+                  items={resourceItems}
+                  selected={resourceSelection}
+                  onChange={handleResourceChange}
+                />
 
                 {/* Input — typed form when the script declares INPUT_SCHEMA,
                     else the classic JSON preset editor */}
