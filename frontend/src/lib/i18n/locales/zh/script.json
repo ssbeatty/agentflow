@@ -27,7 +27,9 @@
     "issueCount_other": "{{count}} 个问题",
     "save": "保存",
     "stop": "停止",
-    "run": "运行"
+    "run": "运行",
+    "toggleFiles": "折叠/展开文件面板",
+    "toggleConfig": "折叠/展开配置面板"
   },
   "tabs": {
     "logs": "日志",

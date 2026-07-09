@@ -28,7 +28,9 @@
     "issueCount_other": "{{count}} issues",
     "save": "Save",
     "stop": "Stop",
-    "run": "Run"
+    "run": "Run",
+    "toggleFiles": "Toggle file panel",
+    "toggleConfig": "Toggle config panel"
   },
   "tabs": {
     "logs": "Logs",

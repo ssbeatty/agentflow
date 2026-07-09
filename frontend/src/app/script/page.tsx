@@ -7,7 +7,7 @@ import {
   ArrowLeft, Play, Square, Save, Terminal, Settings2,
   Clock, ChevronRight, Loader2, CalendarClock, Workflow,
   History, CheckCircle2, XCircle, MinusCircle, Copy, Trash2, Check, Sparkles, Coins, FlaskConical, Flame,
-  Search, X,
+  Search, X, PanelLeft, PanelRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { scripts, executions, mcpServers, skills as skillsApi, revisions as revisionsApi, inputPresets } from "@/lib/api";
@@ -155,6 +155,17 @@ function ScriptPage() {
     direction: "vertical", initial: 360, min: 260, max: 720,
     storageKey: "ag.rightWidth", side: "end",
   });
+  // Collapsible side panels (VS Code style). Collapsing a panel reclaims its
+  // width for the editor — the escape hatch when a narrow viewport / zoom would
+  // otherwise crush the center column. Persisted so it survives reloads.
+  const [leftCollapsed, setLeftCollapsed] = useState<boolean>(
+    () => typeof window !== "undefined" && localStorage.getItem("ag.leftCollapsed") === "1",
+  );
+  const [rightCollapsed, setRightCollapsed] = useState<boolean>(
+    () => typeof window !== "undefined" && localStorage.getItem("ag.rightCollapsed") === "1",
+  );
+  useEffect(() => { localStorage.setItem("ag.leftCollapsed", leftCollapsed ? "1" : "0"); }, [leftCollapsed]);
+  useEffect(() => { localStorage.setItem("ag.rightCollapsed", rightCollapsed ? "1" : "0"); }, [rightCollapsed]);
 
   // Pre-turn snapshot of the saved file contents, for the post-turn diff/undo.
   const assistantBaselineRef = useRef<Map<string, string>>(new Map());
@@ -640,6 +651,20 @@ function ScriptPage() {
         )}
 
         <div className="ml-auto flex items-center gap-2">
+          {/* Layout: collapse/expand the side panels (VS Code-style view controls) */}
+          <div className="flex items-center gap-0.5">
+            <Button variant="ghost" size="icon" className="h-7 w-7"
+              title={t("header.toggleFiles")} aria-pressed={!leftCollapsed}
+              onClick={() => setLeftCollapsed(c => !c)}>
+              <PanelLeft className={`h-3.5 w-3.5 ${leftCollapsed ? "text-muted-foreground/50" : "text-foreground"}`} />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-7 w-7"
+              title={t("header.toggleConfig")} aria-pressed={!rightCollapsed}
+              onClick={() => setRightCollapsed(c => !c)}>
+              <PanelRight className={`h-3.5 w-3.5 ${rightCollapsed ? "text-muted-foreground/50" : "text-foreground"}`} />
+            </Button>
+          </div>
+          <div className="h-4 w-px bg-border" />
           {runStatus !== "idle" && (
             <span className={`text-xs font-medium flex items-center gap-1.5 ${STATUS_COLORS[runStatus]}`}>
               {(runStatus === "queued" || runStatus === "running") && <Loader2 className="h-3 w-3 animate-spin" />}
@@ -665,37 +690,43 @@ function ScriptPage() {
       {/* Body */}
       <div className="flex flex-1 overflow-hidden">
 
-        {/* Left panel: File tree (top) + Packages (bottom) */}
-        <div className="shrink-0 flex flex-col overflow-hidden" style={{ width: `${treeWidth}px` }}>
-          <div className="flex-1 min-h-0">
-            <FileTree
-              files={treeFiles}
-              activeFile={activeFile}
-              onSelect={setActiveFile}
-              onNewFile={handleNewFile}
-              onDeleteFile={handleDeleteFile}
-              onDeleteDir={handleDeleteDir}
-              onRenameFile={handleRenameFile}
-              onUploadFiles={handleUploadFiles}
-              onDownloadFile={handleDownloadFile}
-            />
-          </div>
-          {pkgHandle}
-          <div className="shrink-0 border-t border-border overflow-hidden" style={{ height: `${pkgHeight}px` }}>
-            <DependencyManager
-              scriptId={id}
-              requirements={fileContents.get("requirements.txt") ?? ""}
-              onRequirementsSaved={() => {
-                setDirtyFiles(prev => { const s = new Set(prev); s.delete("requirements.txt"); return s; });
-              }}
-            />
-          </div>
-        </div>
+        {/* Left panel: File tree (top) + Packages (bottom) — collapsible */}
+        {!leftCollapsed && (
+          <>
+            <div className="shrink-0 flex flex-col overflow-hidden" style={{ width: `${treeWidth}px` }}>
+              <div className="flex-1 min-h-0">
+                <FileTree
+                  files={treeFiles}
+                  activeFile={activeFile}
+                  onSelect={setActiveFile}
+                  onNewFile={handleNewFile}
+                  onDeleteFile={handleDeleteFile}
+                  onDeleteDir={handleDeleteDir}
+                  onRenameFile={handleRenameFile}
+                  onUploadFiles={handleUploadFiles}
+                  onDownloadFile={handleDownloadFile}
+                />
+              </div>
+              {pkgHandle}
+              <div className="shrink-0 border-t border-border overflow-hidden" style={{ height: `${pkgHeight}px` }}>
+                <DependencyManager
+                  scriptId={id}
+                  requirements={fileContents.get("requirements.txt") ?? ""}
+                  onRequirementsSaved={() => {
+                    setDirtyFiles(prev => { const s = new Set(prev); s.delete("requirements.txt"); return s; });
+                  }}
+                />
+              </div>
+            </div>
+            {treeHandle}
+          </>
+        )}
 
-        {treeHandle}
-
-        {/* Center: Editor + bottom tabs */}
-        <div className="flex flex-col flex-1 min-w-0 border-r border-border">
+        {/* Center: Editor + bottom tabs. overflow-hidden so that when a narrow
+            viewport / zoom shrinks this min-w-0 column toward zero, the editor
+            and bottom-tab content are CLIPPED instead of bleeding rightward over
+            the config panel. */}
+        <div className="flex flex-col flex-1 min-w-0 border-r border-border overflow-hidden">
           <div className="flex-1 min-h-0">
             <ScriptEditor
               key={activeFile}
@@ -713,7 +744,7 @@ function ScriptPage() {
 
           {bottomHandle}
           {/* Bottom tabs: Logs, Output, Schedule, Runs */}
-          <div className="shrink-0 border-t border-border" style={{ height: `${bottomHeight}px` }}>
+          <div className="shrink-0 border-t border-border overflow-hidden" style={{ height: `${bottomHeight}px` }}>
             {/*
               activationMode="manual": with the default "automatic" mode, Radix's
               roving-focus-group reclaims focus onto whichever trigger last had
@@ -799,9 +830,10 @@ function ScriptPage() {
           </div>
         </div>
 
+        {!rightCollapsed && (<>
         {rightHandle}
 
-        {/* Right: Config + History panel */}
+        {/* Right: Config + History panel — collapsible */}
         <div className="shrink-0 flex flex-col overflow-hidden border-l border-border" style={{ width: `${rightWidth}px` }}>
           {/* Tab bar */}
           <div className="flex border-b border-border shrink-0">
@@ -969,6 +1001,7 @@ function ScriptPage() {
             </div>
           )}
         </div>
+        </>)}
 
       </div>
 

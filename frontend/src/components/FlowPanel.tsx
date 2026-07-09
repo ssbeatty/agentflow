@@ -1,11 +1,12 @@
 "use client";
-import { useMemo, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ChevronDown, ChevronRight, Wrench, Box, Bot, Flag, Brain, Copy, Check, BookOpen } from "lucide-react";
+import { ChevronDown, ChevronRight, Wrench, Box, Bot, Flag, Brain, Copy, Check, BookOpen, Workflow } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { TraceEvent, GraphTopology } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import MermaidView from "@/components/MermaidView";
+import { useResizable } from "@/components/Splitter";
 
 interface Props {
   trace: TraceEvent[];
@@ -186,14 +187,48 @@ export default function FlowPanel({ trace, topology, runEnded = false }: Props) 
   const counts = useMemo(() => visitedNodeCounts(trace), [trace]);
   const hasContent = rows.length > 0 || !!topology;
 
+  // The graph pane is a resizable + collapsible section (VS Code style) instead
+  // of a hard-capped `max-h-[40%]`: a big diagram used to be crammed into ~10% of
+  // the panel with no way to enlarge just the graph. Drag the handle to grow it,
+  // collapse it to give the trace list all the room. Height + collapsed state
+  // persist across reloads.
+  const [diagramH, diagramHandle] = useResizable({
+    direction: "horizontal", initial: 220, min: 72, max: 1400,
+    storageKey: "ag.flowDiagramH", side: "start",
+  });
+  const [diagramCollapsed, setDiagramCollapsed] = useState<boolean>(
+    () => typeof window !== "undefined" && localStorage.getItem("ag.flowDiagramCollapsed") === "1",
+  );
+  useEffect(() => {
+    localStorage.setItem("ag.flowDiagramCollapsed", diagramCollapsed ? "1" : "0");
+  }, [diagramCollapsed]);
+
   return (
     <div className="h-full flex flex-col">
       {topology && (
-        <div className="border-b border-border shrink-0 max-h-[40%] overflow-auto">
-          <MermaidView source={highlightMermaid(themeMermaid(topology.mermaid), counts)} />
-        </div>
+        <>
+          {/* Section header — collapse toggle */}
+          <button
+            onClick={() => setDiagramCollapsed(c => !c)}
+            title={diagramCollapsed ? t("flowPanel.diagram.expand") : t("flowPanel.diagram.collapse")}
+            className="shrink-0 flex items-center gap-1.5 px-2 h-6 border-b border-border/60 bg-secondary/20 text-[10px] uppercase tracking-wide text-muted-foreground hover:text-foreground transition-colors select-none"
+          >
+            {diagramCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+            <Workflow className="h-3 w-3" />
+            {t("flowPanel.diagram.title")}
+          </button>
+          {!diagramCollapsed && (
+            <div className="shrink-0 overflow-auto border-b border-border" style={{ height: `${diagramH}px` }}>
+              <MermaidView
+                source={highlightMermaid(themeMermaid(topology.mermaid), counts)}
+                className="p-2 flex justify-center"
+              />
+            </div>
+          )}
+          {!diagramCollapsed && diagramHandle}
+        </>
       )}
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 min-h-0">
         <div className="p-2 space-y-1">
           {!hasContent && (
             <p className="text-muted-foreground text-xs py-4 text-center">

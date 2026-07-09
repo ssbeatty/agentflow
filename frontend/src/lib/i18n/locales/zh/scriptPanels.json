@@ -109,6 +109,11 @@
       "expand": "展开",
       "truncated": "已截断 · 显示 {{shown}} 字符",
       "clickToExpand": "点击展开"
+    },
+    "diagram": {
+      "title": "流程图",
+      "collapse": "折叠流程图",
+      "expand": "展开流程图"
     }
   },
   "agentTimeline": {

@@ -109,6 +109,11 @@
       "expand": "expand",
       "truncated": "truncated · {{shown}} shown",
       "clickToExpand": "click to expand"
+    },
+    "diagram": {
+      "title": "Graph",
+      "collapse": "Collapse graph",
+      "expand": "Expand graph"
     }
   },
   "agentTimeline": {
