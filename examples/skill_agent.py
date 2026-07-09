@@ -65,13 +65,14 @@ async def run(input: dict) -> dict:
     # Nothing skill-specific to configure here.
     agent = get_agent(system_prompt=SYSTEM_PROMPT)
 
-    history = [(m["role"], m["content"]) for m in input.get("history", [])]
-    messages = history + [("human", user_msg)]
-
+    # In /converse this agent is threaded: its state persists across turns under
+    # the conversation id, so once the agent has called `read_skill` it keeps the
+    # skill's instructions in context — it reads the skill ONCE, not every turn.
+    # Send only the new message; the checkpointer supplies the prior turns.
     # stream_agent() streams only the agent's answer text (skill/tool results are
     # dropped from the reply); the read_skill tool call still renders live in the
     # /converse "Agent trace" panel.
-    full_reply = await stream_agent(agent, messages)
+    full_reply = await stream_agent(agent, [("human", user_msg)])
     log("turn done", data={"reply_chars": len(full_reply)})
     return {"reply": full_reply}
 

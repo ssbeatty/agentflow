@@ -49,9 +49,9 @@ async def run(input: dict) -> dict:
         stream_reasoning=True,
     )
 
-    history = [(m["role"], m["content"]) for m in input.get("history", [])]
-    messages = history + [("human", input["message"])]
-
+    # In /converse the agent is threaded (state persists across turns under the
+    # conversation id), so send only the new message — the checkpointer supplies
+    # prior turns and multi-turn memory just works.
     # Streams only the answer to /converse; tool calls render in the Agent trace.
-    full_reply = await stream_agent(agent, messages)
+    full_reply = await stream_agent(agent, [("human", input["message"])])
     return {"reply": full_reply}

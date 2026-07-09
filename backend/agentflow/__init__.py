@@ -1162,12 +1162,169 @@ def get_llm_with_tools(name: str = "default", tools: list | None = None):
     return llm.bind_tools(bound_tools) if bound_tools else llm
 
 
+# ── Conversation threading (durable per-conversation agent state) ──────────────
+#
+# A /converse conversation IS a LangGraph thread: its conversation_id is the
+# thread_id. For a chat run the engine sets AGENTFLOW_THREAD_ID (== the
+# conversation id) and AGENTFLOW_THREAD_CHECKPOINT (the checkpoint to resume /
+# roll back from). get_agent() / get_deep_agent() then attach a durable SQLite
+# checkpointer at workspace/threads.db, so the FULL agent state — including a
+# skill's body once it's been read, and every tool result — persists across
+# turns. The agent reads a skill ONCE instead of every turn, and multi-turn
+# memory just works. Nothing here runs when there is no thread env (a normal
+# script run) → the classic stateless path is byte-for-byte unchanged.
+
+# Reused across a warm worker's jobs (agentflow is imported once at boot): one
+# aiosqlite connection per workspace-db path. Keyed by path so it's always the
+# right thread store even if a process somehow serves more than one workspace.
+_THREAD_CHECKPOINTERS: dict = {}
+
+
+def _thread_id() -> "str | None":
+    return os.environ.get("AGENTFLOW_THREAD_ID") or None
+
+
+def _thread_checkpoint_anchor() -> "str | None":
+    return os.environ.get("AGENTFLOW_THREAD_CHECKPOINT") or None
+
+
+def _threads_db_path() -> "Path | None":
+    ws = os.environ.get("AGENTFLOW_WORKSPACE_DIR")
+    if not ws:
+        return None
+    try:
+        p = Path(ws)
+        p.mkdir(parents=True, exist_ok=True)
+        return p / "threads.db"
+    except Exception:
+        return None
+
+
+def _thread_checkpointer():
+    """The durable ``AsyncSqliteSaver`` for this run's conversation, or ``None``.
+
+    Best-effort: returns ``None`` (→ classic stateless run) when this isn't a
+    chat run (no ``AGENTFLOW_THREAD_ID`` / workspace) or the checkpoint package
+    is unavailable — a persistence failure must never fail a run. Cached per
+    workspace-db path so a warm worker reuses one connection across jobs."""
+    if not _thread_id():
+        return None
+    db_path = _threads_db_path()
+    if db_path is None:
+        return None
+    key = str(db_path)
+    saver = _THREAD_CHECKPOINTERS.get(key)
+    if saver is not None:
+        return saver
+    try:
+        import asyncio
+        import aiosqlite
+        from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+        # get_agent() is always called from inside the runner's event loop
+        # (asyncio.run(_main()) one-shot, or the worker's _LOOP), and the runner
+        # applies nest_asyncio — so run_until_complete on the live loop is safe.
+        loop = asyncio.get_event_loop()
+        conn = loop.run_until_complete(aiosqlite.connect(key))
+
+        async def _prep():
+            # WAL + busy_timeout so concurrent conversations of the SAME script
+            # (separate subprocess, shared threads.db) don't collide on writes.
+            await conn.execute("PRAGMA journal_mode=WAL")
+            await conn.execute("PRAGMA busy_timeout=5000")
+
+        loop.run_until_complete(_prep())
+        saver = AsyncSqliteSaver(conn)
+        _THREAD_CHECKPOINTERS[key] = saver
+        return saver
+    except Exception as e:
+        print(f"[agentflow] conversation thread persistence unavailable: {e}",
+              file=sys.stderr)
+        return None
+
+
+# Per-turn model-input token budget. The FULL thread is always persisted; this
+# only bounds what the model SEES each turn so a long chat can't overflow the
+# context window. The system prompt is always kept (skill menu lives there), and
+# a recently-read skill stays in-window.
+_THREAD_MAX_TOKENS = 24000
+
+
+def _make_trim_hook():
+    """A ``create_react_agent`` ``pre_model_hook`` that bounds the per-turn model
+    input to the most recent ``_THREAD_MAX_TOKENS`` tokens while ALWAYS keeping
+    the system message. Returns ``llm_input_messages`` (ephemeral) so the full
+    thread stays persisted — nothing is permanently dropped; a later turn
+    re-trims from the complete history. Returns ``None`` if ``trim_messages`` is
+    unavailable (older langchain-core) → no hook, unbounded (old behavior)."""
+    try:
+        from langchain_core.messages.utils import (
+            trim_messages, count_tokens_approximately,
+        )
+    except Exception:
+        return None
+
+    budget = _THREAD_MAX_TOKENS
+    try:
+        budget = int(os.environ.get("AGENTFLOW_THREAD_MAX_TOKENS") or budget)
+    except Exception:
+        pass
+
+    def _hook(state):
+        msgs = state.get("messages") if isinstance(state, dict) else None
+        if not msgs:
+            return {}
+        try:
+            trimmed = trim_messages(
+                msgs,
+                max_tokens=budget,
+                token_counter=count_tokens_approximately,
+                strategy="last",
+                include_system=True,
+                start_on="human",
+                allow_partial=False,
+            )
+            if trimmed and len(trimmed) < len(msgs):
+                return {"llm_input_messages": trimmed}
+        except Exception:
+            pass
+        return {}
+
+    return _hook
+
+
+def _agent_checkpointer(agent):
+    """The checkpointer an agent was compiled with (None if stateless)."""
+    return getattr(agent, "checkpointer", None)
+
+
+def _is_human_message(m) -> bool:
+    if isinstance(m, (tuple, list)) and m:
+        return str(m[0]).lower() in ("human", "user")
+    return type(m).__name__ in ("HumanMessage", "HumanMessageChunk")
+
+
+def _latest_turn(messages):
+    """In threaded mode the checkpointer already holds the prior turns, so we
+    send only the CURRENT turn — every message from the last human message
+    onward. This makes a script that still prepends ``history`` (``history +
+    [new]``) correct automatically: the prepended history is dropped and the
+    checkpointer supplies it, so context is never counted twice."""
+    if not isinstance(messages, list) or not messages:
+        return messages
+    for i in range(len(messages) - 1, -1, -1):
+        if _is_human_message(messages[i]):
+            return messages[i:]
+    return messages
+
+
 def get_agent(
     system_prompt: str | None = None,
     llm_name: str = "default",
     tools: list | None = None,
     reasoning=None,
     stream_reasoning: bool = False,
+    checkpointer=None,
 ):
     """
     Return a ready-to-use ReAct agent (LangGraph create_react_agent).
@@ -1178,6 +1335,15 @@ def get_agent(
     `stream_reasoning=True` auto-surfaces the model's chain-of-thought in the chat
     UI as a `<think>` block — the platform handles it, so your streaming loop needs
     no reasoning logic (see `get_llm`). Pair with `reasoning=`.
+
+    Conversation threading (automatic in /converse): when the run belongs to a
+    conversation the agent gets a durable checkpointer keyed by the conversation
+    id, so its full state — including a skill's body once read, and every tool
+    result — persists across turns. The agent reads a bound skill ONCE instead of
+    every turn, and multi-turn memory just works. Drive it with `stream_agent`,
+    which sends only the new message (the checkpointer supplies the history) — so
+    you don't prepend `input["history"]`. Pass `checkpointer=False` to opt out
+    (classic stateless agent), or a saver instance to bring your own.
 
     Example:
         def run(input: dict) -> dict:
@@ -1215,6 +1381,46 @@ def get_agent(
     if preamble:
         system_prompt = f"{system_prompt}\n\n{preamble}" if system_prompt else preamble
 
+    params = inspect.signature(create_react_agent).parameters
+    _has_varkw = any(p.kind == p.VAR_KEYWORD for p in params.values())
+
+    def _accepts(k: str) -> bool:
+        return _has_varkw or k in params
+
+    # ── Durable conversation threading ────────────────────────────────────────
+    # `checkpointer`:  None → auto (attach when this is a chat run:
+    # AGENTFLOW_THREAD_ID set); False → force the classic stateless agent; a
+    # saver instance → use it. When a checkpointer is active the agent's full
+    # state persists across turns, so a bound skill is read ONCE, not per turn.
+    if checkpointer is False:
+        saver = None
+    elif checkpointer is not None:
+        saver = checkpointer
+    else:
+        saver = _thread_checkpointer()
+
+    extra: dict = {}
+    if saver is not None and _accepts("checkpointer"):
+        extra["checkpointer"] = saver
+        hook = _make_trim_hook() if _accepts("pre_model_hook") else None
+        if hook is not None:
+            extra["pre_model_hook"] = hook
+    threaded = "checkpointer" in extra
+
+    if threaded:
+        # Threaded path: use a STATIC system prompt (a string → prepended
+        # SystemMessage), NOT a callable that reads state["messages"] — a
+        # callable would re-inject the FULL untrimmed history and defeat the
+        # pre_model_hook trim. The trim hook governs the model input; the
+        # SystemMessage is always kept.
+        if system_prompt:
+            if "prompt" in params:
+                extra["prompt"] = system_prompt
+            elif "state_modifier" in params:
+                extra["state_modifier"] = system_prompt
+        return create_react_agent(llm, agent_tools, **extra)
+
+    # ── Classic stateless path (unchanged) ────────────────────────────────────
     if not system_prompt:
         return create_react_agent(llm, agent_tools)
 
@@ -1226,7 +1432,6 @@ def get_agent(
         msgs = state["messages"] if isinstance(state, dict) else list(state)
         return [SystemMessage(content=system_prompt)] + msgs
 
-    params = inspect.signature(create_react_agent).parameters
     if "prompt" in params:
         return create_react_agent(llm, agent_tools, prompt=_prompt_fn)
     if "state_modifier" in params:
@@ -1328,6 +1533,16 @@ def get_deep_agent(
 
     call: dict = {"model": llm, **kwargs}
 
+    # Durable conversation threading (same as get_agent): attach a checkpointer
+    # keyed by the conversation id so the deep agent's state persists across
+    # turns. Only when this is a chat run, the caller didn't bring their own, and
+    # this deepagents build accepts `checkpointer`. deepagents owns its own
+    # context management, so we don't add a trim hook here.
+    if "checkpointer" not in call and _supports("checkpointer"):
+        saver = _thread_checkpointer()
+        if saver is not None:
+            call["checkpointer"] = saver
+
     merged_tools = list(tools) if tools else []
     if not native_skills:
         # Fallback path: advertise skills in the prompt + expose read_skill,
@@ -1416,7 +1631,28 @@ def _ai_message_text(chunk) -> str:
     return ""
 
 
-async def stream_agent(agent, messages, *, stream: bool = True) -> str:
+def _thread_run_config(agent, messages, thread_id, checkpoint_id):
+    """Resolve the LangGraph run config + the messages to send for a threaded
+    agent. Threading applies only when a thread id is in effect AND the agent was
+    compiled with a checkpointer — otherwise a plain (stateless) run, unchanged.
+
+    Returns ``(config, messages)``. When threaded, ``messages`` is reduced to the
+    current turn (the checkpointer supplies the history) and ``config`` carries
+    the thread id (+ optional checkpoint anchor to resume / roll back from)."""
+    tid = thread_id if thread_id is not None else _thread_id()
+    if not tid or _agent_checkpointer(agent) is None:
+        return None, messages
+    cp = checkpoint_id if checkpoint_id is not None else _thread_checkpoint_anchor()
+    cfg: dict = {"thread_id": str(tid)}
+    if cp:
+        cfg["checkpoint_id"] = str(cp)
+    reduced = messages if isinstance(messages, dict) else _latest_turn(messages)
+    return {"configurable": cfg}, reduced
+
+
+async def stream_agent(
+    agent, messages, *, stream: bool = True, thread_id=None, checkpoint_id=None,
+) -> str:
     """Stream a LangChain/LangGraph agent's answer to the chat UI **correctly**,
     and return the full reply string.
 
@@ -1439,6 +1675,12 @@ async def stream_agent(agent, messages, *, stream: bool = True) -> str:
                   message objects — or a full state dict ``{"messages": [...]}``.
         stream:   ``False`` runs to completion without live tokens and returns only
                   the final (tool-filtered) answer.
+        thread_id / checkpoint_id: usually omitted — for a chat run they default
+                  from the conversation env (``AGENTFLOW_THREAD_ID`` /
+                  ``AGENTFLOW_THREAD_CHECKPOINT``). When a thread is in effect and
+                  the agent has a checkpointer, only the *current* turn is sent
+                  (the checkpointer holds the history), so prepending
+                  ``input["history"]`` is harmless — it's dropped automatically.
 
     Returns:
         The full answer text (the same string that was streamed).
@@ -1446,15 +1688,18 @@ async def stream_agent(agent, messages, *, stream: bool = True) -> str:
     Example::
 
         async def run(input: dict) -> dict:
-            agent = get_deep_agent(system_prompt=SYS, stream_reasoning=True)
-            history = [(m["role"], m["content"]) for m in input.get("history", [])]
-            reply = await stream_agent(agent, history + [("human", input["message"])])
+            agent = get_agent(system_prompt=SYS, stream_reasoning=True)
+            # Threaded in /converse: send only the new message; the checkpointer
+            # supplies prior turns. (Prepending input["history"] also works — it's
+            # deduplicated automatically.)
+            reply = await stream_agent(agent, [("human", input["message"])])
             return {"reply": reply}
     """
+    config, messages = _thread_run_config(agent, messages, thread_id, checkpoint_id)
     state = messages if isinstance(messages, dict) else {"messages": messages}
     if stream:
         parts: list[str] = []
-        async for chunk, _meta in agent.astream(state, stream_mode="messages"):
+        async for chunk, _meta in agent.astream(state, config=config, stream_mode="messages"):
             text = _ai_message_text(chunk)
             if text:
                 token(text)
@@ -1462,28 +1707,47 @@ async def stream_agent(agent, messages, *, stream: bool = True) -> str:
         if parts:
             return "".join(parts)
         # Some agent configs don't stream token-by-token → fall back to the result.
-    result = await agent.ainvoke(state)
+    result = await agent.ainvoke(state, config=config)
     msgs = result.get("messages") if isinstance(result, dict) else None
     return _ai_message_text(msgs[-1]) if msgs else ""
 
 
-def stream_agent_sync(agent, messages, *, stream: bool = True) -> str:
+def stream_agent_sync(
+    agent, messages, *, stream: bool = True, thread_id=None, checkpoint_id=None,
+) -> str:
     """Synchronous ``stream_agent()`` for a sync ``def run(input)``.
 
     Same filtering and return contract; uses ``agent.stream()`` / ``agent.invoke()``
     instead of the async variants. Prefer the async :func:`stream_agent` in an
     ``async def run``.
+
+    Conversation threading works here too: it defaults from the conversation env
+    like :func:`stream_agent`. Because the durable checkpointer is async-only
+    (aiosqlite), a threaded agent is driven through the async path via the
+    runner's event loop (``nest_asyncio`` makes this reentrant); a plain
+    (non-threaded) agent keeps the sync ``.stream()`` / ``.invoke()`` path.
     """
+    tid = thread_id if thread_id is not None else _thread_id()
+    cp = _agent_checkpointer(agent)
+    if tid and cp is not None and type(cp).__name__ == "AsyncSqliteSaver":
+        import asyncio
+        loop = asyncio.get_event_loop()
+        return loop.run_until_complete(
+            stream_agent(agent, messages, stream=stream,
+                         thread_id=thread_id, checkpoint_id=checkpoint_id)
+        )
+
+    config, messages = _thread_run_config(agent, messages, thread_id, checkpoint_id)
     state = messages if isinstance(messages, dict) else {"messages": messages}
     if stream:
         parts: list[str] = []
-        for chunk, _meta in agent.stream(state, stream_mode="messages"):
+        for chunk, _meta in agent.stream(state, config=config, stream_mode="messages"):
             text = _ai_message_text(chunk)
             if text:
                 token(text)
                 parts.append(text)
         if parts:
             return "".join(parts)
-    result = agent.invoke(state)
+    result = agent.invoke(state, config=config)
     msgs = result.get("messages") if isinstance(result, dict) else None
     return _ai_message_text(msgs[-1]) if msgs else ""

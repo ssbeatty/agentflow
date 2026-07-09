@@ -225,6 +225,11 @@ BASELINE_PACKAGES = [
     "langchain-openai",
     "langchain-deepseek",
     "langgraph",
+    # durable per-conversation agent state: persists a LangGraph thread
+    # (thread_id == conversation_id) to workspace/threads.db so a chat agent
+    # keeps context across turns and reads a skill only once. Pulls aiosqlite.
+    # Powers get_agent()/get_deep_agent() threading + stream_agent(thread_id=).
+    "langgraph-checkpoint-sqlite",
     # agentflow built-in tool support
     "httpx",
     "ddgs",
