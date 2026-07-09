@@ -66,17 +66,31 @@ export function useResizable(opts: Props): [number, React.ReactElement] {
     window.addEventListener("mouseup", onUp);
   };
 
+  // The visible divider stays 1px, but an absolutely-positioned overlay extends
+  // the grab zone ±4px so a thin handle is actually easy to hit (a 1px target
+  // pinned under the header was impossible to grab back once a panel was
+  // dragged to its extreme). The overlay is transparent and doesn't affect
+  // layout; hovering it lights up the bar via `group-hover`.
   const handle = (
     <div
       onMouseDown={onDown}
-      className={
-        direction === "vertical"
-          ? "w-1 cursor-col-resize bg-transparent hover:bg-primary/40 active:bg-primary/60 transition-colors shrink-0"
-          : "h-1 cursor-row-resize bg-transparent hover:bg-primary/40 active:bg-primary/60 transition-colors shrink-0"
-      }
       role="separator"
       aria-orientation={direction === "vertical" ? "vertical" : "horizontal"}
-    />
+      className={
+        direction === "vertical"
+          ? "group relative w-1 shrink-0 cursor-col-resize"
+          : "group relative h-1 shrink-0 cursor-row-resize"
+      }
+    >
+      <div className="absolute inset-0 bg-transparent group-hover:bg-primary/40 group-active:bg-primary/60 transition-colors" />
+      <div
+        className={
+          direction === "vertical"
+            ? "absolute inset-y-0 -left-1 -right-1 z-10"
+            : "absolute inset-x-0 -top-1 -bottom-1 z-10"
+        }
+      />
+    </div>
   );
 
   return [size, handle];

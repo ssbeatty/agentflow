@@ -39,7 +39,9 @@
     "artifacts": "Artifacts",
     "schedule": "Schedule",
     "runs": "Runs",
-    "eval": "Eval"
+    "eval": "Eval",
+    "collapsePanel": "Collapse panel",
+    "expandPanel": "Expand panel"
   },
   "run": {
     "noOutput": "No output yet."

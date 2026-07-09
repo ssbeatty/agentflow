@@ -7,7 +7,7 @@ import {
   ArrowLeft, Play, Square, Save, Terminal, Settings2,
   Clock, ChevronRight, Loader2, CalendarClock, Workflow,
   History, CheckCircle2, XCircle, MinusCircle, Copy, Trash2, Check, Sparkles, Coins, FlaskConical, Flame,
-  Search, X, PanelLeft, PanelRight,
+  Search, X, PanelLeft, PanelRight, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { toast } from "sonner";
 import { scripts, executions, mcpServers, skills as skillsApi, revisions as revisionsApi, inputPresets } from "@/lib/api";
@@ -147,10 +147,22 @@ function ScriptPage() {
     direction: "horizontal", initial: 180, min: 80, max: 360,
     storageKey: "ag.pkgHeight", side: "end",
   });
+  // Cap the bottom panel so it can never swallow the whole editor: reserve
+  // ~220px for the header + a minimum editor slice + the handle. Without this,
+  // dragging the panel to the top collapsed the editor to 0 and pinned the 1px
+  // handle under the header with no way to drag it back. A stale over-max value
+  // saved from before this cap is re-clamped by useResizable on load.
+  const bottomMax = typeof window !== "undefined" ? Math.max(240, window.innerHeight - 220) : 900;
   const [bottomHeight, bottomHandle] = useResizable({
-    direction: "horizontal", initial: 200, min: 80, max: 2000,
+    direction: "horizontal", initial: 200, min: 80, max: bottomMax,
     storageKey: "ag.bottomHeight", side: "end",
   });
+  // The bottom panel can also be collapsed to just its tab strip — a guaranteed
+  // one-click way to reclaim the editor, independent of the drag handle.
+  const [bottomCollapsed, setBottomCollapsed] = useState<boolean>(
+    () => typeof window !== "undefined" && localStorage.getItem("ag.bottomCollapsed") === "1",
+  );
+  useEffect(() => { localStorage.setItem("ag.bottomCollapsed", bottomCollapsed ? "1" : "0"); }, [bottomCollapsed]);
   const [rightWidth, rightHandle] = useResizable({
     direction: "vertical", initial: 360, min: 260, max: 720,
     storageKey: "ag.rightWidth", side: "end",
@@ -742,9 +754,9 @@ function ScriptPage() {
             />
           </div>
 
-          {bottomHandle}
-          {/* Bottom tabs: Logs, Output, Schedule, Runs */}
-          <div className="shrink-0 border-t border-border overflow-hidden" style={{ height: `${bottomHeight}px` }}>
+          {!bottomCollapsed && bottomHandle}
+          {/* Bottom tabs: Logs, Output, Schedule, Runs — collapsible to its tab strip */}
+          <div className="shrink-0 border-t border-border overflow-hidden" style={bottomCollapsed ? undefined : { height: `${bottomHeight}px` }}>
             {/*
               activationMode="manual": with the default "automatic" mode, Radix's
               roving-focus-group reclaims focus onto whichever trigger last had
@@ -755,7 +767,7 @@ function ScriptPage() {
               decouples keyboard focus from tab selection so that reclaim can't
               undo a programmatic tab switch.
             */}
-            <Tabs value={activeTab} onValueChange={setActiveTab} activationMode="manual" className="h-full flex flex-col">
+            <Tabs value={activeTab} onValueChange={v => { setActiveTab(v); if (bottomCollapsed) setBottomCollapsed(false); }} activationMode="manual" className="h-full flex flex-col">
               <TabsList className="rounded-none border-b border-border bg-transparent px-4 h-9 justify-start gap-1 shrink-0">
                 <TabsTrigger value="logs" className="text-xs gap-1.5">
                   <Terminal className="h-3 w-3" />{t("tabs.logs")}
@@ -784,7 +796,15 @@ function ScriptPage() {
                 <TabsTrigger value="eval" className="text-xs gap-1.5">
                   <FlaskConical className="h-3 w-3" />{t("tabs.eval")}
                 </TabsTrigger>
+                <button
+                  onClick={() => setBottomCollapsed(c => !c)}
+                  title={bottomCollapsed ? t("tabs.expandPanel") : t("tabs.collapsePanel")}
+                  className="ml-auto self-center flex items-center justify-center h-6 w-6 rounded text-muted-foreground hover:text-foreground hover:bg-accent/40 transition-colors"
+                >
+                  {bottomCollapsed ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                </button>
               </TabsList>
+              {!bottomCollapsed && (
               <div className="flex-1 overflow-hidden">
                 <TabsContent value="logs" className="h-full m-0">
                   <LogPanel logs={logs} />
@@ -826,6 +846,7 @@ function ScriptPage() {
                   <EvalPanel scriptId={id} />
                 </TabsContent>
               </div>
+              )}
             </Tabs>
           </div>
         </div>

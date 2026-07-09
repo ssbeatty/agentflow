@@ -38,7 +38,9 @@
     "artifacts": "产物",
     "schedule": "定时",
     "runs": "运行记录",
-    "eval": "评估"
+    "eval": "评估",
+    "collapsePanel": "折叠面板",
+    "expandPanel": "展开面板"
   },
   "run": {
     "noOutput": "暂无输出。"
