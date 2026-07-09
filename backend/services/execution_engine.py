@@ -299,6 +299,14 @@ async def _main():
                 _emit({{"type": "usage", **_u}})
         except Exception:
             pass
+        # Close durable conversation-thread connections so this one-shot runner
+        # can exit. aiosqlite's connection thread is non-daemon, so an open
+        # checkpointer would block interpreter shutdown until the engine's
+        # EXECUTION_TIMEOUT kills the process (the run would look "stuck").
+        try:
+            _af._close_thread_checkpointers()
+        except Exception:
+            pass
 
 try:
     asyncio.run(_main())

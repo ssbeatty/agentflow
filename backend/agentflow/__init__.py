@@ -1243,6 +1243,40 @@ def _thread_checkpointer():
         return None
 
 
+def _close_thread_checkpointers() -> None:
+    """Close every cached conversation-thread connection so the process can exit.
+
+    Each ``AsyncSqliteSaver`` holds an ``aiosqlite`` connection backed by a
+    **non-daemon** worker thread. Leaving it open keeps that thread alive, so the
+    interpreter blocks on it at shutdown: a one-shot runner would hang after
+    emitting its result (until the engine's timeout kills it), and the pytest
+    process hangs after the last test. Call this once at the end of a one-shot
+    run. Best-effort — never raises. Do NOT call it between a warm worker's jobs
+    (the whole point there is to reuse one connection across jobs)."""
+    if not _THREAD_CHECKPOINTERS:
+        return
+    import asyncio
+    savers = list(_THREAD_CHECKPOINTERS.values())
+    _THREAD_CHECKPOINTERS.clear()
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            loop = None
+    except Exception:
+        loop = None
+    for saver in savers:
+        conn = getattr(saver, "conn", None)
+        if conn is None:
+            continue
+        try:
+            if loop is not None:
+                loop.run_until_complete(conn.close())
+            else:
+                asyncio.run(conn.close())
+        except Exception:
+            pass
+
+
 # Per-turn model-input token budget. The FULL thread is always persisted; this
 # only bounds what the model SEES each turn so a long chat can't overflow the
 # context window. The system prompt is always kept (skill menu lives there), and

@@ -39,6 +39,22 @@ class _RecordingModel(BaseChatModel):
         return self
 
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _close_thread_conns():
+    """Close cached aiosqlite thread connections after each test.
+
+    Each threaded run opens an AsyncSqliteSaver whose aiosqlite connection is
+    backed by a NON-daemon worker thread; without closing it the thread stays
+    alive and blocks interpreter shutdown, so the pytest process hangs after the
+    last test passes (the CI symptom this suite exposed)."""
+    yield
+    import agentflow as af
+    af._close_thread_checkpointers()
+
+
 def _setup(tmp_path, monkeypatch, thread_id="conv-1"):
     """Point the SDK at an isolated workspace + thread + fake model."""
     import agentflow as af

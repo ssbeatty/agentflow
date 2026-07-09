@@ -14,6 +14,10 @@ concurrency:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    # Cap the job so a hung test (e.g. a process that refuses to exit because a
+    # non-daemon thread is still alive) fails in minutes instead of hanging until
+    # the 6-hour default. The whole suite runs well under this locally.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
