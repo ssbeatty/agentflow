@@ -3,6 +3,7 @@ import Editor, { type OnMount } from "@monaco-editor/react";
 import { useEffect, useRef } from "react";
 import type * as Monaco from "monaco-editor";
 import { useTranslation } from "react-i18next";
+import { registerAgentflowLanguageFeatures } from "@/lib/monacoAgentflow";
 
 export interface LintIssue {
   line: number;
@@ -37,6 +38,10 @@ export default function ScriptEditor({ value, onChange, readOnly = false, issues
   const handleMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
+
+    // Code hints for the built-in `agentflow` SDK (completion + hover).
+    // Idempotent — safe to call on every mount (Monaco is a singleton).
+    registerAgentflowLanguageFeatures(monaco);
 
     monaco.editor.setTheme("vs-dark");
 

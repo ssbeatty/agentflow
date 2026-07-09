@@ -140,58 +140,62 @@ export default function ResourcePicker({ items, selected, onChange }: Props) {
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-lg flex flex-col max-h-[80vh]">
-          <DialogHeader>
+        <DialogContent className="max-w-lg flex flex-col gap-4 max-h-[80vh]">
+          <DialogHeader className="pb-0">
             <DialogTitle className="flex items-center gap-2 text-base">
               <Boxes className="h-4 w-4 text-primary" />{t("config.resources.dialogTitle")}
             </DialogTitle>
           </DialogHeader>
 
-          <div className="relative shrink-0">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              autoFocus
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder={t("config.resources.searchPlaceholder")}
-              className="h-8 pl-8 text-sm"
-            />
-          </div>
+          {/* Search + type filters form one control cluster (tight internal gap),
+              set apart from the header/list by the outer gap-4. */}
+          <div className="flex flex-col gap-2.5 shrink-0">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                autoFocus
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder={t("config.resources.searchPlaceholder")}
+                className="h-9 pl-9 text-sm"
+              />
+            </div>
 
-          <div className="flex items-center gap-1 shrink-0">
-            {(["all", ...ORDER] as const).map(f => {
-              const active = filter === f;
-              const label = f === "all" ? t("config.resources.filters.all") : t(TYPE_META[f].labelKey);
-              return (
-                <button
-                  key={f}
-                  onClick={() => setFilter(f)}
-                  className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${
-                    active
-                      ? "bg-primary/10 border-primary/40 text-primary"
-                      : "bg-secondary/30 border-border/60 text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {label}
-                </button>
-              );
-            })}
+            <div className="flex items-center gap-1.5">
+              {(["all", ...ORDER] as const).map(f => {
+                const active = filter === f;
+                const label = f === "all" ? t("config.resources.filters.all") : t(TYPE_META[f].labelKey);
+                return (
+                  <button
+                    key={f}
+                    onClick={() => setFilter(f)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                      active
+                        ? "bg-primary/10 border-primary/40 text-primary"
+                        : "bg-secondary/30 border-border/60 text-muted-foreground hover:text-foreground hover:border-border"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <ScrollArea className="flex-1 min-h-0 -mx-1 px-1">
             {shown.length === 0 ? (
-              <p className="text-xs text-muted-foreground/60 py-8 text-center">
+              <p className="text-xs text-muted-foreground/60 py-10 text-center">
                 {t("config.resources.noMatches")}
               </p>
             ) : (
-              <div className="space-y-1 py-1">
+              <div className="space-y-1.5 py-0.5">
                 {shown.map(it => {
                   const active = isSelected(it);
                   return (
                     <button
                       key={`${it.type}:${it.id}`}
                       onClick={() => toggle(it)}
-                      className={`w-full flex items-start gap-2.5 rounded-md border px-2.5 py-2 text-left transition-colors ${
+                      className={`w-full flex items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors ${
                         active
                           ? "bg-primary/10 border-primary/40"
                           : "bg-secondary/20 border-border/60 hover:border-border hover:bg-secondary/40"
@@ -203,15 +207,15 @@ export default function ResourcePicker({ items, selected, onChange }: Props) {
                         {active && <Check className="h-3 w-3" />}
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="flex items-center gap-1.5">
+                        <span className="flex items-center gap-2">
                           <span className="text-muted-foreground shrink-0">{TYPE_META[it.type].icon}</span>
-                          <span className="text-xs font-medium truncate">{it.name}</span>
-                          <span className="ml-auto text-[9px] uppercase tracking-wide text-muted-foreground/60 shrink-0">
+                          <span className="text-sm font-medium truncate">{it.name}</span>
+                          <span className="ml-auto shrink-0 rounded bg-secondary/70 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground/70">
                             {t(TYPE_META[it.type].labelKey)}
                           </span>
                         </span>
                         {it.description && (
-                          <span className="block text-[11px] text-muted-foreground/70 leading-snug line-clamp-2 mt-0.5">
+                          <span className="block text-[11px] text-muted-foreground/70 leading-relaxed line-clamp-2 mt-1">
                             {it.description}
                           </span>
                         )}
@@ -223,7 +227,7 @@ export default function ResourcePicker({ items, selected, onChange }: Props) {
             )}
           </ScrollArea>
 
-          <div className="flex items-center justify-between shrink-0 pt-1">
+          <div className="flex items-center justify-between shrink-0 border-t border-border/60 -mx-6 px-6 pt-3">
             <span className="text-[11px] text-muted-foreground/70">
               {summaryParts.length > 0 ? summaryParts.join(" · ") : t("config.resources.nothingSelected")}
             </span>

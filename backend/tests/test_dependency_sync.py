@@ -13,11 +13,19 @@ drift becomes a real runtime bug:
      the matching `AGENTFLOW_*` env vars). If they diverge, a secret/model name
      normalizes to a different env var on each side and silently resolves to None.
 
+A third guard covers the frontend editor's code-hint catalog
+(`frontend/src/lib/agentflowApi.ts`) — a hand-maintained mirror of the public
+`agentflow` SDK surface with no runtime introspection. If someone adds a new
+built-in SDK function and forgets to add a catalog entry, the editor silently
+stops advertising it; this test fails CI instead.
+
 These are cheap static assertions — no venv, no network — that fail CI the moment
 either pair drifts, which is exactly what the "sync by hand" comments ask for.
 """
 import re
 from pathlib import Path
+
+import pytest
 
 from services.venv_manager import BASELINE_PACKAGES
 
@@ -93,3 +101,62 @@ def test_norm_behavior_is_locked():
     assert _norm("  spaced  ") == "SPACED"
     assert _norm("") == "UNNAMED"
     assert _norm("!!!") == "UNNAMED"
+
+
+# ── Editor code-hint catalog ⇄ agentflow SDK surface ──────────────────────────
+
+FRONTEND_CATALOG = BACKEND_ROOT.parent / "frontend" / "src" / "lib" / "agentflowApi.ts"
+
+# Public SDK names intentionally NOT surfaced as editor code hints. Empty today;
+# add a name here (with a reason) if you export a public helper that genuinely
+# should not appear in the completion list, so this guard stays meaningful.
+CATALOG_EXCLUDE: set[str] = set()
+
+
+def _sdk_public_surface() -> set[str]:
+    """The real public `agentflow` SDK surface, derived by introspection: every
+    non-underscore name whose definition lives in the `agentflow` package —
+    module-level functions, the `_sandbox` re-exports (run_bash/run_python), the
+    `paths` object, and the `AgentFlowFile` class. Imported stdlib / third-party
+    symbols (os, json, Path, …) are filtered out by their `__module__`."""
+    import agentflow
+
+    out: set[str] = set()
+    for name in dir(agentflow):
+        if name.startswith("_"):
+            continue
+        obj = getattr(agentflow, name)
+        mod = getattr(obj, "__module__", None) or getattr(type(obj), "__module__", "") or ""
+        if mod.startswith("agentflow"):
+            out.add(name)
+    return out
+
+
+def _catalog_names() -> set[str]:
+    """Names declared in the frontend editor-hint catalog (the `AGENTFLOW_API`
+    array in frontend/src/lib/agentflowApi.ts). Scoped to that array so the
+    interface's `name: string;` and the snippet block can't leak in."""
+    text = FRONTEND_CATALOG.read_text(encoding="utf-8")
+    start = text.index("AGENTFLOW_API")
+    end = text.index("AGENTFLOW_SNIPPETS", start)
+    return set(re.findall(r'^\s*name:\s*"([^"]+)"', text[start:end], re.MULTILINE))
+
+
+def test_editor_hint_catalog_matches_sdk_surface():
+    """The editor's code-hint catalog must list exactly the public SDK surface, so
+    a newly added built-in shows up in completion/hover and a removed one stops
+    being advertised. See CLAUDE.md 'Editor code hints'."""
+    if not FRONTEND_CATALOG.exists():
+        pytest.skip("frontend catalog not present (backend-only checkout)")
+    sdk = _sdk_public_surface() - CATALOG_EXCLUDE
+    catalog = _catalog_names()
+    missing = sorted(sdk - catalog)
+    stale = sorted(catalog - sdk)
+    assert not missing and not stale, (
+        "frontend/src/lib/agentflowApi.ts (editor code-hint catalog) has drifted "
+        "from the agentflow SDK:\n"
+        f"  public in SDK but missing from catalog: {missing}\n"
+        f"  in catalog but not a public SDK name:   {stale}\n"
+        "Add the new symbol to AGENTFLOW_API (name + signature + doc), or if it is "
+        "intentionally not a code hint, add it to CATALOG_EXCLUDE in this test."
+    )
