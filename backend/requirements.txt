@@ -39,6 +39,11 @@ langchain-core
 langchain-openai
 langchain-deepseek
 langgraph
+# Durable per-conversation agent state (thread_id == conversation_id). Persists a
+# LangGraph thread to workspace/threads.db so a chat agent doesn't re-read skills /
+# lose context every turn. Pulls aiosqlite transitively. Kept in sync with
+# venv_manager.BASELINE_PACKAGES (guarded by tests/test_dependency_sync.py).
+langgraph-checkpoint-sqlite
 langchain-mcp-adapters
 nest-asyncio
 deepagents

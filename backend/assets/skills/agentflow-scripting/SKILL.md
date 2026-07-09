@@ -242,15 +242,30 @@ only), so it is correct for both agent kinds and returns the full reply:
 from agentflow import get_agent, stream_agent
 
 async def run(input: dict) -> dict:
-    history = [(m["role"], m["content"]) for m in input.get("history", [])]
     agent = get_agent(reasoning=input.get("reasoning"), stream_reasoning=True)
-    reply = await stream_agent(agent, history + [("human", input["message"])])
+    # Threaded in /converse (see below): send only the new message.
+    reply = await stream_agent(agent, [("human", input["message"])])
     return {"reply": reply}
 ```
 
 Same call for `get_deep_agent()`. In a sync `def run`, use `stream_agent_sync(...)`.
 A **direct** `get_llm().astream(...)` (no tools) has no tool messages, so streaming its
 `chunk.content` is fine without `stream_agent`.
+
+**Conversation memory is automatic — don't re-feed `history` to an agent.** In
+/converse a conversation is a durable LangGraph **thread** (`thread_id` == the
+conversation id). `get_agent()` / `get_deep_agent()` auto-attach a per-conversation
+checkpointer (persisted to `workspace/threads.db`), so the agent's full state —
+**including a bound skill's body once it's been read, and every tool result** —
+persists across turns. Consequences:
+- **A bound skill is read ONCE, not every turn** (the original reason this exists).
+- **Send only the new message** to `stream_agent` — the checkpointer supplies prior
+  turns. Prepending `input["history"]` still works (it's deduplicated), but it's
+  redundant for an agent. A **non-agent** chat (driving `get_llm()` directly) can't
+  use the thread, so it still builds context from `input["history"]`.
+- Old context is bounded automatically (recent-token window, system prompt always
+  kept). Deleting the last turn in the UI rolls the thread back to the previous
+  turn. Pass `get_agent(checkpointer=False)` to opt out (classic stateless agent).
 
 ## Gotchas
 

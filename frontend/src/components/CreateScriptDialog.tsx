@@ -176,7 +176,6 @@ SYSTEM_PROMPT = (
 
 async def run(input: dict) -> dict:
     message = (input.get("message") or "").strip()
-    history = input.get("history") or []
 
     if get_llm() is None:
         token("No default LLM configured. Add one in Settings first.")
@@ -184,18 +183,12 @@ async def run(input: dict) -> dict:
 
     agent = get_agent(system_prompt=SYSTEM_PROMPT, tools=TOOLS, reasoning=input.get("reasoning"))
 
-    # /converse passes prior turns in input.history.
-    msgs = []
-    for m in history:
-        if m.get("role") == "user":
-            msgs.append(HumanMessage(m.get("content") or ""))
-        elif m.get("role") == "assistant" and m.get("content"):
-            msgs.append(AIMessage(m["content"]))
-    msgs.append(HumanMessage(message))
-
+    # In /converse this agent is threaded: its state persists across turns under
+    # the conversation id, so send only the new message — the checkpointer supplies
+    # prior turns (input.history is unused for a threaded agent).
     # stream_agent() streams only the model's answer, dropping tool results so a
     # tool's raw output never leaks into the reply (works for plain + deep agents).
-    reply = await stream_agent(agent, msgs)
+    reply = await stream_agent(agent, [HumanMessage(message)])
 
     log("turn done", data={"reply_chars": len(reply)})
     return {"reply": reply}

@@ -17,6 +17,7 @@ from app.schemas import (
     ConverseChatStartRequest,
 )
 from services.execution_engine import spawn_execution
+from services import conversation_threads
 
 router = APIRouter()
 
@@ -89,6 +90,11 @@ def delete_conversation(conv_id: str, db: Session = Depends(get_db)):
     conv = db.query(Conversation).filter_by(id=conv_id).first()
     if not conv:
         raise HTTPException(404, "Conversation not found")
+    # Reclaim this conversation's LangGraph thread from workspace/threads.db so
+    # its checkpoints don't linger after the visible messages are gone (a deleted
+    # conversation is never resumed). Best-effort; runs before the row is gone so
+    # we still have script_id. See services/conversation_threads.py.
+    conversation_threads.reset_thread(conv.script_id, conv_id)
     db.delete(conv)
     db.commit()
 
@@ -157,6 +163,20 @@ async def chat_start(conv_id: str, body: ConverseChatStartRequest, db: Session =
     history_slice = prior[-(conv.context_turns * 2):]
     history = [{"role": m.role, "content": m.content} for m in history_slice]
 
+    # ── Conversation threading anchor ─────────────────────────────────────────
+    # The conversation is a durable LangGraph thread (thread_id == conv id). We
+    # pass the thread id + an anchor checkpoint so a threaded agent resumes the
+    # thread (and rolls back correctly if a later turn was deleted): the anchor is
+    # the head checkpoint recorded on the most recent SURVIVING assistant turn.
+    # No surviving anchor → wipe any stale thread so a fresh one starts. A
+    # non-threaded chat script simply ignores thread_id and keeps using `history`.
+    last_assistant = next(
+        (m for m in reversed(prior) if m.role == "assistant"), None
+    )
+    anchor = last_assistant.checkpoint_id if last_assistant else None
+    if not anchor:
+        conversation_threads.reset_thread(conv.script_id, conv_id)
+
     # Create execution row. Thread the conversation's reasoning level into the
     # input so the script can pass it to get_llm(reasoning=input.get("reasoning")).
     exc = Execution(
@@ -165,6 +185,8 @@ async def chat_start(conv_id: str, body: ConverseChatStartRequest, db: Session =
             "message": body.message,
             "history": history,
             "reasoning": conv.reasoning_effort or "off",
+            "thread_id": conv_id,
+            "checkpoint_id": anchor,
         },
     )
     db.add(exc)
@@ -208,6 +230,16 @@ def confirm_reply(conv_id: str, body: ConverseConfirmRequest, db: Session = Depe
     # `content` so it never enters the model history built by chat_start.
     reasoning = (body.reasoning or "").strip() or None if exc.status == "completed" else None
 
+    # Record the thread's head checkpoint after this turn (if the script ran as a
+    # threaded agent → workspace/threads.db exists). The next turn anchors here;
+    # deleting this turn later makes the previous message's checkpoint the anchor
+    # (rollback). Best-effort: None for a non-threaded conversation.
+    checkpoint_id = (
+        conversation_threads.read_head_checkpoint(conv.script_id, conv_id)
+        if exc.status == "completed"
+        else None
+    )
+
     assistant_msg = ConversationMessage(
         conversation_id=conv_id,
         role="assistant",
@@ -215,6 +247,7 @@ def confirm_reply(conv_id: str, body: ConverseConfirmRequest, db: Session = Depe
         reasoning=reasoning,
         error=error,
         execution_id=body.execution_id,
+        checkpoint_id=checkpoint_id,
     )
     db.add(assistant_msg)
     conv.updated_at = datetime.utcnow()

@@ -371,6 +371,13 @@ class ConversationMessage(Base):
     reasoning = Column(Text, nullable=True)
     error = Column(Text, nullable=True)
     execution_id = Column(String, nullable=True)     # plain string ref to executions.id
+    # Head checkpoint of the conversation's LangGraph thread right AFTER this
+    # assistant turn ran (workspace/threads.db, thread_id == conversation id).
+    # The next turn anchors here; deleting a later turn makes the previous
+    # surviving message's checkpoint the anchor → the thread forks back to it
+    # (rollback). Null for non-threaded conversations / user messages. See
+    # services/conversation_threads.py + Alembic 0013.
+    checkpoint_id = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     conversation = relationship("Conversation", back_populates="messages")

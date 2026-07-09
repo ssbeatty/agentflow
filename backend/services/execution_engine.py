@@ -850,6 +850,21 @@ async def start_execution(execution_id: str) -> None:
         llm_envs["AGENTFLOW_SCRIPT_DIR"] = str(script_dir)
         llm_envs["AGENTFLOW_UPLOADS_DIR"] = str(UPLOADS_DIR)
 
+        # Conversation threading: a /converse turn carries thread_id (== the
+        # conversation id) and an optional checkpoint anchor (resume / rollback
+        # point) in its input. Promote them to env so get_agent()/stream_agent()
+        # attach a durable per-conversation checkpointer (workspace/threads.db)
+        # and the agent keeps context / reads a skill only once. Applies to both
+        # the one-shot runner (baked into _runner.py) and the warm worker
+        # (job_env), since both read llm_envs. Non-chat runs have neither key →
+        # no thread env → classic stateless path, unchanged.
+        _thread_id = (resolved_input or {}).get("thread_id")
+        if _thread_id:
+            llm_envs["AGENTFLOW_THREAD_ID"] = str(_thread_id)
+            _thread_cp = (resolved_input or {}).get("checkpoint_id")
+            if _thread_cp:
+                llm_envs["AGENTFLOW_THREAD_CHECKPOINT"] = str(_thread_cp)
+
         # ── write the run's input ─────────────────────────────────────────────
         # Both the one-shot runner and the warm worker read _input.json from the
         # run dir (the one-shot runner is written later, only on that path).
